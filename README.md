@@ -1,143 +1,138 @@
-# Mark5 Restaurant Suite
+# Mark5 Restaurant Suite (PHP + MySQL)
 
-An all-in-one, web-based restaurant management system built for Philippine restaurants:
-**POS / cashiering, recipe-based inventory, and double-entry accounting in one place**, so
-every sale, delivery, spoilage, petty cash payout and cash advance lands in the books
-automatically.
+All-in-one, browser-based restaurant system for Philippine restaurants:
+**POS / cashiering, recipe-based inventory and double-entry accounting in one place.**
+Every sale, delivery, spoilage, petty cash payout and cash advance is posted to the books automatically.
 
-## Highlights
+- **Plain PHP 8.1+** — no framework, no Composer packages. Copy the folder to your server and run the installer.
+- **MySQL 5.7+ / MariaDB 10.4+** (XAMPP, Laragon, cPanel hosting, VPS).
+- Server-rendered pages + a little plain JavaScript (no build step).
+- Works on PCs, tablets and phones (Chrome / Edge / Safari).
 
-### Front end — POS / Cashier (`/pos`)
-- **Business day**: open the day with a beginning cash count (by denomination), take orders,
-  then **End of Day** with a *blind* cash count → Z-reading with expected vs. actual cash,
-  over/short (auto-posted to the GL), OR range, VAT breakdown and accumulated grand total.
-  X-reading any time during the shift.
-- **Tile-based item selection** by category, search / barcode scan, kitchen notes/modifiers.
-- **Floor plan**: tables by area with running totals and time seated; take-out & delivery orders.
-- **Send to kitchen** (prints a kitchen order slip). After sending, removing an item is a *void*.
-- **Split tickets** (whole or partial quantities, to a new or an existing ticket), **merge
-  tickets**, **move a ticket to another table**.
-- **Split payments**: cash, card, GCash, Maya, bank transfer/InstaPay, GrabFood, foodpanda,
-  and **charge to account** (creates an A/R invoice). Change computation, quick-cash buttons.
-- **Philippine discounts**: Senior Citizen / PWD (VAT-exempt + 20% on the qualified share of the
-  bill, records name & OSCA/PWD ID for the BIR sales book), promo % or fixed amount.
-- **Voids**: item voids and receipt voids with reason; **manager PIN override** for cashiers who
-  lack the permission. Voiding a paid receipt returns the ingredients to stock and reverses the
-  journal entry.
-- **Receipts**: reprint, search, print bill/pre-bill, 58/80 mm-friendly receipt layout.
-- **Petty cash / drawer payouts** at the POS (reduces expected drawer cash).
+---
 
-### Back end — Admin
-- **Dashboard** (date-filtered): net sales, average ticket, gross profit, food cost %, voids,
-  wastage, expenses, estimated net income, daily/hourly sales, category & payment mix, top items,
-  cash/bank position, AR/AP, low-stock alerts, pending cash-advance approvals.
-- **Sales reports**: by date, item, category, receipt, payment method, hour, cashier, voids,
-  SC/PWD discount book, End-of-day/Z-reading history (click to view & reprint).
-- **Inventory**
-  - Items with types: *raw/ingredient*, *composite* (menu item with a recipe — tag ingredients
-    and sub-recipes), *retail* (e.g. bottled drinks), *non-inventory*.
-  - **Units of measure & conversions**: global (1 kg = 1000 g) and per item (1 sack = 50 kg,
-    1 case = 24 cans). Recipes can use any convertible unit.
-  - Reorder point / reorder qty, low-stock flags, reorder suggestion report.
-  - Moving-average costing, **menu/recipe costing with food cost %**.
-  - **Delivery / Stock in** (cash, petty cash, bank, on credit → automatic payable, or opening
-    balance), optional VAT-inclusive supplier price (input VAT).
-  - **Stock issuance** (non-sales use: staff meals, commissary, other branch) charged to an
-    expense account.
-  - **Spoilage & wastage** (composites explode to ingredients).
-  - **Inventory count sessions**: count sheet, compare actual vs. system, post adjustments
-    with the variance booked to the GL.
-  - Reports: stock on hand & valuation, stock card, movement summary, receiving, issuance,
-    wastage, count variance, ingredient usage.
-- **Petty cash**: fund vs. drawer payouts, replenishment, report with beginning/ending balance.
-- **Finance**: chart of accounts (PH restaurant default), manual journal entries, trial balance,
-  income statement, balance sheet, general ledger, general journal.
-- **Accounts payable & receivable** with payments/collections and aging.
-- **Banks**: record money in / money out / transfers per bank (not connected to the bank),
-  card-settlement charges, bank register.
-- **Employee cash advances**: request → approve/reject → release (posts Dr Advances to
-  Employees / Cr cash, petty cash or bank) → repayments (salary deduction, cash, bank).
-- **Users & roles** with a permission matrix (40+ permissions, grouped by function).
-- **Audit trail**, **database backup & restore** (daily automatic backups, download, restore
-  from a backup or an uploaded file — a safety backup is always taken first).
-- **Every report and list exports to Excel**; every report is filtered by date.
+## Installation
 
-## How the books stay in sync
+### Option A — XAMPP / Laragon on Windows (recommended for a single restaurant)
+1. Install [XAMPP](https://www.apachefriends.org) (PHP 8.1 or newer) and start **Apache** and **MySQL**.
+2. Copy this project folder to `C:\xampp\htdocs\mark5`.
+3. (Recommended) In `C:\xampp\php\php.ini` make sure `extension=zip` is enabled (for .xlsx exports), then restart Apache.
+4. Open **http://localhost/mark5/** — the installer appears. Enter the MySQL details
+   (XAMPP default: user `root`, empty password), choose the admin password and manager PIN, and click **Install**.
+5. Log in as **admin**.
 
-| Event | Journal entry (automatic) |
+### Option B — any PHP host / VPS
+Point the web server's document root to the `public/` folder (Apache uses `public/.htaccess`; for nginx route all
+requests to `public/index.php`). Then open the site and follow the installer.
+
+### Option C — command line (developers)
+```bash
+cp config/config.example.php config/config.php     # edit the MySQL settings
+php database/install.php                           # creates the database, tables, admin/admin123, PIN 1234 + sample menu
+php -S 0.0.0.0:8000 -t public public/index.php     # http://localhost:8000
+```
+`php database/install.php --empty` installs without the sample menu.
+
+### Using tablets and phones
+Other devices on the same Wi-Fi open `http://<server-ip>/mark5/` (find the IP with `ipconfig`).
+Allow Apache through the Windows firewall when asked.
+
+---
+
+## Bluetooth receipt printers
+
+Open **POS → Printer** (or *Administration → Printer Setup*) on **each device** — printer settings are saved per device.
+
+| Method | Use it when | Notes |
+|---|---|---|
+| **Bluetooth (BLE)** | Chrome on Android, Windows or Mac with a BLE thermal printer | Web Bluetooth only works on **https://** or **localhost**. |
+| **Serial / COM port** | Chrome/Edge on a Windows PC with a USB printer or a classic Bluetooth printer paired in Windows (it appears as a COM port) | Also needs https or localhost. |
+| **RawBT app** | Android phone/tablet with **any** Bluetooth thermal printer (58 mm / 80 mm) | Install *RawBT* from Google Play and pair the printer there. Works over plain http on the LAN — the easiest option for Android tablets. |
+| **Browser print** | The printer is installed in Windows/macOS, or as a fallback | Uses the normal print dialog. |
+
+Options: paper width 58 mm (32 characters) or 80 mm (48 characters), auto-print receipt after payment, kitchen order slip
+when pressing *Send*, number of copies, open the cash drawer (printer with drawer port).
+
+**Why https matters:** browsers only allow Bluetooth and serial access from secure pages. On a LAN, either use RawBT on
+Android, run the POS on the same PC as the server (`http://localhost/...` counts as secure), or install an SSL
+certificate (e.g. host the system online with Let's Encrypt, or a local certificate).
+
+Printers known to speak ESC/POS over BLE include most generic 58 mm "Bluetooth Printer" models (Goojprt, Xprinter,
+MTP-II, PeriPage). If yours is not found by *Bluetooth (BLE)*, it is probably a classic-Bluetooth-only model: use RawBT
+(Android) or Serial (Windows).
+
+---
+
+## Features
+
+**Front of house — POS (`/pos`)**
+- Open the day with a beginning cash count; **End of Day** with a blind cash count by denomination → Z-reading
+  (expected vs. actual cash, over/short posted to the books, OR range, VAT breakdown, accumulated grand total). X-reading anytime.
+- Take the order first, **then assign a table** (free text: "5", "12A", "Patio 2" — no fixed table setup). Change table any time.
+- Item tiles by category, search / barcode, kitchen notes, *Send* prints a kitchen slip.
+- Split orders (whole or partial quantities), merge orders, take-out & delivery.
+- Split payments: cash, card, GCash, Maya, bank transfer, GrabFood, foodpanda, charge to a customer account (A/R).
+- Senior Citizen / PWD discount (VAT-exempt + 20% on the qualified share, with names & ID numbers), promo % / fixed.
+- Voids with reasons and **manager PIN override**; voiding a paid receipt returns ingredients to stock and reverses the sale.
+- Receipts search / reprint, drawer payouts (petty cash).
+
+**Back office**
+- Date-filtered **dashboard**; sales reports (by date, item, category, receipt, payment, hour, cashier, voids, SC/PWD book, Z-readings).
+- **Inventory**: raw ingredients, composite menu items with recipes (sub-recipes allowed), retail items; units & conversions
+  (1 sack = 50 kg, 1 kg = 1000 g); reorder points; moving-average costing; menu costing with food cost %;
+  delivery / stock-in (cash, bank, petty cash or on credit → payable), stock issuance, spoilage & wastage,
+  inventory count sessions (actual vs. system, variance posted); stock card and inventory reports.
+- **Finance**: chart of accounts, journal entries, trial balance, income statement, balance sheet, general ledger,
+  accounts payable & receivable with aging, banks (money in/out/transfers, card settlement charges), petty cash.
+- **Cash advances**: request → approve (posts to the GL) → repayments (salary deduction, cash, bank).
+- **Users, roles & permissions** (40+ permissions), audit trail, **backup & restore** (pure PHP, no mysqldump needed).
+- Every list and report exports to **Excel**.
+
+### How the books stay in sync
+
+| Event | Automatic journal entry |
 |---|---|
 | POS sale | Dr Cash / Card / E-wallet / A/R, Dr Sales Discounts · Cr Sales, Output VAT, Service Charge Payable · Dr COGS / Cr Inventory |
-| Receipt void | Reversal of the sale entry, ingredients returned to stock |
-| End of day over/short | Dr/Cr Cash on Hand vs. Cash Short/(Over) |
+| Receipt void | Reversal of the sale; ingredients returned to stock |
+| End of day over/short | Cash on Hand vs. Cash Short/(Over) |
 | Delivery / stock in | Dr Inventory (+ Input VAT) · Cr Cash / Bank / Petty Cash / Accounts Payable |
-| Issuance / wastage | Dr chosen expense or Spoilage & Wastage · Cr Inventory |
-| Count posting | Inventory vs. Inventory Variance |
-| Petty cash expense | Dr Expense · Cr Petty Cash Fund (or Cash on Hand for drawer payouts) |
-| Cash advance approved | Dr Advances to Employees · Cr Cash / Petty Cash / Bank |
-| AP/AR payments, bank transactions | the corresponding cash/bank and AP/AR entries |
+| Issuance / wastage / count | Expense or Spoilage / Inventory Variance vs. Inventory |
+| Petty cash, cash advances, AP/AR, banks | the corresponding cash/bank and AP/AR entries |
 
-Prices on the menu are **VAT-inclusive**. Non-VAT businesses can turn VAT off in Settings.
+---
 
-## Running it
+## Project structure (for developers)
 
-Requirements: **Node.js 22.13+** (uses the built-in `node:sqlite`, so there are no native
-modules to compile — it runs fine on a Windows cashier PC).
-
-```bash
-npm install
-npm run build        # builds the web app into client/dist
-npm start            # http://localhost:3000
+```
+public/            web root: index.php (front controller), assets/css, assets/js (app.js, pos.js, printer.js)
+app/
+  bootstrap.php    config, autoloader, helpers
+  helpers.php      view(), redirect(), e(), money(), date_range() ...
+  nav.php          sidebar menu
+  Core/            DB (PDO wrapper), Router, Request/Response, View, Auth, Csrf, Table (HTML + Excel), Excel
+  Services/        business logic: Ledger (GL), Inventory, Pos/*, Finance/*, Reports/*, Backup ...
+  Controllers/     thin controllers per module
+  routes/          one route file per module: $router->get('/path', [Controller::class, 'method'], 'permission')
+views/             PHP templates (layouts/app.php, layouts/blank.php, one folder per module)
+database/          schema.sql, install.php
+tests/             php tests/run.php — uses a separate <db>_test database
+storage/           backups/, logs/
 ```
 
-Default login: **admin / admin123** (manager PIN **1234**). Change both under *My account*.
+Conventions: controllers stay thin; rules and postings live in `app/Services`, which the tests call directly.
+Every money movement goes through `App\Services\Ledger::post()`, every stock change through `App\Services\Inventory::move()`.
 
-Development (API on :3000 with auto-reload + Vite on :5173):
-
+### Tests
 ```bash
-npm run dev
+php tests/run.php          # all tests (creates and drops the <database>_test database)
+php tests/run.php Pos      # only tests/PosTest.php
 ```
 
-Tests (end-to-end business flows, checks that the books always balance):
-
-```bash
-npm test
-```
-
-### Configuration
-
-| Env var | Default | |
-|---|---|---|
-| `PORT` | `3000` | HTTP port |
-| `DATA_DIR` | `./data` | Database (`mark5.db`) and `backups/` folder |
-| `TZ` | `Asia/Manila` | Business timezone |
-| `SEED_SAMPLE` | `1` | Seed a sample Filipino menu with recipes on a brand-new database (`0` to start empty) |
-
-Other terminals (tablets for waiters, a second cashier, the office PC) open
-`http://<server-ip>:3000` on the same network.
-
-### Backups
-A backup is created automatically once a day (retention configurable). Copy the files in
-`data/backups/` to a USB drive or cloud storage regularly. Restore from *Administration →
-Backup & Restore*.
+---
 
 ## Notes
-- BIR: issuing official receipts/invoices from a POS requires BIR accreditation and a Permit to
-  Use (PTU). The receipt title, prefix, and footer are configurable; the system already keeps
-  the data BIR asks for (sequential receipt numbers, X/Z readings, accumulated grand total,
-  SC/PWD sales book, void log, audit trail).
-- Service charge is booked as a liability (*Service Charge Payable*) since it must be
-  distributed to employees (RA 11360).
-
-## Project layout
-
-```
-server/            Express API
-  schema.sql       database schema
-  gl.js            chart of accounts + journal posting
-  inventory.js     stock ledger, UOM conversion, recipe explosion, costing
-  routes/          pos, inventory, finance, reports, admin
-client/src/        React app (Vite)
-  pages/pos        cashier terminal
-  pages/...        dashboard, reports, inventory, finance, admin
-test/              end-to-end API tests
-```
+- **BIR**: issuing official receipts/invoices from a POS requires BIR accreditation and a Permit to Use (PTU). The system
+  keeps what BIR asks for (sequential receipt numbers, X/Z readings, accumulated grand total, SC/PWD sales book,
+  void log, audit trail); receipt title, prefix and footer are configurable.
+- Service charge is booked as a liability (*Service Charge Payable*), since it must be distributed to employees (RA 11360).
+- Default login after the CLI installer: **admin / admin123**, manager PIN **1234** — change them under *My account*.
