@@ -1286,7 +1286,7 @@
   // =====================================================================================================
   /** Top bar, board, order panel and phone bar buttons (data-act). */
   const ACTIONS = {
-    board: () => { if (S.view === 'order') closeOrder(); else loadOrders(); },
+    board: () => { if (S.view === 'order') S.queue.then(closeOrder); else loadOrders(); },
     receipts: receiptsDialog,
     payout: payoutDialog,
     xread: xReadDialog,

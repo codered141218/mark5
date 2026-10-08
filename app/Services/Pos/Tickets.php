@@ -454,7 +454,7 @@ class Tickets
         }
         return array_map(fn ($r) => ['total' => (float) $r['total'], 'id' => (int) $r['id']] + $r, DB::all(
             'SELECT t.id, t.ticket_no, t.receipt_no, t.status, t.total, t.paid_at, t.created_at, t.order_type, t.customer_name, t.table_label,
-                    t.business_date, u.full_name AS cashier
+                    t.business_date, t.void_reason, u.full_name AS cashier
              FROM tickets t LEFT JOIN users u ON u.id = COALESCE(t.paid_by, t.created_by)
              WHERE ' . implode(' AND ', $where) . ' ORDER BY t.id DESC LIMIT 300', $params
         ));

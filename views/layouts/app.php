@@ -66,5 +66,6 @@ $business = App\Services\Settings::get('business_name', 'Mark5');
   </main>
 </div>
 <script src="<?= asset('js/app.js') ?>"></script>
+<?php foreach ($scripts ?? [] as $js): ?><script src="<?= asset($js) ?>"></script><?php endforeach; ?>
 </body>
 </html>

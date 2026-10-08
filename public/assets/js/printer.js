@@ -135,7 +135,10 @@
   // ------------------------------------------------------------------ HTML renderer (browser print dialog)
   const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   function html(doc, paper) {
-    let h = `<div class="receipt" style="width:${paper === 80 ? 72 : 48}mm">`;
+    // Printable width is 48 mm (58 mm paper) or 72 mm (80 mm paper); size the monospace font so that
+    // exactly 32 / 48 characters fit (a Courier character is 0.6 em wide): 48 / 32 / 0.6 = 2.5 mm.
+    const width = paper === 80 ? 72 : 48;
+    let h = `<div class="receipt" style="width:${width}mm;font-size:${(width / doc.cols / 0.6).toFixed(2)}mm;padding:0">`;
     for (const op of doc.ops) {
       const style = `${op.bold ? 'font-weight:bold;' : ''}${op.big ? 'font-size:15px;' : ''}`;
       if (op.t === 'hr') h += '<hr>';

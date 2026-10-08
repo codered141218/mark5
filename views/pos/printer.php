@@ -78,9 +78,6 @@ $methods = [
 </div>
 
 <script>window.PRINTER_BUSINESS = <?= json_encode($business, JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE) ?>;</script>
-<?php // The back-office layout only loads app.js; deferred scripts run after it. ?>
-<script defer src="<?= asset('js/printer.js') ?>"></script>
-<script defer src="<?= asset('js/printer-setup.js') ?>"></script>
 <style>
   .method-list { display: flex; flex-direction: column; gap: 8px; }
   .method-option { display: flex; gap: 12px; align-items: flex-start; padding: 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
