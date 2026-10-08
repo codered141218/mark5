@@ -131,3 +131,15 @@ test('voiding a previous day receipt refunds from the new day drawer', function 
     eq(1000 - 252.57, $x['cash']['expected']);
     assert_books_balance();
 });
+
+test('drawer payout during the day reduces expected cash', function () {
+    $s = CashSessions::current();
+    $before = CashSessions::report((int) $s['id'])['cash']['expected'];
+    $lpg = (int) DB::value("SELECT id FROM accounts WHERE name LIKE 'LPG%'");
+    $id = App\Services\Finance\PettyCash::record(['txn_type' => 'expense', 'source' => 'drawer', 'amount' => 150, 'account_id' => $lpg, 'description' => 'LPG refill']);
+    eq($before - 150, CashSessions::report((int) $s['id'])['cash']['expected']);
+    eq(1, count(App\Services\Finance\PettyCash::listForSession((int) $s['id'])));
+    App\Services\Finance\PettyCash::void($id, 'wrong amount');
+    eq($before, CashSessions::report((int) $s['id'])['cash']['expected']);
+    assert_books_balance();
+});

@@ -56,5 +56,5 @@ $auto = $d['source_type'] === $cfg['autoSource'];
   </div>
 <?php endif; ?>
 
-<h3><?= $cfg['payVerb'] === 'Pay' ? 'Payments' : 'Collections' ?></h3>
+<h3 class="mb"><?= $cfg['payVerb'] === 'Pay' ? 'Payments' : 'Collections' ?></h3>
 <div class="card"><?= Table::html($columns, $payments, ['export' => true, 'search' => false, 'empty' => "No {$cfg['paymentWord']}s yet."]) ?></div>

@@ -235,7 +235,7 @@
       const render = () => {
         const q = input.value.toLowerCase();
         matches = Array.from(sel.options).filter((o) => o.value && (!q || o.text.toLowerCase().includes(q))).slice(0, 80);
-        if (!list) { list = document.createElement('div'); list.className = 'combo-list'; document.body.appendChild(list); }
+        if (!list) { list = document.createElement('div'); list.className = 'combo-list'; (input.closest('dialog') || document.body).appendChild(list); }
         const r = input.getBoundingClientRect();
         Object.assign(list.style, { left: r.left + 'px', top: r.bottom + 2 + 'px', width: Math.max(r.width, 220) + 'px' });
         list.innerHTML = matches.length ? '' : '<div class="combo-group">No match</div>';
