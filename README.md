@@ -39,27 +39,29 @@ Allow Apache through the Windows firewall when asked.
 
 ---
 
-## Bluetooth receipt printers
+## Bluetooth receipt printers (portable 58 mm printers on Android tablets)
 
-Open **POS → Printer** (or *Administration → Printer Setup*) on **each device** — printer settings are saved per device.
+Open **POS → Printer** (or *Administration → Printer Setup*) on **each tablet** — printer settings are saved per device.
 
 | Method | Use it when | Notes |
 |---|---|---|
-| **Bluetooth (BLE)** | Chrome on Android, Windows or Mac with a BLE thermal printer | Web Bluetooth only works on **https://** or **localhost**. |
-| **Serial / COM port** | Chrome/Edge on a Windows PC with a USB printer or a classic Bluetooth printer paired in Windows (it appears as a COM port) | Also needs https or localhost. |
-| **RawBT app** | Android phone/tablet with **any** Bluetooth thermal printer (58 mm / 80 mm) | Install *RawBT* from Google Play and pair the printer there. Works over plain http on the LAN — the easiest option for Android tablets. |
-| **Browser print** | The printer is installed in Windows/macOS, or as a fallback | Uses the normal print dialog. |
+| **Bluetooth (BLE)** | Chrome on an Android tablet (or Windows/Mac) with a BLE thermal printer | Prints directly from the POS. Needs a secure address — see below. |
+| **RawBT app** | Android tablet with **any** Bluetooth thermal printer (also classic-Bluetooth-only models) | Install *RawBT* from Google Play, pair the printer in Android Bluetooth settings, choose RawBT in Printer setup. Works over plain http. |
+| **Serial / COM port** | Windows PC with a USB printer or a Bluetooth printer paired as a COM port | Chrome / Edge, secure address needed. |
+| **Browser print** | Printer installed in Windows/macOS, or as a fallback | Normal print dialog. |
 
-Options: paper width 58 mm (32 characters) or 80 mm (48 characters), auto-print receipt after payment, kitchen order slip
-when pressing *Send*, number of copies, open the cash drawer (printer with drawer port).
+**Making Bluetooth work over the LAN (http://192.168.x.x)** — browsers only allow Bluetooth on secure pages. On the tablet:
+1. Open Chrome and go to `chrome://flags/#unsafely-treat-insecure-origin-as-secure`
+2. Type the server address, e.g. `http://192.168.1.10` (include the port if you use one), set it to **Enabled**, tap **Relaunch**.
+3. Open the POS → Printer → Bluetooth → **Connect printer**. (Alternatively host the system with https, or use RawBT.)
 
-**Why https matters:** browsers only allow Bluetooth and serial access from secure pages. On a LAN, either use RawBT on
-Android, run the POS on the same PC as the server (`http://localhost/...` counts as secure), or install an SSL
-certificate (e.g. host the system online with Let's Encrypt, or a local certificate).
+Portable-printer features: remembers the printer and **reconnects automatically** when it wakes up; receipts printed
+while it was asleep are **queued and printed on reconnect**; adjustable Bluetooth packet size / delay (choose a smaller
+packet size if long receipts come out cut or garbled); paper feed after printing (portable printers have no cutter);
+keeps the tablet screen awake while the POS is open; self-test page and a diagnostic log.
 
-Printers known to speak ESC/POS over BLE include most generic 58 mm "Bluetooth Printer" models (Goojprt, Xprinter,
-MTP-II, PeriPage). If yours is not found by *Bluetooth (BLE)*, it is probably a classic-Bluetooth-only model: use RawBT
-(Android) or Serial (Windows).
+Other options: paper width 58 mm (32 characters) / 80 mm (48 characters), auto-print receipt after payment, kitchen
+order slip on *Send* (with copies), reprint order slip, open the cash drawer, print ₱ as "P" or "PHP".
 
 ---
 
@@ -72,9 +74,13 @@ MTP-II, PeriPage). If yours is not found by *Bluetooth (BLE)*, it is probably a 
 - Item tiles by category, search / barcode, kitchen notes, *Send* prints a kitchen slip.
 - Split orders (whole or partial quantities), merge orders, take-out & delivery.
 - Split payments: cash, card, GCash, Maya, bank transfer, GrabFood, foodpanda, charge to a customer account (A/R).
-- Senior Citizen / PWD discount (VAT-exempt + 20% on the qualified share, with names & ID numbers), promo % / fixed.
+- **Configurable discounts** (*Administration → Discounts*): per item or on the whole receipt — Senior Citizen / PWD
+  (VAT-exempt + 20%, tag the senior's own items or the qualified share of the bill, with names & ID numbers), employee,
+  promo %, fixed ₱, complimentary, or "open" discounts where the cashier types the value; optional manager approval.
 - Voids with reasons and **manager PIN override**; voiding a paid receipt returns ingredients to stock and reverses the sale.
-- Receipts search / reprint, drawer payouts (petty cash).
+- Receipts search / reprint, **reprint order slip**, drawer payouts (petty cash).
+- Made for Android tablets: on-screen keypads for numbers (no keyboard popping up), layout that stays usable while
+  the keyboard is open, installable full-screen ("Add to Home screen").
 
 **Back office**
 - Date-filtered **dashboard**; sales reports (by date, item, category, receipt, payment, hour, cashier, voids, SC/PWD book, Z-readings).
@@ -121,6 +127,10 @@ storage/           backups/, logs/
 
 Conventions: controllers stay thin; rules and postings live in `app/Services`, which the tests call directly.
 Every money movement goes through `App\Services\Ledger::post()`, every stock change through `App\Services\Inventory::move()`.
+
+### Updating an existing installation
+Copy the new files over the old ones (keep `config/config.php` and `storage/`). Database changes are applied
+automatically on the first page load (or run `php database/migrate.php`). Take a backup first (*Administration → Backup*).
 
 ### Tests
 ```bash
