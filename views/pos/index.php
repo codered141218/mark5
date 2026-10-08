@@ -11,6 +11,7 @@ $boot['expense_accounts'] = can('pos.petty_cash')
     ? array_map(fn ($a) => ['id' => (int) $a['id'], 'name' => $a['name']], DB::all("SELECT id, name FROM accounts WHERE type = 'expense' AND active = 1 ORDER BY code"))
     : [];
 $boot['today'] = today();
+$boot['server_now'] = now();
 $boot['links'] = [
     'backOffice' => can('dashboard.view', 'inventory.view', 'reports.sales', 'finance.view', 'admin.settings') ? url('/') : null,
     'printerSetup' => url('/printer'),

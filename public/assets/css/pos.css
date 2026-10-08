@@ -187,3 +187,8 @@ dialog.pos-dlg.wide { max-width: 900px; }
   .paid-change { font-size: 44px; }
   .toasts { left: 12px; right: 12px; bottom: 76px; }
 }
+
+/* Receipt previews: monospace width = characters per line of the paper (32 / 48) */
+.receipt-preview .paper-58 .receipt { width: calc(32ch + 26px) !important; }
+.receipt-preview .paper-80 .receipt { width: calc(48ch + 26px) !important; }
+.table-keys .btn { background: var(--gray-soft); }

@@ -48,9 +48,12 @@
     const [y, m, d] = String(s).slice(0, 10).split('-').map(Number);
     return new Date(y, m - 1, d).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
   }
+  /** Server clock minus this device's clock (time zone / clock differences), so elapsed times are right. */
+  const clockOffset = toDate(window.POS_BOOT.server_now).getTime() - Date.now();
+  const minutesSince = (s) => (Date.now() + clockOffset - toDate(s).getTime()) / 60000;
   /** Minutes since an order was created, as "12m" / "1h 05m". */
   function elapsed(s) {
-    const m = Math.max(0, Math.floor((Date.now() - toDate(s).getTime()) / 60000));
+    const m = Math.max(0, Math.floor(minutesSince(s)));
     return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
   }
   const denomLabel = (d) => (d >= 1 ? '₱' + d.toLocaleString() : `${Math.round(d * 100)}¢`);
@@ -269,7 +272,7 @@
     closeOrder();
     loadMenu(); // retail stock changed
     const cfg = Printer.config();
-    const job = paidDialog(t);
+    const job = paidDialog(t, cfg.autoPrint);
     if (cfg.autoPrint) job.printed = await Print.receipt(t, false);
     if (cfg.kitchenSlip && unsent.length) Print.kitchen(t, unsent);
   }
@@ -335,7 +338,7 @@
     const total = S.orders.reduce((sum, o) => sum + o.total, 0);
     const cards = S.orders.map((o) => {
       const sub = [o.table_label && o.customer_name ? o.customer_name : '', TYPE[o.order_type], o.ticket_no].filter(Boolean).join(' · ');
-      const mins = (Date.now() - toDate(o.created_at).getTime()) / 60000;
+      const mins = minutesSince(o.created_at);
       return `<button type="button" class="order-card t-${o.order_type}" data-act="open" data-id="${o.id}">
           <span class="oc-head"><span class="oc-title">${esc(orderTitle(o))}</span>
             <span class="oc-time${mins > 60 ? ' late' : mins > 30 ? ' slow' : ''}">${elapsed(o.created_at)}</span></span>
@@ -525,8 +528,8 @@
           <input class="input table-input" name="label" maxlength="30" autocomplete="off" placeholder="Table, e.g. 5, 12A, Patio 2" value="${esc(order.table_label || '')}" autofocus>
           <div class="table-warn small"></div>
           <div class="table-layout">
-            <div class="table-chips">${chips}</div>
-            ${keypad(TABLE_KEYS, 'table-keys')}
+            <div><div class="field-label mb-sm">Tap a table</div><div class="table-chips">${chips}</div></div>
+            <div><div class="field-label mb-sm">or type it</div>${keypad(TABLE_KEYS, 'table-keys')}</div>
           </div>`,
         foot: `<button type="button" class="btn" data-act="none">No table</button>
           ${prompt ? '<button type="button" class="btn" data-act="skip">Skip</button>' : ''}
@@ -920,7 +923,7 @@
   }
 
   /** Success screen after payment. Returns {printed} so the caller can record the automatic print. */
-  function paidDialog(t) {
+  function paidDialog(t, autoPrint) {
     const job = { printed: false };
     const m = modal({
       title: 'Payment complete',
@@ -931,7 +934,7 @@
           <div class="paid-change-label">CHANGE</div>
           <div class="paid-change">${peso(t.change_amount)}</div>
         </div>`,
-      foot: `<button type="button" class="btn btn-lg" data-act="print">⎙ Print receipt</button><span class="grow"></span>
+      foot: `<button type="button" class="btn btn-lg" data-act="print">⎙ ${autoPrint ? 'Print again' : 'Print receipt'}</button><span class="grow"></span>
         <button type="button" class="btn btn-lg" data-act="board">Orders</button>
         <button type="submit" class="btn btn-primary btn-lg" autofocus>New order</button>`,
       actions: {
@@ -1271,7 +1274,10 @@
   }
 
   /** On-screen previews use the same layout as the printed slip (printer.js document model). */
-  const previewOf = (doc) => Printer._internals.html(doc, Number(Printer.config().paper));
+  function previewOf(doc) {
+    const paper = Number(Printer.config().paper) === 80 ? 80 : 58;
+    return `<div class="paper-${paper}">${Printer._internals.html(doc, paper)}</div>`;
+  }
   const previewReceipt = (t) => previewOf(Printer._internals.receiptDoc(t, printCtx({})));
   const previewReading = (r, isZ) => previewOf(Printer._internals.readingDoc(r, printCtx({}), isZ));
 

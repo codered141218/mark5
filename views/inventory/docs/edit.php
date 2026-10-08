@@ -145,10 +145,11 @@ $confirmPost = [
 <script src="<?= asset('js/inventory.js') ?>"></script>
 
 <?php else: ?>
+<div class="stack">
   <div class="card">
     <div class="card-head"><h3>Details</h3></div>
     <div class="card-body">
-      <dl class="kv">
+      <dl class="kv" style="margin:0">
         <dt>Date</dt><dd><?= e(fmt_date($doc['doc_date'])) ?></dd>
         <?php if ($isRec): ?>
           <dt>Supplier</dt><dd><?= e($doc['supplier_name'] ?: '—') ?></dd>
@@ -185,4 +186,5 @@ $confirmPost = [
       <?php if (!$isRec): ?><div class="muted small">Posted at average cost; menu items were broken down into their ingredients.</div><?php endif; ?>
     </div>
   </div>
+</div>
 <?php endif; ?>
