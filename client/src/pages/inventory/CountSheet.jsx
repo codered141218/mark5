@@ -195,7 +195,7 @@ export default function CountSheet() {
                       <td className="bold">{r.item_name}</td>
                       <td className="muted">{r.sku}</td>
                       <td>{r.uom}</td>
-                      <td className="num">{qty(r.sys)}{open && Math.abs(r.current_qty - r.system_qty) > 0.00005 && <div className="muted small" title="Quantity when the count was started">start {qty(r.system_qty)}</div>}</td>
+                      <td className={`num ${r.sys < 0 ? 'text-red' : ''}`}>{qty(r.sys)}{open && Math.abs(r.current_qty - r.system_qty) > 0.00005 && <div className="muted small" title="Quantity when the count was started">start {qty(r.system_qty)}</div>}</td>
                       <td className="num">
                         {open
                           ? <NumberInput data-count="1" value={vals[r.id] ?? ''} onChange={(v) => setVals((x) => ({ ...x, [r.id]: v }))} onKeyDown={onEnter} placeholder="—" />

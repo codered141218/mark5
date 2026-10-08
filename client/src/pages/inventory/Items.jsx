@@ -55,7 +55,7 @@ export default function Items() {
   }, [rows]);
 
   const columns = [
-    { key: 'sku', label: 'SKU', width: 90 },
+    { key: 'sku', label: 'SKU', render: (r) => <span className="nowrap muted">{r.sku}</span> },
     { key: 'name', label: 'Name', render: (r) => <span className={r.active ? 'bold' : 'muted'}>{r.name}</span> },
     { key: 'category_name', label: 'Category' },
     { key: 'type_short', label: 'Type' },
