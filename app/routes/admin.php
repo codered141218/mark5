@@ -23,9 +23,10 @@ $router->post('/admin/settings', [SettingsController::class, 'save'], 'admin.set
 $router->get('/admin/backup', [BackupController::class, 'index'], 'admin.backup');
 $router->post('/admin/backup', [BackupController::class, 'create'], 'admin.backup');
 $router->post('/admin/backup/upload', [BackupController::class, 'upload'], 'admin.backup');
-$router->get('/admin/backup/{name}/download', [BackupController::class, 'download'], 'admin.backup');
-$router->post('/admin/backup/{name}/restore', [BackupController::class, 'restore'], 'admin.backup');
-$router->post('/admin/backup/{name}/delete', [BackupController::class, 'delete'], 'admin.backup');
+// The file name travels as ?name= / a form field: a ".sql" inside the URL path confuses some web servers.
+$router->get('/admin/backup/download', [BackupController::class, 'download'], 'admin.backup');
+$router->post('/admin/backup/restore', [BackupController::class, 'restore'], 'admin.backup');
+$router->post('/admin/backup/delete', [BackupController::class, 'delete'], 'admin.backup');
 
 $router->get('/admin/audit', [AuditController::class, 'index'], 'admin.audit');
 

@@ -48,13 +48,15 @@ class Backup
             $name = basename($file);
             $kind = 'manual';
             $created = date('Y-m-d H:i:s', filemtime($file));
-            if (preg_match('/^mark5_(.+)_(\d{8})-(\d{6})/', $name, $m)) {
+            $seq = 1; // several backups in the same second get -2, -3 ... (see create)
+            if (preg_match('/^mark5_(.+)_(\d{8})-(\d{6})(?:-(\d+))?\.sql$/', $name, $m)) {
                 $kind = $m[1];
                 $created = date('Y-m-d H:i:s', strtotime("$m[2] $m[3]"));
+                $seq = (int) ($m[4] ?? 1);
             }
-            $list[] = ['name' => $name, 'kind' => $kind, 'size' => filesize($file), 'created_at' => $created];
+            $list[] = ['name' => $name, 'kind' => $kind, 'size' => filesize($file), 'created_at' => $created, 'seq' => $seq];
         }
-        usort($list, fn ($a, $b) => [$b['created_at'], $b['name']] <=> [$a['created_at'], $a['name']]);
+        usort($list, fn ($a, $b) => [$b['created_at'], $b['seq']] <=> [$a['created_at'], $a['seq']]);
         return $list;
     }
 

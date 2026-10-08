@@ -216,6 +216,13 @@ class Items
         return $price > 0 ? r2($cost / ($price / self::vatDivisor()) * 100) : null;
     }
 
+    /** Unit cost with 2 to 4 decimals (costs per gram or ml are tiny), e.g. 0.055 or 190.00. */
+    public static function cost4($n): string
+    {
+        if ($n === null || $n === '') return '';
+        return preg_replace('/(\.\d{2}\d*?)0+$/', '$1', number_format((float) $n, 4));
+    }
+
     /** Stock status shown on the item list: inactive / NEGATIVE / REORDER / OK ('' for non-stocked). */
     public static function status(array $i): string
     {

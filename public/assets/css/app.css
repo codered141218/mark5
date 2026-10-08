@@ -351,3 +351,6 @@ dialog.modal form { display: flex; flex-direction: column; min-height: 0; max-he
 .combo-list div { padding: 7px 10px; cursor: pointer; }
 .combo-list div.hl, .combo-list div:hover { background: var(--brand-soft); }
 .combo-list .combo-group { font-size: 11px; text-transform: uppercase; color: var(--muted); cursor: default; background: var(--surface-2); }
+/* A closed <dialog> must stay hidden (the generic .modal rule above sets display:flex) */
+dialog.modal:not([open]) { display: none; }
+.checkbox input { flex-shrink: 0; }

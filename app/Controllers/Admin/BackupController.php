@@ -40,21 +40,24 @@ class BackupController
         return redirect('/admin/backup');
     }
 
-    public function download(Request $req, string $name): Response
+    public function download(Request $req): Response
     {
+        $name = (string) $req->input('name');
         return new FileResponse(Backup::path($name), $name, 'application/sql');
     }
 
-    public function delete(Request $req, string $name): Response
+    public function delete(Request $req): Response
     {
+        $name = (string) $req->input('name');
         Backup::delete($name);
         Audit::log('delete_backup', 'database', null, $name);
         flash('success', "Backup $name deleted.");
         return redirect('/admin/backup');
     }
 
-    public function restore(Request $req, string $name): Response
+    public function restore(Request $req): Response
     {
+        $name = (string) $req->input('name');
         return $this->signOut(Backup::restore(Backup::path($name), $name), $name);
     }
 
