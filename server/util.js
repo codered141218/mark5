@@ -46,6 +46,10 @@ function nextNo(name, prefix, padLen = 6) {
   if (!seq) {
     db.run('INSERT INTO sequences (name, prefix, next, pad) VALUES (?,?,?,?)', name, prefix || name, 1, padLen);
     seq = db.get('SELECT * FROM sequences WHERE name = ?', name);
+  } else if (prefix && prefix !== seq.prefix) {
+    // e.g. receipt prefix changed in settings
+    db.run('UPDATE sequences SET prefix = ? WHERE name = ?', prefix, name);
+    seq.prefix = prefix;
   }
   db.run('UPDATE sequences SET next = next + 1 WHERE name = ?', name);
   return `${seq.prefix}-${String(seq.next).padStart(seq.pad, '0')}`;

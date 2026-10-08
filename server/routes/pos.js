@@ -17,7 +17,7 @@ const PAYMENT_METHODS = {
   bank_transfer: { label: 'Bank Transfer / InstaPay', account: 'ewallet_clearing' },
   grabfood: { label: 'GrabFood', account: 'ewallet_clearing' },
   foodpanda: { label: 'foodpanda', account: 'ewallet_clearing' },
-  charge: { label: 'Charge to Account (A/R)', account: 'ar' },
+  charge: { label: 'Charge to Account', account: 'ar' },
 };
 const DENOMINATIONS = [1000, 500, 200, 100, 50, 20, 10, 5, 1, 0.25, 0.1, 0.05];
 

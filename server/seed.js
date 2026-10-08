@@ -1,7 +1,7 @@
 'use strict';
 const bcrypt = require('bcryptjs');
 const db = require('./db');
-const { now, setSetting, getSetting } = require('./util');
+const { now, setSetting, getSetting, nextNo } = require('./util');
 const { DEFAULT_ROLES } = require('./permissions');
 const { seedAccounts } = require('./gl');
 
@@ -12,6 +12,8 @@ const DEFAULT_SETTINGS = {
   business_phone: '',
   receipt_title: 'ORDER RECEIPT',
   receipt_footer: 'Thank you, please come again!',
+  receipt_prefix: 'OR',
+  require_payment_ref: '0',
   vat_registered: '1',
   vat_rate: '12',
   sc_discount_rate: '20',
@@ -160,8 +162,8 @@ function seedSampleData() {
     db.insert('suppliers', { name: 'Metro Meat Supply', contact_person: 'Mang Jun', phone: '0917-000-0000', terms_days: 15, active: 1 });
     db.insert('suppliers', { name: 'Divisoria Dry Goods Trading', phone: '0918-000-0000', terms_days: 0, active: 1 });
     db.insert('customers', { name: 'ABC Corporation (Charge Account)', terms_days: 30, credit_limit: 50000, active: 1 });
-    db.insert('employees', { emp_no: 'EMP-001', full_name: 'Juan Dela Cruz', position: 'Cook', department: 'Kitchen', active: 1, date_hired: '2025-01-15' });
-    db.insert('employees', { emp_no: 'EMP-002', full_name: 'Maria Santos', position: 'Cashier', department: 'Front of House', active: 1, date_hired: '2025-03-01' });
+    db.insert('employees', { emp_no: nextNo('EMP', 'EMP', 3), full_name: 'Juan Dela Cruz', position: 'Cook', department: 'Kitchen', active: 1, date_hired: '2025-01-15' });
+    db.insert('employees', { emp_no: nextNo('EMP', 'EMP', 3), full_name: 'Maria Santos', position: 'Cashier', department: 'Front of House', active: 1, date_hired: '2025-03-01' });
   });
 }
 

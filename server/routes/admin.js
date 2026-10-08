@@ -10,11 +10,23 @@ const backup = require('../backup');
 const router = express.Router();
 
 // ------------------------------------------------------------------ auth (public)
+// Simple brute-force guard: 10 failed attempts per username+IP locks for 15 minutes.
+const failures = new Map();
+const LOCK_MS = 15 * 60 * 1000;
 router.post('/auth/login', h((req) => {
   const { username, password } = req.body || {};
   required(req.body || {}, 'username', 'password');
+  const key = `${String(username).toLowerCase()}|${req.ip}`;
+  const f = failures.get(key);
+  if (f && f.count >= 10 && Date.now() - f.first < LOCK_MS) throw new HttpError(429, 'Too many failed attempts. Try again in 15 minutes.');
   const u = db.get('SELECT * FROM users WHERE username = ?', username);
-  if (!u || !bcrypt.compareSync(String(password), u.password_hash)) throw new HttpError(401, 'Invalid username or password');
+  if (!u || !bcrypt.compareSync(String(password), u.password_hash)) {
+    const cur = f && Date.now() - f.first < LOCK_MS ? f : { count: 0, first: Date.now() };
+    cur.count++;
+    failures.set(key, cur);
+    throw new HttpError(401, 'Invalid username or password');
+  }
+  failures.delete(key);
   if (!u.active) throw new HttpError(401, 'Account is disabled');
   const token = createSession(u.id);
   audit(u.id, 'login', 'user', u.id);

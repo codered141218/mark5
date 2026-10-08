@@ -28,7 +28,7 @@ function createSession(userId) {
 
 function authenticate(req, res, next) {
   const hdr = req.headers.authorization || '';
-  const token = hdr.startsWith('Bearer ') ? hdr.slice(7) : req.query.token;
+  const token = hdr.startsWith('Bearer ') ? hdr.slice(7) : null;
   if (!token) return next(new HttpError(401, 'Please log in'));
   const s = db.get('SELECT * FROM sessions WHERE token = ?', token);
   if (!s || new Date(s.expires_at) < new Date()) {
