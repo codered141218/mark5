@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { api } from '../../api';
-import { peso, today } from '../../format';
+import { peso, money, today } from '../../format';
 import {
   Badge, Button, Card, Checkbox, Empty, ErrorBox, Field, Input, Loading, Modal, NumberInput, PageHeader, Select, Textarea, useApi, useDialog, useToast,
 } from '../../components/ui';
@@ -38,8 +38,9 @@ export default function Banks() {
       ...t,
       bank: t.txn_type === 'transfer' ? `${t.bank_name} → ${t.transfer_bank_name}` : t.bank_name,
       detail: [t.txn_type === 'transfer' ? 'Bank transfer' : t.counter_account_name, t.description].filter(Boolean).join(' — '),
-      money_in: incoming ? t.amount : null,
-      money_out: incoming ? null : t.amount,
+      // Bank effect: deposits arrive net of charges, withdrawals leave gross of charges.
+      money_in: incoming ? t.amount - (t.txn_type === 'deposit' ? t.bank_charges || 0 : 0) : null,
+      money_out: incoming ? null : t.amount + (t.txn_type === 'withdrawal' ? t.bank_charges || 0 : 0),
     };
   }), [txns.data, bankId]);
 
@@ -59,6 +60,7 @@ export default function Banks() {
     { key: 'reference', label: 'Reference' },
     { key: 'money_in', label: 'Money in', type: 'money', total: posted('money_in'), render: (r) => (r.money_in ? <span className="text-green">{peso(r.money_in)}</span> : '') },
     { key: 'money_out', label: 'Money out', type: 'money', total: posted('money_out'), render: (r) => (r.money_out ? <span className="text-red">{peso(r.money_out)}</span> : '') },
+    { key: 'bank_charges', label: 'Charges', type: 'money', total: posted('bank_charges'), render: (r) => (r.bank_charges ? money(r.bank_charges) : '') },
     { key: 'status', label: 'Status', render: (r) => <Badge>{r.status}</Badge> },
     { key: '_act', label: '', noExport: true, sortable: false, render: (r) => r.status === 'posted' && <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); voidTxn(r); }}>Void</Button> },
   ];

@@ -23,6 +23,17 @@ function plain(row) {
   return row ? { ...row } : row;
 }
 
+// Columns added after the first release: [table, column, definition]
+const ADDED_COLUMNS = [
+  ['bank_txns', 'bank_charges', 'REAL NOT NULL DEFAULT 0'],
+];
+function migrate() {
+  for (const [table, col, def] of ADDED_COLUMNS) {
+    const cols = conn.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+    if (!cols.includes(col)) conn.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`);
+  }
+}
+
 const db = {
   file: DB_FILE,
   dataDir: DATA_DIR,
@@ -31,6 +42,7 @@ const db = {
     conn = new DatabaseSync(DB_FILE);
     conn.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
     conn.exec(fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8'));
+    migrate();
     return db;
   },
 

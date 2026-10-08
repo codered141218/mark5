@@ -127,6 +127,7 @@ CREATE TABLE IF NOT EXISTS bank_txns (
   txn_date TEXT NOT NULL,
   txn_type TEXT NOT NULL CHECK (txn_type IN ('deposit','withdrawal','transfer')),
   amount REAL NOT NULL,
+  bank_charges REAL NOT NULL DEFAULT 0,
   counter_account_id INTEGER REFERENCES accounts(id),
   transfer_bank_id INTEGER REFERENCES bank_accounts(id),
   reference TEXT,

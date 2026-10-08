@@ -54,7 +54,7 @@ function loadJE(id) {
   );
   return je;
 }
-router.get('/journals', requirePerm('finance.view'), h((req) => {
+router.get('/journals', requirePerm('finance.view', 'finance.journal'), h((req) => {
   const { from, to, source_type, q } = req.query;
   const where = ['e.entry_date BETWEEN ? AND ?'];
   const p = [from || '0000-00-00', to || '9999-99-99'];
@@ -65,7 +65,7 @@ router.get('/journals', requirePerm('finance.view'), h((req) => {
      FROM journal_entries e LEFT JOIN users u ON u.id = e.created_by WHERE ${where.join(' AND ')} ORDER BY e.entry_date DESC, e.id DESC LIMIT 3000`, ...p
   );
 }));
-router.get('/journals/:id', requirePerm('finance.view'), h((req) => loadJE(req.params.id)));
+router.get('/journals/:id', requirePerm('finance.view', 'finance.journal'), h((req) => loadJE(req.params.id)));
 router.post('/journals', requirePerm('finance.journal'), h((req) => {
   required(req.body, 'entry_date');
   const id = gl.postJE({
@@ -168,7 +168,8 @@ router.post('/bank-txns', requirePerm('finance.banks'), h((req) => {
   const id = db.tx(() => {
     const tid = db.insert('bank_txns', {
       doc_no: nextNo('BT', 'BT'), bank_account_id: bank.id, txn_date, txn_type, amount, counter_account_id: txn_type === 'transfer' ? null : counter_account_id,
-      transfer_bank_id: txn_type === 'transfer' ? transfer_bank_id : null, reference, description, status: 'posted', created_by: req.user.id, created_at: now(),
+      transfer_bank_id: txn_type === 'transfer' ? transfer_bank_id : null, bank_charges: txn_type === 'transfer' ? 0 : r2(req.body.bank_charges),
+      reference, description, status: 'posted', created_by: req.user.id, created_at: now(),
     });
     const jeId = gl.postJE({ date: txn_date, memo: description ? `${memo} - ${description}` : memo, source_type: 'bank', source_id: tid, ref_no: reference, user_id: req.user.id, lines });
     db.update('bank_txns', tid, { journal_entry_id: jeId });
