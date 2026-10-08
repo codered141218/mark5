@@ -1,7 +1,7 @@
 'use strict';
 const express = require('express');
 const db = require('../db');
-const { h, bad, notFound, now, today, r2, r4, num, audit, nextNo, required, getSetting } = require('../util');
+const { h, bad, notFound, now, today, r2, r4, num, audit, nextNo, required, getSetting, addDays } = require('../util');
 const { requirePerm, assertPerm } = require('../auth');
 const inv = require('../inventory');
 const gl = require('../gl');
@@ -364,10 +364,8 @@ function postDoc(id, req) {
     let apId = null;
     if (d.payment_mode === 'credit') {
       const sup = db.get('SELECT * FROM suppliers WHERE id = ?', d.supplier_id);
-      const due = new Date(d.doc_date + 'T00:00:00');
-      due.setDate(due.getDate() + (sup ? sup.terms_days : 0));
       apId = db.insert('ap_bills', {
-        bill_no: nextNo('AP', 'AP'), supplier_id: d.supplier_id, bill_date: d.doc_date, due_date: due.toISOString().slice(0, 10),
+        bill_no: nextNo('AP', 'AP'), supplier_id: d.supplier_id, bill_date: d.doc_date, due_date: addDays(d.doc_date, sup ? sup.terms_days : 0),
         ref_no: d.invoice_no || d.doc_no, description: `Delivery ${d.doc_no}`, amount: gross, paid_amount: 0, status: 'open',
         expense_account_id: gl.acct('inventory'), source_type: 'inv_receive', source_id: d.id, journal_entry_id: jeId, created_by: req.user.id, created_at: now(),
       });

@@ -50,7 +50,7 @@ export const factorOf = (units, uomId) => {
 // ------------------------------------------------------------------ searchable select (combobox)
 /**
  * <SearchSelect options={[{value,label,sub}]} value onChange(value, option) placeholder />
- * Type to filter, arrows to move, Enter/Tab to pick, Esc to close.
+ * Click or type to open, arrows to move, Enter/Tab to pick, Esc to close.
  */
 export const SearchSelect = React.forwardRef(function SearchSelect(
   { options, value, onChange, placeholder = 'Search…', disabled, autoFocus, className = '' }, outerRef
@@ -71,11 +71,23 @@ export const SearchSelect = React.forwardRef(function SearchSelect(
 
   const filtered = useMemo(() => {
     if (!q) return options.slice(0, 200);
-    const words = q.toLowerCase().split(/\s+/).filter(Boolean);
-    return options.filter((o) => {
-      const hay = `${o.label} ${o.sub || ''} ${o.search || ''}`.toLowerCase();
-      return words.every((w) => hay.includes(w));
-    }).slice(0, 200);
+    const t = q.trim().toLowerCase();
+    const words = t.split(/\s+/).filter(Boolean);
+    const rank = (o) => {
+      const l = String(o.label).toLowerCase();
+      if (l === t || String(o.search || '').toLowerCase() === t) return 0;
+      if (l.startsWith(t)) return 1;
+      return l.includes(t) ? 2 : 3;
+    };
+    return options
+      .filter((o) => {
+        const hay = `${o.label} ${o.sub || ''} ${o.search || ''}`.toLowerCase();
+        return words.every((w) => hay.includes(w));
+      })
+      .map((o, i) => [rank(o), i, o])
+      .sort((a, b) => a[0] - b[0] || a[1] - b[1])
+      .slice(0, 200)
+      .map((x) => x[2]);
   }, [options, q]);
 
   const place = () => {
@@ -115,7 +127,7 @@ export const SearchSelect = React.forwardRef(function SearchSelect(
     <>
       <input ref={setRefs} className={`input ${className}`} disabled={disabled} autoFocus={autoFocus}
         value={open ? q : selected ? selected.label : ''} placeholder={open && selected ? selected.label : placeholder}
-        onFocus={() => { setOpen(true); setQ(''); }}
+        onFocus={(e) => { setQ(''); e.target.select(); }}
         onBlur={() => { setOpen(false); setQ(''); }}
         onChange={(e) => { setQ(e.target.value); if (!open) setOpen(true); }}
         onKeyDown={onKey} onClick={() => !open && setOpen(true)} />

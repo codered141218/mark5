@@ -68,6 +68,10 @@ test('stock in on credit creates inventory, AP and balanced GL', async () => {
   assert.equal(rice2.avg_cost, 55);
   const bills = await api('GET', '/finance/ap/bills?status=unpaid');
   assert.equal(bills[0].amount, 11324);
+  // due date = delivery date + supplier terms (15 days), computed in local time
+  const d0 = new Date(doc.doc_date + 'T00:00:00'); d0.setDate(d0.getDate() + suppliers[0].terms_days);
+  const pad = (n) => String(n).padStart(2, '0');
+  assert.equal(bills[0].due_date, `${d0.getFullYear()}-${pad(d0.getMonth() + 1)}-${pad(d0.getDate())}`);
   const { d, c } = await tb();
   assert.equal(d, c);
 });

@@ -135,8 +135,8 @@ export default function ItemEdit() {
     } catch (e) { toast(e.message, 'error'); }
   };
 
-  if (item.loading && !isNew) return <Loading />;
   if (item.error) return <ErrorBox error={item.error} />;
+  if (!isNew && (!item.data || String(item.data.id) !== String(id))) return <Loading />;
   const i = item.data;
 
   return (
