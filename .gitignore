@@ -1,5 +1,7 @@
-node_modules/
-dist/
-data/
-*.log
-.env
+/config/config.php
+/storage/backups/*
+!/storage/backups/.gitkeep
+/storage/logs/*
+!/storage/logs/.gitkeep
+/vendor/
+.DS_Store
