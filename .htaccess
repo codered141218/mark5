@@ -1,0 +1,4 @@
+Options -Indexes
+# If the whole project folder is placed inside htdocs, forward requests to /public
+RewriteEngine On
+RewriteRule ^(.*)$ public/$1 [L]
