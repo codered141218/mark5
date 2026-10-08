@@ -1,0 +1,42 @@
+{
+  "name": "mark5-restaurant-suite",
+  "version": "1.0.0",
+  "description": "All-in-one restaurant POS, inventory and accounting system for Philippine restaurants",
+  "main": "server/index.js",
+  "scripts": {
+    "dev": "concurrently -k -n api,web \"node --watch --no-warnings=ExperimentalWarning server/index.js\" \"vite\"",
+    "dev:api": "node --watch --no-warnings=ExperimentalWarning server/index.js",
+    "dev:web": "vite",
+    "build": "vite build",
+    "start": "node --no-warnings=ExperimentalWarning server/index.js",
+    "test": "node --no-warnings=ExperimentalWarning --test test/*.test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/codered141218/mark5.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
+  "bugs": {
+    "url": "https://github.com/codered141218/mark5/issues"
+  },
+  "homepage": "https://github.com/codered141218/mark5#readme",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "exceljs": "^4.4.0",
+    "express": "^4.22.3"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.7.0",
+    "concurrently": "^10.0.6",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.30.6",
+    "vite": "^5.4.21"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "private": true
+}
