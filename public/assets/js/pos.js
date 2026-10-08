@@ -774,7 +774,7 @@
       body: `<p class="muted mt-0">All items of the chosen order move to this order; the other order is closed.</p>
         ${others.map((o) => `<div class="pick-row">
           <div><b>${esc(orderTitle(o))}</b> <span class="muted">· ${esc(o.ticket_no)}${o.table_label && o.customer_name ? ' · ' + esc(o.customer_name) : ''}</span>
-            <div class="muted small">${qtyStr(o.item_count)} items · ${peso(o.total)} · ${elapsed(o.created_at)}</div></div>
+            <div class="muted small">${qtyStr(o.item_count)} item${Number(o.item_count) === 1 ? '' : 's'} · ${peso(o.total)} · ${elapsed(o.created_at)}</div></div>
           <button type="button" class="btn btn-primary" data-act="merge" data-id="${o.id}">Merge</button></div>`).join('') || '<div class="empty">No other open orders.</div>'}`,
       actions: {
         merge: async (b) => {
