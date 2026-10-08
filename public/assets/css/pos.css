@@ -1,0 +1,189 @@
+/* POS cashier screen (views/pos/index.php + js/pos.js). Base POS classes (.pos, .tiles, .tline, .keypad ...) are in app.css. */
+
+/* ---------- screens: orders board vs order screen */
+.pos.is-board .menu-pane, .pos.is-board .order-pane, .pos.is-board .pos-bottom { display: none; }
+.pos.is-order .board-view { display: none; }
+.board-view { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+.pos-bottom { display: none; }
+
+/* ---------- top bar */
+.pos-top { overflow-x: auto; scrollbar-width: none; }
+.pos-top::-webkit-scrollbar { display: none; }
+.pos-top > * { flex-shrink: 0; }
+.pos-top .btn.on { background: var(--side-2); }
+.pos-top a.btn { text-decoration: none; }
+.pos-top .count { background: var(--brand); color: #fff; border-radius: 999px; padding: 1px 7px; font-size: 12px; font-weight: 700; }
+.pos-top .chip-open { background: #14532d; color: #dcfce7; }
+.pos-top .chip-closed { background: #7f1d1d; color: #fff; }
+.printer-chip.ok { color: #bbf7d0 !important; }
+.printer-chip.warn { color: #fde68a !important; background: rgba(180, 83, 9, .25); }
+
+/* ---------- orders board */
+.btn-xl { height: 60px; padding: 0 24px; font-size: 17px; font-weight: 700; border-radius: 10px; }
+.board-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.board-sum { font-weight: 600; }
+.board-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; align-content: start; }
+.board-empty { grid-column: 1 / -1; background: var(--surface); border-radius: var(--radius); padding: 60px 20px; font-size: 15px; }
+.order-card { position: relative; display: flex; flex-direction: column; gap: 6px; text-align: left; min-height: 128px; padding: 14px; border: none;
+  border-radius: 12px; background: var(--surface); box-shadow: var(--shadow); cursor: pointer; font: inherit; color: var(--text); border-top: 5px solid var(--brand); }
+.order-card:active { transform: scale(.98); }
+.order-card.t-takeout { border-top-color: var(--blue); }
+.order-card.t-delivery { border-top-color: #7c3aed; }
+.oc-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.oc-title { font-size: 19px; font-weight: 800; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.oc-time { font-size: 12px; font-weight: 700; color: var(--muted); flex-shrink: 0; }
+.oc-time.slow { color: var(--amber); }
+.oc-time.late { color: var(--red); }
+.oc-sub { font-size: 12px; color: var(--text-2); }
+.oc-foot { display: flex; justify-content: space-between; align-items: baseline; margin-top: auto; font-size: 13px; color: var(--text-2); }
+.oc-foot b { font-size: 17px; color: var(--text); font-variant-numeric: tabular-nums; }
+.oc-unsent { font-size: 12px; font-weight: 600; color: var(--amber); background: var(--amber-soft); border-radius: 6px; padding: 2px 8px; align-self: flex-start; }
+
+/* ---------- order screen */
+.pos-search { height: 46px; font-size: 16px; }
+.pos-search-clear { height: 46px; }
+.cat-btn { min-width: 64px; }
+.tiles { padding-bottom: 4px; }
+.order-pane .ticket-head { display: flex; flex-direction: column; gap: 4px; }
+.order-title { border: none; background: none; padding: 4px 0; font: inherit; font-size: 16px; text-align: left; cursor: pointer; color: var(--text); min-width: 0; }
+.table-badge { flex-shrink: 0; height: 40px; padding: 0 14px; border-radius: 999px; border: 2px dashed var(--brand); background: var(--surface); color: var(--brand);
+  font: inherit; font-weight: 700; cursor: pointer; }
+.table-badge.set { border-style: solid; background: var(--brand); color: #fff; font-size: 15px; }
+.tline { min-height: 52px; }
+.ticket-actions .pay { grid-column: 1 / -1; height: 58px; font-size: 19px; }
+
+/* ---------- dialogs */
+dialog.pos-dlg { max-width: 520px; }
+dialog.pos-dlg.wide { max-width: 900px; }
+.pos-dlg .modal-foot { align-items: center; }
+.pos-dlg .modal-head h3 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mt-0 { margin-top: 0; }
+.mb-sm { margin-bottom: 6px; }
+.input-xl { height: 52px; font-size: 22px; font-weight: 700; }
+.pick-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.pick-row.muted-row { opacity: .6; }
+.receipt-preview { border: 1px solid var(--border); border-radius: 8px; background: #fff; max-height: 56vh; overflow-y: auto; padding: 4px; }
+.receipt-preview .receipt { max-width: 100%; }
+
+/* table */
+.table-input { height: 54px; font-size: 24px; font-weight: 700; text-align: center; }
+.table-warn { min-height: 20px; margin: 6px 0; color: var(--amber); font-weight: 600; }
+.table-layout { display: grid; grid-template-columns: 1fr 200px; gap: 14px; }
+.table-chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); gap: 6px; align-content: start; }
+.table-chip { height: 52px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--surface); font: inherit; font-size: 17px; font-weight: 700;
+  cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1; color: var(--text); padding: 0 4px; }
+.table-chip small { font-size: 9px; font-weight: 600; margin-top: 3px; text-transform: uppercase; }
+.table-chip.busy { background: var(--amber-soft); border-color: #fcd34d; color: #78350f; }
+.table-chip.current { outline: 3px solid var(--brand); }
+.table-chip:active { transform: scale(.95); }
+.keypad .btn { height: 52px; }
+
+/* line */
+.qty-row { display: grid; grid-template-columns: 64px 1fr 64px; gap: 8px; }
+.qty-row .btn { height: 56px; font-size: 24px; }
+.qty-input { height: 56px; font-size: 24px; font-weight: 700; text-align: center; }
+.note-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.note-chips .btn { height: 36px; }
+.void-box { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border-strong); }
+
+/* discount */
+.dlg-discount .tabs { margin-bottom: 12px; }
+.dlg-discount .tab { padding: 12px 14px; }
+
+/* split */
+.split-line { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.split-line .btn { height: 42px; min-width: 42px; }
+.split-q { width: 40px; text-align: center; font-weight: 700; font-size: 16px; }
+
+/* pay */
+.pay-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
+.pay-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.pay-stats .stat-value { font-size: 24px; font-weight: 800; }
+.stat-value { font-variant-numeric: tabular-nums; }
+.pay-entry { height: 60px; font-size: 28px; font-weight: 700; text-align: right; }
+.quick-cash { grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); }
+.quick-cash:empty { display: none; }
+.pay-line { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.pay-complete { min-width: 220px; }
+
+/* paid */
+.paid-box { text-align: center; padding: 10px 0 6px; }
+.paid-check { width: 64px; height: 64px; margin: 0 auto 10px; border-radius: 50%; background: var(--green-soft); color: var(--green); font-size: 36px; font-weight: 800;
+  display: grid; place-items: center; }
+.paid-change-label { margin-top: 18px; font-size: 13px; font-weight: 700; letter-spacing: .1em; color: var(--muted); }
+.paid-change { font-size: 52px; font-weight: 800; color: var(--green); font-variant-numeric: tabular-nums; line-height: 1.1; }
+
+/* receipts */
+.rcpt-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+.rcpt-list { max-height: 58vh; overflow-y: auto; margin-top: 8px; border: 1px solid var(--border); border-radius: 8px; }
+.rcpt-row { grid-template-columns: 1fr auto; }
+
+/* cash count */
+.denoms .input { width: 80px; height: 40px; text-align: center; }
+.denom-label { width: 64px; font-weight: 700; }
+.denom-amt { flex: 1; text-align: right; }
+.count-total { font-size: 20px; font-weight: 800; }
+.z-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.z-summary > div { border-radius: 8px; padding: 10px; background: var(--gray-soft); display: flex; flex-direction: column; gap: 2px; }
+.z-summary span { font-size: 12px; color: var(--muted); font-weight: 600; }
+.z-summary b { font-size: 18px; font-variant-numeric: tabular-nums; }
+.z-summary.ok > div:last-child { background: var(--green-soft); color: var(--green); }
+.z-summary.short > div:last-child { background: var(--red-soft); color: var(--red); }
+.z-summary.over > div:last-child { background: var(--amber-soft); color: var(--amber); }
+
+/* printer */
+.printer-status { padding: 12px 14px; border-radius: 8px; background: var(--gray-soft); }
+.printer-status.ok { background: var(--green-soft); color: #14532d; }
+.printer-status.warn { background: var(--amber-soft); color: #78350f; }
+
+/* ---------- tablets */
+@media (max-width: 1100px) {
+  .pos-right { width: 360px; }
+}
+@media (min-width: 700px) and (max-width: 860px) {
+  /* Portrait tablets: keep menu and order side by side (app.css stacks them below 860px) */
+  .pos-body { flex-direction: row; }
+  .pos-right { width: 330px; height: auto; border-left: 1px solid var(--border); border-top: none; }
+  .tiles { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); }
+  .ticket-actions .btn { font-size: 12.5px; }
+}
+
+/* ---------- phones: menu OR order, switched with the bottom bar */
+@media (max-width: 699px) {
+  .pos-top { height: 50px; padding: 0 8px; gap: 6px; }
+  .pos-top .title { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .board-view { padding: 10px; }
+  .board-actions .btn-xl { flex: 1 1 30%; padding: 0 8px; font-size: 15px; height: 56px; }
+  .board-actions .grow { display: none; }
+  .board-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .order-card { min-height: 116px; padding: 10px; }
+  .oc-title { font-size: 16px; }
+
+  .pos-body { flex-direction: column; }
+  .pos.is-order.pane-menu .order-pane { display: none; }
+  .pos.is-order.pane-order .menu-pane { display: none; }
+  .pos-right { width: 100%; height: auto; flex: 1; min-height: 0; border: none; }
+  .pos-left { padding: 8px; gap: 8px; }
+  .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 84px; }
+  .ticket-actions { grid-template-columns: repeat(4, 1fr); padding: 8px; }
+  .ticket-actions .btn { height: 44px; font-size: 12px; }
+  .ticket-actions .pay { height: 52px; }
+
+  .pos.is-order .pos-bottom { display: grid; grid-template-columns: 90px 1fr; gap: 6px; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); background: var(--side); flex-shrink: 0; }
+  .pos-bottom button { height: 48px; border-radius: 8px; border: none; background: var(--side-2); color: #e5e7eb; font: inherit; font-weight: 600; cursor: pointer; }
+  .pos-bottom button.on { background: var(--brand); color: #fff; }
+
+  dialog.pos-dlg, dialog.pos-dlg.wide { width: 100%; max-width: 100%; max-height: 100%; height: 100%; margin: 0; border-radius: 0; }
+  dialog.pos-dlg form { max-height: 100%; height: 100%; }
+  .pos-dlg .modal-body { flex: 1; }
+  .pos-dlg .modal-foot { padding: 10px 12px; }
+  .pos-dlg .modal-foot .grow { display: none; }
+  .pos-dlg .modal-foot .btn { flex: 1 1 auto; }
+  .table-layout, .pay-grid, .rcpt-grid { grid-template-columns: minmax(0, 1fr); }
+  .table-chips { grid-template-columns: repeat(5, 1fr); }
+  .pay-methods { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .pay-complete { min-width: 0; }
+  .denoms { grid-template-columns: minmax(0, 1fr); }
+  .paid-change { font-size: 44px; }
+  .toasts { left: 12px; right: 12px; bottom: 76px; }
+}

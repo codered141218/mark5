@@ -20,7 +20,7 @@ class PayableController extends PartyDocController
             'paidLabel' => 'Paid', 'payVerb' => 'Pay', 'payAction' => 'pay', 'payDate' => 'pay_date', 'payments' => 'payments',
             'paymentPath' => 'payments', 'paymentWord' => 'payment', 'methods' => Payables::METHODS, 'methodLabel' => 'Paid from',
             'referenceLabel' => 'Reference / check no',
-            'account' => 'expense_account_id', 'accountLabel' => 'Expense / asset account', 'accountTypes' => ['expense', 'asset'],
+            'account' => 'expense_account_id', 'accountLabel' => 'Expense / asset account', 'accountTypes' => ['expense', 'asset'], 'defaultAccount' => null,
             'refLabel' => 'Supplier invoice / ref no', 'autoSource' => 'inv_receive', 'autoLabel' => 'From delivery',
             'autoNote' => 'This bill came from a delivery receipt. To void it, void the delivery instead.',
         ];

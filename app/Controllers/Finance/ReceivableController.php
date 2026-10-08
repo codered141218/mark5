@@ -4,6 +4,7 @@ namespace App\Controllers\Finance;
 use App\Core\Request;
 use App\Core\Response;
 use App\Services\Finance\Receivables;
+use App\Services\Ledger;
 
 /** Accounts receivable pages: customer invoices, collections and aging. */
 class ReceivableController extends PartyDocController
@@ -20,7 +21,7 @@ class ReceivableController extends PartyDocController
             'paidLabel' => 'Collected', 'payVerb' => 'Collect', 'payAction' => 'collect', 'payDate' => 'rcpt_date', 'payments' => 'receipts',
             'paymentPath' => 'receipts', 'paymentWord' => 'collection', 'methods' => Receivables::METHODS, 'methodLabel' => 'Received into',
             'referenceLabel' => 'OR / reference no',
-            'account' => 'income_account_id', 'accountLabel' => 'Income account', 'accountTypes' => ['income'],
+            'account' => 'income_account_id', 'accountLabel' => 'Income account', 'accountTypes' => ['income'], 'defaultAccount' => Ledger::account('sales'),
             'refLabel' => 'Reference / PO no', 'autoSource' => 'pos_sale', 'autoLabel' => 'From POS charge',
             'autoNote' => 'This receivable came from a POS charge sale. To void it, void the POS receipt instead.',
         ];

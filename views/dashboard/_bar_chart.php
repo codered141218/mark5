@@ -2,15 +2,17 @@
 /**
  * Single-series vertical bar chart as inline SVG (no JavaScript). Hover a bar for its <title> tooltip.
  * Variables: $bars = [['label' => '01', 'value' => 1234.5, 'tip' => 'Oct 1, 2026 · 12 receipts'], ...]
- *            $format = fn ($v) => string (default peso), $height (default 200)
+ *            $format = fn ($v) => string (default peso), $height (default 200), $width (default 640; smaller for narrow cards),
+ *            $integer = true for counts (keeps axis ticks on whole numbers)
  */
 $format = $format ?? 'peso';
 $height = $height ?? 200;
+$width = $width ?? 640;
 if (!$bars) {
     echo '<div class="empty">No data for this period</div>';
     return;
 }
-$W = 640; $H = $height; $padL = 52; $padR = 8; $padT = 10; $padB = 24;
+$W = $width; $H = $height; $padL = 52; $padR = 8; $padT = 10; $padB = 24;
 $plotW = $W - $padL - $padR;
 $plotH = $H - $padT - $padB;
 $max = max(array_merge([0], array_column($bars, 'value'))) ?: 1;
@@ -18,6 +20,7 @@ $max = max(array_merge([0], array_column($bars, 'value'))) ?: 1;
 $p = 10 ** floor(log10($max));
 $n = $max / $p;
 $nice = ($n <= 1 ? 1 : ($n <= 2 ? 2 : ($n <= 5 ? 5 : 10))) * $p;
+if (!empty($integer)) $nice = max($nice, 2);
 $short = function ($v) {
     if ($v >= 1e6) return round($v / 1e6, 1) . 'M';
     if ($v >= 1e3) return round($v / 1e3, 1) . 'k';

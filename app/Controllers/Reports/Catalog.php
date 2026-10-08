@@ -53,7 +53,7 @@ class Catalog
 
     private static function date(string $key = 'date', string $label = 'Date'): array
     {
-        return ['key' => $key, 'label' => $label, 'type' => 'date'];
+        return ['key' => $key, 'label' => $label, 'type' => 'date', 'align' => 'nowrap'];
     }
 
     private static function status(string $key = 'status', string $label = 'Status'): array
@@ -151,14 +151,14 @@ class Catalog
                 'columns' => [self::date('business_date', 'Business date'), self::status(), self::text('opened_by', 'Opened by'),
                     self::money('opening_cash', 'Beginning cash'), self::int('receipts', 'Receipts'), self::money('net_sales', 'Net sales'),
                     self::money('expected_cash', 'Expected cash'), self::money('counted_cash', 'Counted'), self::variance('variance', 'Over/(Short)'),
-                    self::text('closed_by', 'Closed by'), ['key' => 'closed_at', 'label' => 'Closed at', 'type' => 'datetime']],
+                    self::text('closed_by', 'Closed by'), ['key' => 'closed_at', 'label' => 'Closed at', 'type' => 'datetime', 'align' => 'nowrap']],
             ],
             'voids' => [
                 'label' => 'Voids report',
                 'rows' => fn ($f) => SalesReports::voids($f['from'], $f['to']),
                 'columns' => [self::date(), self::text('kind', 'Kind'), self::text('ref', 'Receipt/ticket'), self::text('item', 'Item'),
                     self::qty('qty', 'Qty'), self::money('amount', 'Amount'), self::text('reason', 'Reason'),
-                    ['key' => 'voided_at', 'label' => 'Voided at', 'type' => 'datetime'], self::text('authorized_by', 'Authorized by')],
+                    ['key' => 'voided_at', 'label' => 'Voided at', 'type' => 'datetime', 'align' => 'nowrap'], self::text('authorized_by', 'Authorized by')],
             ],
             'discounts' => [
                 'label' => 'Discounts / SC & PWD sales book',

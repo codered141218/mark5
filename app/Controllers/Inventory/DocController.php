@@ -214,6 +214,8 @@ class DocController
             'accountKeys' => array_column(array_filter($expense, fn ($a) => $a['system_key']), 'id', 'system_key'),
             'issueTo' => self::ISSUE_TO,
             'vatRate' => Settings::tax()['vatRate'],
+            'inputVat' => $doc && $doc['journal_entry_id'] ? (float) DB::value('SELECT COALESCE(SUM(debit), 0) FROM journal_lines WHERE entry_id = ? AND account_id = ?',
+                [$doc['journal_entry_id'], Ledger::account('input_vat')]) : 0.0,
             'canPost' => can('inventory.post'),
         ]);
     }

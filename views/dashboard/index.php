@@ -70,7 +70,7 @@ $foodTone = $k['food_cost_pct'] > 40 ? 'red' : ($k['food_cost_pct'] > 35 ? 'ambe
     </div>
     <div class="card">
       <div class="card-head"><h3>Busiest hours</h3><span class="muted small">receipts per hour</span></div>
-      <div class="card-body"><?= view('dashboard/_bar_chart', ['bars' => $hourlyReceipts, 'height' => 180, 'format' => fn ($v) => number_format($v) . ' receipts'], null) ?></div>
+      <div class="card-body"><?= view('dashboard/_bar_chart', ['bars' => $hourlyReceipts, 'height' => 200, 'width' => 400, 'integer' => true, 'format' => fn ($v) => number_format($v) . ' receipts'], null) ?></div>
     </div>
   </div>
 

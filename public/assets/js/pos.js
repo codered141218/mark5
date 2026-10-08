@@ -36,7 +36,8 @@
   const TYPE = { dine_in: 'Dine-in', takeout: 'Take-out', delivery: 'Delivery' };
   const DISC = { sc: 'Senior Citizen', pwd: 'PWD', percent: 'Promo', amount: 'Promo' };
   const NOTE_CHIPS = ['No onions', 'Extra spicy', 'Not spicy', 'Less ice', 'No ice', 'Well done', 'Extra rice', 'Take-out'];
-  const KEYS = ['7', '8', '9', '4', '5', '6', '1', '2', '3', '.', '0', '⌫'];
+  const MONEY_KEYS = ['7', '8', '9', '4', '5', '6', '1', '2', '3', '.', '0', '⌫'];
+  const TABLE_KEYS = ['7', '8', '9', '4', '5', '6', '1', '2', '3', 'C', '0', '⌫'];
   const finePointer = window.matchMedia('(pointer: fine)').matches; // mouse: autofocus inputs; touch: avoid popping the keyboard
 
   /** "2026-10-08 13:05:00" -> Date (server times are local times). */
@@ -154,25 +155,30 @@
   // =====================================================================================================
   // 4. Order actions
   // =====================================================================================================
-  /** Create the draft order on the server (first item added). */
-  async function ensureOrder() {
-    const d = S.order;
-    if (!d || !d.draft) return d;
-    const t = await Api.create({ order_type: d.order_type, table_label: d.table_label, customer_name: d.customer_name, pax: d.pax, notes: d.notes });
-    if (S.order === d) S.order = t;
-    return t;
+  /** Create a draft order on the server (when its first item is added). Returns the server ticket. */
+  async function ensureOrder(d) {
+    if (!d.draft) return d;
+    if (!d.created) {
+      d.created = await Api.create({ order_type: d.order_type, table_label: d.table_label, customer_name: d.customer_name, pax: d.pax, notes: d.notes });
+      if (S.order === d) S.order = d.created;
+    }
+    return d.created;
   }
 
-  /** Queue a change to the current order: fn(order) must return the updated ticket. */
+  /**
+   * Queue a change to the current order: fn(order) calls the API and returns the updated ticket.
+   * Changes run one after another, each on the order that was open when the button was pressed.
+   */
   function mutate(fn) {
-    const job = S.queue.then(async () => setOrder(await fn(await ensureOrder())));
+    const target = S.order;
+    const job = S.queue.then(async () => setOrder(await fn(await ensureOrder(target))));
     S.queue = job.catch(() => {});
-    return job.catch((e) => { showError(e); throw e; });
+    return job;
   }
 
   /** Show an updated ticket, unless the cashier already left that order. */
   function setOrder(t) {
-    if (S.view === 'order' && S.order && (S.order.draft || S.order.id === t.id)) {
+    if (S.view === 'order' && S.order && S.order.id === t.id) {
       S.order = t;
       renderOrder();
     }
@@ -213,7 +219,7 @@
   function addItem(item) {
     if (!S.session) { App.toast('Open the business day first', 'error'); return; }
     if (item.item_type === 'retail' && item.stock_qty <= 0) App.toast(`${item.name}: out of stock in the system`, 'info');
-    mutate((t) => Api.addItem(t.id, item.id)).catch(() => {});
+    mutate((t) => Api.addItem(t.id, item.id)).catch(showError);
   }
 
   /** Change the table. Drafts are changed locally. Returns false if it failed. */
@@ -228,7 +234,7 @@
       await mutate((t) => Api.table(t.id, label));
       App.toast(label ? `Table ${label} assigned` : 'Table removed');
       return true;
-    } catch (e) { return false; }
+    } catch (e) { showError(e); return false; }
   }
 
   /** Open the table dialog. prompt = asked before Send / Pay (has a Skip button). Resolves false when cancelled. */
@@ -338,13 +344,14 @@
           ${Number(o.unsent) ? `<span class="oc-unsent">● ${o.unsent} not sent to kitchen</span>` : ''}
         </button>`;
     }).join('');
+    const off = S.session ? '' : 'disabled';
     const closedMsg = can('pos.open_day') ? 'Press “Open Day” and enter the beginning cash to start selling.' : 'Ask a cashier or manager to open the day.';
     $('#board').innerHTML = `
       ${S.session ? '' : `<div class="alert alert-warn">The business day is not open. ${closedMsg}</div>`}
       <div class="board-actions">
-        <button class="btn btn-primary btn-xl" type="button" data-act="new" data-type="dine_in">+ New order</button>
-        <button class="btn btn-xl" type="button" data-act="new" data-type="takeout">+ Take-out</button>
-        <button class="btn btn-xl" type="button" data-act="new" data-type="delivery">+ Delivery</button>
+        <button class="btn btn-primary btn-xl" type="button" data-act="new" data-type="dine_in" ${off}>+ New order</button>
+        <button class="btn btn-xl" type="button" data-act="new" data-type="takeout" ${off}>+ Take-out</button>
+        <button class="btn btn-xl" type="button" data-act="new" data-type="delivery" ${off}>+ Delivery</button>
         <span class="grow"></span>
         <span class="muted board-sum">${S.orders.length} open · ${peso(total)}</span>
         <button class="btn btn-lg" type="button" data-act="refresh" title="Refresh">↻</button>
@@ -492,7 +499,7 @@
   const pinField = (show, name = 'pin') => (show ? `<label class="field mt"><span class="field-label">Manager PIN</span>
       <input class="input" name="${name}" type="password" inputmode="numeric" autocomplete="off">
       <span class="field-hint">Your role needs a manager’s approval for this.</span></label>` : '');
-  const keypad = (cls = '') => `<div class="keypad ${cls}">${KEYS.map((k) => `<button type="button" class="btn" data-act="key" data-k="${k}">${k}</button>`).join('')}</div>`;
+  const keypad = (keys, cls = '') => `<div class="keypad ${cls}">${keys.map((k) => `<button type="button" class="btn" data-act="key" data-k="${k}">${k}</button>`).join('')}</div>`;
   /** Apply a keypad key to a text value. */
   function keyInto(value, k, allowDot = true) {
     if (k === '⌫') return value.slice(0, -1);
@@ -519,7 +526,7 @@
           <div class="table-warn small"></div>
           <div class="table-layout">
             <div class="table-chips">${chips}</div>
-            ${keypad('table-keys').replace('data-k="."', 'data-k="C"').replace('>.<', '>C<')}
+            ${keypad(TABLE_KEYS, 'table-keys')}
           </div>`,
         foot: `<button type="button" class="btn" data-act="none">No table</button>
           ${prompt ? '<button type="button" class="btn" data-act="skip">Skip</button>' : ''}
@@ -811,7 +818,7 @@
           <div>
             <input class="input pay-entry" name="entry" inputmode="decimal" autocomplete="off">
             <div class="quick-cash mt"></div>
-            ${keypad('mt')}
+            ${keypad(MONEY_KEYS, 'mt')}
             <div class="row gap-sm mt"><button type="button" class="btn btn-lg grow" data-act="clear">Clear</button>
               <button type="button" class="btn btn-dark btn-lg grow pay-add" data-act="add"></button></div>
           </div>
@@ -825,13 +832,12 @@
         quick: (b) => add(Number(b.dataset.v)),
         removePay: (b) => { pays.splice(Number(b.dataset.i), 1); paint(); },
       },
-      onSubmit: (btn) => {
-        if (document.activeElement === entryEl && entry !== '') { add(); return; } // Enter in the amount box = add payment
-        complete(btn);
-      },
+      onSubmit: (btn) => complete(btn),
     });
     const entryEl = m.$('[name=entry]');
     entryEl.addEventListener('input', () => { entry = entryEl.value.replace(/[^\d.]/g, ''); paint(false); });
+    // Enter in the amount box adds the payment (Enter elsewhere completes)
+    entryEl.addEventListener('keydown', (e) => { if (e.key === 'Enter' && entry !== '') { e.preventDefault(); add(); } });
 
     async function loadCustomers() {
       if (customers) return;
@@ -925,7 +931,7 @@
           <div class="paid-change-label">CHANGE</div>
           <div class="paid-change">${peso(t.change_amount)}</div>
         </div>`,
-      foot: `<button type="button" class="btn btn-lg" data-act="print">⎙ Print ${''}receipt</button><span class="grow"></span>
+      foot: `<button type="button" class="btn btn-lg" data-act="print">⎙ Print receipt</button><span class="grow"></span>
         <button type="button" class="btn btn-lg" data-act="board">Orders</button>
         <button type="submit" class="btn btn-primary btn-lg" autofocus>New order</button>`,
       actions: {
@@ -934,7 +940,7 @@
       },
       onSubmit: () => { m.close(); newOrder('dine_in'); },
     });
-    if (!finePointer) m.$('[type=submit]').focus();
+    m.$('[type=submit]').focus(); // Enter = next customer
     return job;
   }
 
@@ -1287,7 +1293,7 @@
     open: (b) => openOrderById(Number(b.dataset.id)),
     details: detailsDialog,
     table: () => assignTable(false),
-    line: (b) => { const l = S.order.items.find((i) => i.id === Number(b.dataset.id)); if (l) S.queue.then(() => lineDialog(l)); },
+    line: (b) => S.queue.then(() => { const l = S.order && S.order.items.find((i) => i.id === Number(b.dataset.id)); if (l) lineDialog(l); }),
     send: sendToKitchen,
     discount: () => S.queue.then(discountDialog),
     split: splitDialog,
