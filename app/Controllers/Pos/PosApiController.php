@@ -6,6 +6,7 @@ use App\Core\DB;
 use App\Core\Request;
 use App\Core\Response;
 use App\Services\Audit;
+use App\Services\Discounts;
 use App\Services\Finance\PettyCash;
 use App\Services\Pos\CashSessions;
 use App\Services\Pos\Tickets;
@@ -34,6 +35,7 @@ class PosApiController
             'tax' => Settings::tax(),
             'payment_methods' => array_map(fn ($k, $v) => ['key' => $k, 'label' => $v['label']], array_keys(CashSessions::PAYMENT_METHODS), CashSessions::PAYMENT_METHODS),
             'denominations' => CashSessions::DENOMINATIONS,
+            'discounts' => Discounts::all(true),
             'business' => [
                 'name' => $s['business_name'], 'address' => $s['business_address'], 'tin' => $s['business_tin'], 'phone' => $s['business_phone'],
                 'receipt_title' => $s['receipt_title'], 'receipt_footer' => $s['receipt_footer'],
@@ -105,6 +107,19 @@ class PosApiController
     public function discount(Request $req, string $id): Response
     {
         return json(Tickets::discount((int) $id, $req->all(), $req->input('pin')));
+    }
+
+    public function discountLine(Request $req, string $id, string $line): Response
+    {
+        return json(Tickets::discountLine((int) $id, (int) $line, $req->all(), $req->input('pin')));
+    }
+
+    /** Reprint the order slip (all items currently on the order) — logged in the audit trail. */
+    public function reprintOrder(Request $req, string $id): Response
+    {
+        $t = Tickets::get((int) $id);
+        Audit::log('reprint_order', 'ticket', (int) $id, $t['ticket_no']);
+        return json($t);
     }
 
     public function split(Request $req, string $id): Response

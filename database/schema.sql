@@ -458,6 +458,18 @@ CREATE TABLE IF NOT EXISTS count_lines (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ===================================================================== POS
+-- Discount presets picked at the POS (value NULL = cashier enters the value)
+CREATE TABLE IF NOT EXISTS discounts (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(60) NOT NULL UNIQUE,
+  kind ENUM('sc','pwd','percent','amount') NOT NULL,
+  value DECIMAL(14,2) NULL,
+  scope ENUM('both','order','item') NOT NULL DEFAULT 'both',
+  requires_approval TINYINT(1) NOT NULL DEFAULT 1,
+  active TINYINT(1) NOT NULL DEFAULT 1,
+  sort_order INT NOT NULL DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- One business day = one cash session (beginning cash -> end of day count)
 CREATE TABLE IF NOT EXISTS cash_sessions (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -491,9 +503,13 @@ CREATE TABLE IF NOT EXISTS tickets (
   pax INT NOT NULL DEFAULT 1,
   status ENUM('open','paid','void') NOT NULL DEFAULT 'open',
   subtotal DECIMAL(14,2) NOT NULL DEFAULT 0,
-  discount_type ENUM('none','sc','pwd','percent','amount') NOT NULL DEFAULT 'none',
+  discount_type ENUM('none','sc','pwd','percent','amount') NOT NULL DEFAULT 'none',   -- whole-receipt discount
+  discount_id INT UNSIGNED NULL,        -- preset used (discounts table)
+  discount_name VARCHAR(60) NULL,
   discount_rate DECIMAL(14,2) NOT NULL DEFAULT 0,
-  discount_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+  discount_amount DECIMAL(14,2) NOT NULL DEFAULT 0,   -- all discounts on the receipt (order + items)
+  sc_discount DECIMAL(14,2) NOT NULL DEFAULT 0,       -- part that is SC/PWD (computed on net of VAT)
+  promo_discount DECIMAL(14,2) NOT NULL DEFAULT 0,    -- part that is promo / employee / fixed (VAT-inclusive)
   sc_count INT NOT NULL DEFAULT 0,
   sc_details TEXT NULL,                 -- JSON [{name, id_no}]
   vatable_sales DECIMAL(14,2) NOT NULL DEFAULT 0,
@@ -528,6 +544,11 @@ CREATE TABLE IF NOT EXISTS ticket_items (
   qty DECIMAL(14,4) NOT NULL,
   price DECIMAL(14,2) NOT NULL,
   line_total DECIMAL(14,2) NOT NULL,
+  discount_id INT UNSIGNED NULL,        -- per-item discount (preset)
+  discount_name VARCHAR(60) NULL,
+  discount_kind ENUM('sc','pwd','percent','amount') NULL,
+  discount_value DECIMAL(14,2) NOT NULL DEFAULT 0,
+  discount_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
   notes VARCHAR(255) NULL,
   status ENUM('active','void') NOT NULL DEFAULT 'active',
   void_reason VARCHAR(255) NULL,

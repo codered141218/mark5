@@ -145,22 +145,42 @@ class SalesReports
         return $rows;
     }
 
-    /** SC/PWD sales book (BIR requirement) and other discounts, with the names and ID numbers captured at the POS. */
+    /**
+     * SC/PWD sales book (BIR requirement) and other discounts, with the names and ID numbers captured at the POS.
+     * One row per receipt that has any discount (whole receipt or single items); "Discount(s)" lists what was given.
+     */
     public static function discounts(string $from, string $to): array
     {
         $rows = DB::all(
-            "SELECT t.business_date date, t.receipt_no, t.discount_type, t.discount_rate, t.sc_count, t.pax, t.sc_details,
-                    t.subtotal gross, t.vat_exempt_sales, t.discount_amount discount, t.total net
-             FROM tickets t WHERE t.status = 'paid' AND t.discount_type <> 'none' AND t.business_date BETWEEN ? AND ?
+            "SELECT t.id, t.business_date date, t.receipt_no, t.discount_type, t.discount_name, t.discount_rate, t.sc_count, t.pax, t.sc_details,
+                    t.subtotal gross, t.vat_exempt_sales, t.sc_discount, t.promo_discount, t.discount_amount discount, t.total net
+             FROM tickets t
+             WHERE t.status = 'paid' AND t.business_date BETWEEN ? AND ?
+               AND (t.discount_type <> 'none' OR t.discount_amount > 0)
              ORDER BY t.receipt_no", [$from, $to]
         );
+        $itemDiscounts = [];
+        if ($rows) {
+            $ids = array_column($rows, 'id');
+            foreach (DB::all(
+                "SELECT ticket_id, name, discount_name, discount_kind FROM ticket_items
+                 WHERE status = 'active' AND discount_kind IS NOT NULL AND ticket_id IN (" . DB::placeholders($ids) . ')', $ids
+            ) as $i) {
+                $itemDiscounts[$i['ticket_id']][] = ($i['discount_name'] ?: (self::DISCOUNT_LABELS[$i['discount_kind']] ?? $i['discount_kind'])) . ' (' . $i['name'] . ')';
+            }
+        }
         foreach ($rows as &$r) {
             $people = json_decode((string) $r['sc_details'], true);
             $people = is_array($people) ? $people : [];
             $r['names'] = implode('; ', array_filter(array_column($people, 'name')));
             $r['id_numbers'] = implode('; ', array_filter(array_column($people, 'id_no')));
-            $r['discount_type'] = $r['discount_type'] === 'percent' ? (float) $r['discount_rate'] . '%' : (self::DISCOUNT_LABELS[$r['discount_type']] ?? $r['discount_type']);
-            unset($r['sc_details']);
+            $given = $itemDiscounts[$r['id']] ?? [];
+            if ($r['discount_type'] !== 'none') {
+                $label = $r['discount_name'] ?: ($r['discount_type'] === 'percent' ? (float) $r['discount_rate'] . '%' : (self::DISCOUNT_LABELS[$r['discount_type']] ?? $r['discount_type']));
+                array_unshift($given, $label . ' (whole receipt)');
+            }
+            $r['discount_type'] = implode('; ', $given);
+            unset($r['sc_details'], $r['id'], $r['discount_name'], $r['discount_rate']);
         }
         return $rows;
     }

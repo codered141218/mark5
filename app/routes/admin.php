@@ -48,3 +48,8 @@ if (Auth::check() && Backup::autoBackupDue()) {
         }
     });
 }
+
+// Discount presets used at the POS
+$router->get('/admin/discounts', [App\Controllers\Admin\DiscountController::class, 'index'], 'admin.settings');
+$router->post('/admin/discounts', [App\Controllers\Admin\DiscountController::class, 'save'], 'admin.settings');
+$router->post('/admin/discounts/{id}/delete', [App\Controllers\Admin\DiscountController::class, 'delete'], 'admin.settings');

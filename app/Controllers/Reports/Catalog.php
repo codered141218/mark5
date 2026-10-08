@@ -163,10 +163,10 @@ class Catalog
             'discounts' => [
                 'label' => 'Discounts / SC & PWD sales book',
                 'rows' => fn ($f) => SalesReports::discounts($f['from'], $f['to']),
-                'columns' => [self::date(), self::text('receipt_no', 'Receipt'), self::text('discount_type', 'Type'), self::text('names', 'Name(s)'),
+                'columns' => [self::date(), self::text('receipt_no', 'Receipt'), self::text('discount_type', 'Discount(s)'), self::text('names', 'SC/PWD name(s)'),
                     self::text('id_numbers', 'OSCA/PWD ID'), self::int('sc_count', 'Qualified', false), self::int('pax', 'Pax', false),
-                    self::money('gross', 'Gross'), self::money('vat_exempt_sales', 'VAT-exempt sales'), self::money('discount', 'Discount'),
-                    self::money('net', 'Net')],
+                    self::money('gross', 'Gross'), self::money('vat_exempt_sales', 'VAT-exempt sales'), self::money('sc_discount', 'SC/PWD discount'),
+                    self::money('promo_discount', 'Other discounts'), self::money('discount', 'Total discount'), self::money('net', 'Net')],
             ],
         ];
     }

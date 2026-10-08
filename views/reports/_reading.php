@@ -39,7 +39,7 @@ $variance = $r['cash']['variance'] ?? null;
   <?php endif; ?>
   <?php if ($r['discounts']): ?><hr><?php endif; ?>
   <?php foreach ($r['discounts'] as $d): ?>
-    <?= $line(($discountLabels[$d['discount_type']] ?? $d['discount_type']) . ' (' . (int) $d['cnt'] . ')', money($d['amount'])) ?>
+    <?= $line(($d['label'] ?? $discountLabels[$d['discount_type']] ?? $d['discount_type']) . ' (' . (int) $d['cnt'] . ')', money($d['amount'])) ?>
   <?php endforeach; ?>
   <hr>
   <div class="bold">PAYMENTS</div>

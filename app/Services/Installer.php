@@ -33,6 +33,7 @@ class Installer
     {
         self::createTables();
         Seeder::base($adminPassword, $adminPin);
+        Migrations::run();   // marks the database as up to date (and seeds discount presets)
         if ($withSample) Seeder::sample();
     }
 

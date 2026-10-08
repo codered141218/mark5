@@ -240,7 +240,7 @@ test('sales by item, category, payment, hour and receipts', function () {
     $sc = SalesReports::discounts('2026-09-01', '2026-09-30');
     eq('SC-123', $sc[0]['id_numbers']);
     eq('Lola Nena', $sc[0]['names']);
-    eq('Senior Citizen', $sc[0]['discount_type']);
+    eq('Senior Citizen (whole receipt)', $sc[0]['discount_type']);
     eq(1, count(SalesReports::cashiers('2026-09-01', '2026-09-30')));
 });
 
