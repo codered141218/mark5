@@ -36,6 +36,8 @@ class PosApiController
             'payment_methods' => array_map(fn ($k, $v) => ['key' => $k, 'label' => $v['label']], array_keys(CashSessions::PAYMENT_METHODS), CashSessions::PAYMENT_METHODS),
             'denominations' => CashSessions::DENOMINATIONS,
             'discounts' => Discounts::all(true),
+            'stations' => array_map(fn ($st) => ['id' => $st['id'], 'name' => $st['name']], \App\Services\Stations::all(true)),
+            'options' => ['require_table' => Settings::get('require_table_dine_in', '1') === '1', 'prices_include_vat' => Settings::pricesIncludeVat()],
             'business' => [
                 'name' => $s['business_name'], 'address' => $s['business_address'], 'tin' => $s['business_tin'], 'phone' => $s['business_phone'],
                 'receipt_title' => $s['receipt_title'], 'receipt_footer' => $s['receipt_footer'],
@@ -47,9 +49,12 @@ class PosApiController
 
     public function menu(Request $req): Response
     {
-        $items = array_map(fn ($i) => ['id' => (int) $i['id'], 'category_id' => (int) $i['category_id'], 'price' => (float) $i['price'], 'stock_qty' => (float) $i['stock_qty']] + $i, DB::all(
-            'SELECT id, name, price, category_id, color, item_type, stock_qty, sku, barcode FROM items
-             WHERE active = 1 AND sellable = 1 ORDER BY sort_order, name'
+        $order = ['name' => 'i.name', 'name_desc' => 'i.name DESC', 'price' => 'i.price, i.name', 'price_desc' => 'i.price DESC, i.name'][Settings::get('pos_menu_sort', 'custom')]
+            ?? 'i.sort_order, i.name';
+        $items = array_map(fn ($i) => ['id' => (int) $i['id'], 'category_id' => (int) $i['category_id'], 'price' => (float) $i['price'], 'stock_qty' => (float) $i['stock_qty'],
+            'station_id' => $i['station_id'] === null ? null : (int) $i['station_id']] + $i, DB::all(
+            "SELECT i.id, i.name, i.price, i.category_id, i.color, i.item_type, i.stock_qty, i.sku, i.barcode, COALESCE(i.station_id, c.station_id) AS station_id
+             FROM items i LEFT JOIN categories c ON c.id = i.category_id WHERE i.active = 1 AND i.sellable = 1 ORDER BY $order"
         ));
         $used = array_flip(array_column($items, 'category_id'));
         $categories = array_values(array_filter(
@@ -99,9 +104,10 @@ class PosApiController
         return json(Tickets::voidLine((int) $id, (int) $line, $req->input('reason'), $req->input('pin')));
     }
 
-    public function send(Request $req, string $id): Response
+    /** Done taking the order: {ticket, sent} — the POS prints the order slips of the sent lines per station. */
+    public function done(Request $req, string $id): Response
     {
-        return json(Tickets::send((int) $id));
+        return json(Tickets::done((int) $id));
     }
 
     public function discount(Request $req, string $id): Response
@@ -114,11 +120,11 @@ class PosApiController
         return json(Tickets::discountLine((int) $id, (int) $line, $req->all(), $req->input('pin')));
     }
 
-    /** Reprint the order slip (all items currently on the order) — logged in the audit trail. */
+    /** Reprint the order slip (all items, or the stations chosen) — logged in the audit trail. */
     public function reprintOrder(Request $req, string $id): Response
     {
         $t = Tickets::get((int) $id);
-        Audit::log('reprint_order', 'ticket', (int) $id, $t['ticket_no']);
+        Audit::log('reprint_order', 'ticket', (int) $id, ['ticket' => $t['ticket_no'], 'stations' => $req->input('stations')]);
         return json($t);
     }
 

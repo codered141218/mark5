@@ -30,5 +30,5 @@ use App\Services\Items;
 </form>
 
 <div class="card">
-  <?= Table::html($columns, $rows, ['export' => true, 'empty' => 'No items match the filters.', 'link' => fn ($r) => url('/inventory/items/' . $r['id'])]) ?>
+  <?= Table::html($columns, $rows, ['export' => true, 'empty' => 'No items match the filters.', 'link' => fn ($r) => url('/inventory/items/' . $r['id']), 'bulk' => $bulk]) ?>
 </div>

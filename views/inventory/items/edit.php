@@ -65,9 +65,13 @@ $compData = ['compOptions' => $compOptions, 'uomAbbr' => $uomAbbr, 'readonly' =>
             <?= options($uomOptions, $v['base_uom_id'] ?? '', '— Choose —') ?></select>
           <?php if ($hasMovements): ?><input type="hidden" name="base_uom_id" value="<?= e($item['base_uom_id']) ?>"><?php endif; ?>
           <span class="field-hint"><?= $hasMovements ? 'Cannot change: the item has stock movements' : 'Unit stock is counted in (menu items: usually Serving)' ?></span></label>
-        <label class="field"><span class="field-label">Selling price (VAT-inclusive)</span>
-          <input class="input num" type="number" step="0.01" min="0" name="price" value="<?= e($num($v['price'] ?? '')) ?>" placeholder="0.00" data-price></label>
-        <label class="field"><span class="field-label">Sort order</span><input class="input num" type="number" step="1" name="sort_order" value="<?= e((int) ($v['sort_order'] ?? 0)) ?>"></label>
+        <label class="field"><span class="field-label">Selling price (<?= App\Services\Settings::pricesIncludeVat() ? 'VAT-inclusive' : 'VAT-exclusive' ?>)</span>
+          <input class="input num" type="number" step="0.01" min="0" name="price" value="<?= e($num($v['price'] ?? '')) ?>" placeholder="0.00" data-price>
+          <?php if (App\Services\Settings::tax()['vatRegistered']): ?><span class="field-hint"><?= App\Services\Settings::pricesIncludeVat()
+            ? 'Price the customer pays, VAT included' : 'VAT is added on top at the POS' ?> · <a href="<?= url('/admin/settings?tab=tax') ?>">change</a></span><?php endif; ?></label>
+        <label class="field"><span class="field-label">Prep station (order slip)</span>
+          <select class="input" name="station_id"><?= options(App\Services\Stations::options(), $v['station_id'] ?? '', 'Same as its category') ?></select>
+          <span class="field-hint">Where the order slip for this item prints: Kitchen, Grill …</span></label>
         <div class="field"><span class="field-label">POS tile color</span>
           <div class="row gap-sm" style="height:36px">
             <input type="color" name="color" value="<?= e($v['color'] ?? '' ?: '#868e96') ?>">

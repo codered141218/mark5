@@ -81,15 +81,68 @@ class Ledger
         }
     }
 
-    /** Account id for a system key, e.g. Ledger::account('cash_on_hand'). */
+    /**
+     * Account id for a posting role, e.g. Ledger::account('cash_on_hand').
+     * The account chosen under Finance → GL Account Setup wins (settings "gl.<role>"); otherwise the
+     * chart-of-accounts row with that system_key (payment roles "pay.gcash" fall back to their default role).
+     */
     public static function account(string $key): int
     {
         if (!isset(self::$keyCache[$key])) {
-            $id = DB::value('SELECT id FROM accounts WHERE system_key = ?', [$key]);
+            $mapped = (int) Settings::get('gl.' . $key, 0);
+            $id = $mapped ? DB::value('SELECT id FROM accounts WHERE id = ?', [$mapped]) : null;
+            if (!$id) {
+                $fallback = GlSetup::fallback($key);
+                if ($fallback !== $key) return self::$keyCache[$key] = self::account($fallback);
+                $id = DB::value('SELECT id FROM accounts WHERE system_key = ?', [$key]);
+            }
             if (!$id) throw new \RuntimeException("System account '$key' is missing from the chart of accounts");
             self::$keyCache[$key] = (int) $id;
         }
         return self::$keyCache[$key];
+    }
+
+    /**
+     * Account of an item for 'sales', 'cogs' or 'inventory': the override on the item's category
+     * (Inventory → Categories), else the default account for that role.
+     */
+    public static function itemAccount(int $itemId, string $role): int
+    {
+        $col = ['sales' => 'sales_account_id', 'cogs' => 'cogs_account_id', 'inventory' => 'inventory_account_id'][$role] ?? null;
+        if (!$col) throw new \InvalidArgumentException("Unknown item account role $role");
+        $ck = "item:$itemId:$role";
+        if (!isset(self::$keyCache[$ck])) {
+            $id = DB::value("SELECT a.id FROM items i JOIN categories c ON c.id = i.category_id JOIN accounts a ON a.id = c.$col WHERE i.id = ?", [$itemId]);
+            self::$keyCache[$ck] = $id ? (int) $id : self::account($role);
+        }
+        return self::$keyCache[$ck];
+    }
+
+    /** Journal lines on one side from [account_id => amount]. */
+    public static function linesByAccount(array $amounts, string $side, ?string $memo = null): array
+    {
+        $lines = [];
+        foreach ($amounts as $accountId => $amt) {
+            $lines[] = ['account_id' => (int) $accountId, $side => r2($amt), 'memo' => $memo];
+        }
+        return $lines;
+    }
+
+    /**
+     * Split $total over keys in proportion to $weights (key => weight), rounded to centavos;
+     * the largest share absorbs the rounding difference so the parts add up exactly.
+     */
+    public static function allocate(float $total, array $weights): array
+    {
+        $total = r2($total);
+        $sum = array_sum($weights);
+        if (!$weights) return [];
+        if ($sum == 0) { $out = array_fill_keys(array_keys($weights), 0.0); $out[array_key_first($weights)] = $total; return $out; }
+        $out = [];
+        foreach ($weights as $k => $w) $out[$k] = r2($total * $w / $sum);
+        $diff = r2($total - array_sum($out));
+        if ($diff != 0) { $big = array_search(max($out), $out, true); $out[$big] = r2($out[$big] + $diff); }
+        return $out;
     }
 
     public static function clearCache(): void

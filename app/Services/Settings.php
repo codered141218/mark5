@@ -17,6 +17,9 @@ class Settings
         'receipt_footer' => 'Thank you, please come again!',
         'receipt_prefix' => 'OR',
         'vat_registered' => '1',
+        'prices_include_vat' => '1',        // 1 = menu prices are VAT-inclusive; 0 = VAT is added on top at the POS
+        'require_table_dine_in' => '1',     // a dine-in order needs a table before "Done" / payment
+        'pos_menu_sort' => 'custom',        // order of POS tiles: custom | name | name_desc | price | price_desc
         'vat_rate' => '12',
         'sc_discount_rate' => '20',
         'service_charge_rate' => '0',
@@ -51,6 +54,12 @@ class Settings
         self::$cache = null;
     }
 
+    /** True when selling prices already include VAT (always true when not VAT-registered). */
+    public static function pricesIncludeVat(): bool
+    {
+        return self::get('prices_include_vat', '1') !== '0' || !self::tax()['vatRegistered'];
+    }
+
     /** VAT / discount configuration used by the POS and inventory costing. */
     public static function tax(): array
     {
@@ -61,6 +70,7 @@ class Settings
             'scRate' => (float) self::get('sc_discount_rate', 20) / 100,
             'svcRate' => (float) self::get('service_charge_rate', 0) / 100,
             'svcDineInOnly' => self::get('service_charge_dine_in_only', '1') === '1',
+            'pricesIncludeVat' => self::get('prices_include_vat', '1') !== '0' || !$vatRegistered,
         ];
     }
 }

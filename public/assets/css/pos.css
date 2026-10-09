@@ -287,3 +287,13 @@ html.kb-open .pos-dlg .modal-body { padding-top: 10px; padding-bottom: 10px; }
 /* Common tablets (1280 / 1340 px wide): drop the user name so the top bar fits on one line */
 @media (max-width: 1400px) { .pos-top .user-chip { display: none; } }
 @media (max-width: 699px) { .pos-body-page .toasts { right: 12px; bottom: 76px; max-width: none; } }
+
+/* Done (prints the order slips) and the printers list */
+.ticket-actions .done-btn { font-weight: 700; }
+.tile-price small { font-size: 10px; font-weight: 600; opacity: .75; }
+.printer-row { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border-radius: 8px; background: var(--gray-soft); margin-bottom: 8px; flex-wrap: wrap; }
+.printer-row.ok { background: var(--green-soft); color: #14532d; }
+.printer-row.busy { background: var(--blue-soft); color: #1e3a8a; }
+.printer-row.warn { background: var(--amber-soft); color: #78350f; }
+.printer-row .btn { min-height: 42px; }
+.ticket-actions .btn.pay { grid-column: 1 / -1; }

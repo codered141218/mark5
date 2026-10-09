@@ -135,7 +135,7 @@ class InventoryReports
     /** Menu costing: recipe cost vs. selling price net of VAT (food cost %). */
     public static function recipeCosting(): array
     {
-        $div = 1 + Settings::tax()['vatRate'];
+        $div = \App\Services\Items::vatDivisor();
         $rows = DB::all(
             "SELECT i.id, i.sku, i.name item, COALESCE(c.name, '') category, i.item_type type, i.price
              FROM items i LEFT JOIN categories c ON c.id = i.category_id

@@ -16,7 +16,7 @@ test('default discount presets are installed', function () {
 });
 
 test('SC tagged on the senior’s own meal + employee 10% on another item', function () use ($preset, $line) {
-    $t = Tickets::create(['pax' => 2]);
+    $t = Tickets::create(['pax' => 2, 'table_label' => '3']);
     Tickets::addItem($t['id'], item_id('Adobo Rice Meal'), 1);
     $t = Tickets::addItem($t['id'], item_id('Sisig Rice Meal'), 1);
     throws(fn () => Tickets::discountLine($t['id'], $line($t, 'Adobo Rice Meal'), ['discount_id' => $preset('Senior Citizen')]), 'name and ID');

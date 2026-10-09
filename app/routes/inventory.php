@@ -9,12 +9,14 @@ use App\Services\InventoryDocs;
 
 $router->get('/inventory/categories', [CategoryController::class, 'index'], 'inventory.manage');
 $router->post('/inventory/categories', [CategoryController::class, 'save'], 'inventory.manage');
+$router->post('/inventory/categories/bulk', [CategoryController::class, 'bulk'], 'inventory.manage');
 $router->post('/inventory/categories/{id}/delete', [CategoryController::class, 'delete'], 'inventory.manage');
 
 // Items & recipes ('new' must come before '{id}')
 $router->get('/inventory/items', [ItemController::class, 'index'], ['inventory.view', 'inventory.manage']);
 $router->get('/inventory/items/new', [ItemController::class, 'create'], 'inventory.manage');
 $router->post('/inventory/items', [ItemController::class, 'store'], 'inventory.manage');
+$router->post('/inventory/items/bulk', [ItemController::class, 'bulk'], 'inventory.manage');
 $router->get('/inventory/items/{id}', [ItemController::class, 'show'], ['inventory.view', 'inventory.manage']);
 $router->post('/inventory/items/{id}', [ItemController::class, 'update'], 'inventory.manage');
 $router->post('/inventory/items/{id}/delete', [ItemController::class, 'delete'], 'inventory.manage');
@@ -24,6 +26,7 @@ $router->get('/api/inventory/items/{id}/units', [ItemController::class, 'units']
 // Units of measure & global conversions
 $router->get('/inventory/uom', [UomController::class, 'index'], 'inventory.manage');
 $router->post('/inventory/uom', [UomController::class, 'save'], 'inventory.manage');
+$router->post('/inventory/uom/bulk', [UomController::class, 'bulk'], 'inventory.manage');
 $router->post('/inventory/uom/{id}/delete', [UomController::class, 'delete'], 'inventory.manage');
 $router->post('/inventory/uom/conversions', [UomController::class, 'saveConversion'], 'inventory.manage');
 $router->post('/inventory/uom/conversions/{id}/delete', [UomController::class, 'deleteConversion'], 'inventory.manage');
@@ -48,3 +51,7 @@ $router->get('/inventory/counts/{id}', [CountController::class, 'show'], 'invent
 $router->post('/inventory/counts/{id}', [CountController::class, 'save'], 'inventory.count');
 $router->post('/inventory/counts/{id}/post', [CountController::class, 'post'], 'inventory.count');
 $router->post('/inventory/counts/{id}/cancel', [CountController::class, 'cancel'], 'inventory.count');
+
+// Arrange menu (order of POS categories, items and discounts)
+$router->get('/inventory/arrange', [App\Controllers\Inventory\ArrangeController::class, 'index'], 'inventory.manage');
+$router->post('/inventory/arrange', [App\Controllers\Inventory\ArrangeController::class, 'save'], 'inventory.manage');

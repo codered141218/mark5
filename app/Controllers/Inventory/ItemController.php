@@ -89,6 +89,12 @@ class ItemController
 
         return view('inventory/items/index', [
             'title' => 'Items & Recipes', 'rows' => $rows, 'columns' => $columns, 'stats' => $stats, 'f' => $f,
+            'bulk' => can('inventory.manage') ? ['actions' => [
+                ['key' => 'deactivate', 'label' => 'Deactivate', 'url' => url('/inventory/items/bulk'), 'confirm' => 'Deactivate {n} item(s)? They disappear from the POS and from selections.'],
+                ['key' => 'activate', 'label' => 'Activate', 'url' => url('/inventory/items/bulk')],
+                ['key' => 'delete', 'label' => 'Delete', 'url' => url('/inventory/items/bulk'), 'danger' => true,
+                    'confirm' => 'Delete {n} item(s)? Items that were already used in sales, deliveries, recipes or counts are deactivated instead, so your history stays correct.'],
+            ]] : null,
             'categories' => DB::all('SELECT id, name FROM categories ORDER BY sort_order, name'),
         ]);
     }
@@ -123,6 +129,22 @@ class ItemController
         return redirect("/inventory/items/$id");
     }
 
+    /** Bulk action from the list: delete / deactivate / activate the ticked items. */
+    public function bulk(Request $req): Response
+    {
+        $action = (string) $req->input('action');
+        bulk_apply((array) $req->input('ids', []), 'item', function (int $id) use ($action) {
+            Inventory::item($id);
+            return match ($action) {
+                'delete' => Items::delete($id) ? 'deleted' : 'deactivated (it has history)',
+                'deactivate' => Items::setActive($id, false),
+                'activate' => Items::setActive($id, true),
+                default => throw HttpException::bad('Unknown action'),
+            };
+        });
+        return back();
+    }
+
     public function delete(Request $req, string $id): Response
     {
         $deleted = Items::delete((int) $id);
@@ -151,7 +173,7 @@ class ItemController
     {
         $id = $item ? (int) $item['id'] : 0;
         $old = old('_form') === 'item' ? $GLOBALS['__old'] : null;
-        $values = $old ?? $item ?? ['item_type' => 'raw', 'active' => 1, 'sellable' => 0, 'sort_order' => 0, 'price' => '', 'avg_cost' => ''];
+        $values = $old ?? $item ?? ['item_type' => 'raw', 'active' => 1, 'sellable' => 0, 'price' => '', 'avg_cost' => ''];
         if ($old) $values += ['active' => 0, 'sellable' => 0];
 
         $components = $old ? array_values($old['components'] ?? [])
@@ -195,7 +217,7 @@ class ItemController
             'hasMovements' => $id && DB::value('SELECT id FROM stock_movements WHERE item_id = ? LIMIT 1', [$id]),
             'unitCost' => $costs[$id] ?? 0,
             'readonly' => !can('inventory.manage'),
-            'vatRate' => Settings::tax()['vatRate'],
+            'vatRate' => Settings::pricesIncludeVat() ? Settings::tax()['vatRate'] : 0.0,   // price -> net of VAT for the food cost %
         ]);
     }
 

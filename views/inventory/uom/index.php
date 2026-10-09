@@ -12,7 +12,8 @@
 <div class="grid-2" style="align-items:start">
   <div class="card">
     <div class="card-head"><h3>Units of measure</h3></div>
-    <?= Table::html($unitColumns, $units, ['export' => true]) ?>
+    <?= Table::html($unitColumns, $units, ['export' => true, 'bulk' => ['actions' => [['key' => 'delete', 'label' => 'Delete', 'url' => url('/inventory/uom/bulk'),
+        'danger' => true, 'confirm' => 'Delete {n} unit(s)? Units that are in use are kept.']]]]) ?>
   </div>
 
   <div class="card">

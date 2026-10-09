@@ -3,7 +3,8 @@
  * Everything is driven by data-* attributes in the PHP views:
  *
  *  <input data-table-search>                 filters the rows of the table below it
- *  <table data-table>                        click a header to sort; rows with data-href are clickable
+ *  <table data-table>                        click a header (or use the "Sort by" dropdown) to sort; rows with data-href are clickable
+ *                                            bulk: [data-bulk-all] / [data-bulk-id] checkboxes + [data-bulk-bar] buttons (see Table.php)
  *  <button data-open="dlgId" data-fill='{"name":"Rice"}' data-action="/x/1">   opens <dialog id="dlgId">, fills its form
  *  <button data-close>                       closes the dialog it is in
  *  <form data-confirm="Delete this item?">   asks before submitting
@@ -104,29 +105,111 @@
         $$('tbody tr', table).forEach((tr) => { tr.style.display = tr.textContent.toLowerCase().includes(q) ? '' : 'none'; });
       });
     });
-    $$('table[data-table]', root).forEach((table) => {
-      $$('thead th', table).forEach((th, idx) => {
-        th.addEventListener('click', () => {
-          const dir = th.dataset.sortDir === 'asc' ? 'desc' : 'asc';
-          $$('thead th', table).forEach((h) => delete h.dataset.sortDir);
-          th.dataset.sortDir = dir;
-          const numeric = ['money', 'qty', 'int', 'percent'].includes(th.dataset.type);
-          const rows = $$('tbody tr', table);
-          rows.sort((a, b) => {
-            const x = a.children[idx]?.dataset.sort ?? a.children[idx]?.textContent ?? '';
-            const y = b.children[idx]?.dataset.sort ?? b.children[idx]?.textContent ?? '';
-            const c = numeric ? (parseFloat(x) || 0) - (parseFloat(y) || 0) : x.localeCompare(y, undefined, { numeric: true });
-            return dir === 'asc' ? c : -c;
-          });
-          const body = $('tbody', table);
-          rows.forEach((r) => body.appendChild(r));
-        });
+    $$('table[data-table]', root).forEach((table, tIndex) => {
+      const wrap = table.closest('.datatable');
+      const sortSel = wrap && $('[data-table-sort]', wrap);
+      const storeKey = `mark5_sort:${location.pathname}:${tIndex}`;
+      const ths = $$('thead th', table);
+      const sortable = ths.map((th, idx) => ({ th, idx })).filter(({ th }) => !('nosort' in th.dataset) && th.textContent.trim());
+      ths.forEach((th, idx) => {
+        if ('nosort' in th.dataset || !th.textContent.trim()) return;
+        th.classList.add('sortable');
+        th.title = 'Click to sort';
+        th.addEventListener('click', () => sortTable(table, idx, th.dataset.sortDir === 'asc' ? 'desc' : 'asc'));
       });
+      if (sortSel) {
+        const words = (type) => (['money', 'qty', 'int', 'percent'].includes(type) ? ['low → high', 'high → low']
+          : ['date', 'datetime'].includes(type) ? ['oldest first', 'newest first'] : ['A → Z', 'Z → A']);
+        for (const { th, idx } of sortable) {
+          const [a, d] = words(th.dataset.type);
+          sortSel.insertAdjacentHTML('beforeend', `<option value="${idx}:asc">${App.esc(th.textContent.trim())}: ${a}</option><option value="${idx}:desc">${App.esc(th.textContent.trim())}: ${d}</option>`);
+        }
+        sortSel.addEventListener('change', () => {
+          if (!sortSel.value) { try { localStorage.removeItem(storeKey); } catch (e) { /* ignore */ } window.location.reload(); return; }
+          const [idx, dir] = sortSel.value.split(':');
+          sortTable(table, Number(idx), dir);
+        });
+      }
+      table._sortChanged = (idx, dir) => {
+        if (sortSel) sortSel.value = `${idx}:${dir}`;
+        try { localStorage.setItem(storeKey, `${idx}:${dir}`); } catch (e) { /* ignore */ }
+      };
+      // Re-apply the sort the user chose last time on this page
+      let saved = '';
+      try { saved = localStorage.getItem(storeKey) || ''; } catch (e) { /* ignore */ }
+      if (saved && sortable.some(({ idx }) => String(idx) === saved.split(':')[0])) {
+        const [idx, dir] = saved.split(':');
+        sortTable(table, Number(idx), dir);
+      }
       table.addEventListener('click', (e) => {
         const tr = e.target.closest('tr[data-href]');
-        if (tr && !e.target.closest('a,button,input,select,form,label')) window.location.href = tr.dataset.href;
+        if (tr && !e.target.closest('a,button,input,select,form,label,.dt-check')) window.location.href = tr.dataset.href;
       });
+      if (wrap && $('[data-bulk-bar]', wrap)) initBulk(wrap, table);
     });
+  }
+
+  function sortTable(table, idx, dir) {
+    const th = $$('thead th', table)[idx];
+    if (!th) return;
+    $$('thead th', table).forEach((h) => delete h.dataset.sortDir);
+    th.dataset.sortDir = dir;
+    const numeric = ['money', 'qty', 'int', 'percent'].includes(th.dataset.type);
+    const rows = $$('tbody tr', table);
+    const val = (tr) => { const td = tr.children[idx]; return td ? (td.dataset.sort ?? td.textContent.trim()) : ''; };
+    rows.sort((a, b) => {
+      const x = val(a);
+      const y = val(b);
+      if (x === '' && y !== '') return 1;          // empty values always last
+      if (y === '' && x !== '') return -1;
+      const c = numeric ? (parseFloat(x) || 0) - (parseFloat(y) || 0) : x.localeCompare(y, undefined, { numeric: true, sensitivity: 'base' });
+      return dir === 'asc' ? c : -c;
+    });
+    const body = $('tbody', table);
+    rows.forEach((r) => body.appendChild(r));
+    if (table._sortChanged) table._sortChanged(idx, dir);
+  }
+
+  /** Row checkboxes + the bulk action bar of a Table::html(..., ['bulk' => ...]) table. */
+  function initBulk(wrap, table) {
+    const bar = $('[data-bulk-bar]', wrap);
+    const all = $('[data-bulk-all]', table);
+    const visible = () => $$('tbody tr', table).filter((tr) => tr.style.display !== 'none');
+    const boxes = () => $$('[data-bulk-id]', table);
+    const chosen = () => boxes().filter((b) => b.checked && b.closest('tr').style.display !== 'none');
+    const paint = () => {
+      const n = chosen().length;
+      $('[data-bulk-count]', bar).textContent = n;
+      bar.hidden = n === 0;
+      boxes().forEach((b) => b.closest('tr').classList.toggle('selected', b.checked));
+      const vis = visible().map((tr) => $('[data-bulk-id]', tr)).filter(Boolean);
+      if (all) { all.checked = vis.length > 0 && vis.every((b) => b.checked); all.indeterminate = !all.checked && vis.some((b) => b.checked); }
+    };
+    table.addEventListener('change', (e) => {
+      if (e.target === all) visible().forEach((tr) => { const b = $('[data-bulk-id]', tr); if (b) b.checked = all.checked; });
+      if (e.target.matches('[data-bulk-id], [data-bulk-all]')) paint();
+    });
+    const search = $('[data-table-search]', wrap);
+    if (search) search.addEventListener('input', paint);
+    bar.addEventListener('click', async (e) => {
+      if (e.target.closest('[data-bulk-clear]')) { boxes().forEach((b) => { b.checked = false; }); paint(); return; }
+      const btn = e.target.closest('[data-bulk-action]');
+      if (!btn) return;
+      const ids = chosen().map((b) => b.value);
+      if (!ids.length) return;
+      const msg = (btn.dataset.confirm || '').replace('{n}', ids.length);
+      if (msg && !(await App.ask({ title: btn.textContent.trim(), message: msg, okText: btn.textContent.trim(), danger: btn.classList.contains('btn-danger') }))) return;
+      const form = document.createElement('form');
+      form.method = 'post';
+      form.action = btn.dataset.url;
+      const add = (name, value) => { const i = document.createElement('input'); i.type = 'hidden'; i.name = name; i.value = value; form.appendChild(i); };
+      add('_token', meta('csrf-token'));
+      add('action', btn.dataset.bulkAction);
+      ids.forEach((id) => add('ids[]', id));
+      document.body.appendChild(form);
+      form.submit();
+    });
+    paint();
   }
 
   // ------------------------------------------------------------------ dialogs

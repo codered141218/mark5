@@ -20,6 +20,12 @@ namespace App\Core;
  *   if ($x = Table::export($req, 'items', 'Item list', $subtitle, $columns, $rows)) return $x;
  * In a view:
  *   <?= Table::html($columns, $rows, ['export' => true, 'link' => fn ($r) => url('/items/' . $r['id'])]) ?>
+ *
+ * Every table gets a "Sort by" dropdown (A→Z, Z→A, low→high ...) and clickable headers (app.js).
+ * Bulk actions: tick rows, then press an action button. The ids are POSTed to the action's url as ids[] plus
+ * action=<key> (rows with '_nobulk' => true get no checkbox):
+ *   'bulk' => ['actions' => [['key' => 'delete', 'label' => 'Delete', 'url' => url('/inventory/items/bulk'),
+ *                             'confirm' => 'Delete the selected items?', 'danger' => true]]]
  */
 class Table
 {
@@ -29,25 +35,41 @@ class Table
     {
         $totals = self::totals($columns, $rows);
         $link = $opts['link'] ?? null;
+        $bulk = !empty($opts['bulk']['actions']) && $rows ? $opts['bulk'] : null;
+        $idKey = $bulk['key'] ?? 'id';
         $h = '<div class="datatable">';
-        if (($opts['search'] ?? true) || !empty($opts['export']) || !empty($opts['toolbar'])) {
+        if (($opts['search'] ?? true) || !empty($opts['export']) || !empty($opts['toolbar']) || $bulk) {
             $h .= '<div class="dt-toolbar">';
             if ($opts['search'] ?? true) $h .= '<input class="input dt-search" type="search" placeholder="Search…" data-table-search>';
+            if (($opts['sort'] ?? true) && count($rows) > 1) $h .= '<select class="input dt-sort" data-table-sort aria-label="Sort by"><option value="">Sort by…</option></select>';
             if (!empty($opts['toolbar'])) $h .= '<div class="row gap-sm wrap">' . $opts['toolbar'] . '</div>';
             $h .= '<div class="grow"></div><span class="muted small">' . count($rows) . ' record' . (count($rows) === 1 ? '' : 's') . '</span>';
             if (!empty($opts['export']) && $rows) {
                 $h .= '<a class="btn btn-sm" href="' . e(current_url(['export' => 'xlsx'])) . '">⬇ Excel</a>';
             }
             $h .= '</div>';
+            if ($bulk) {
+                $h .= '<div class="dt-bulk" data-bulk-bar hidden><span><b data-bulk-count>0</b> selected</span>';
+                foreach ($bulk['actions'] as $a) {
+                    $h .= '<button type="button" class="btn btn-sm' . (!empty($a['danger']) ? ' btn-danger' : '') . '" data-bulk-action="' . e($a['key'])
+                        . '" data-url="' . e($a['url']) . '" data-confirm="' . e($a['confirm'] ?? '') . '">' . e($a['label']) . '</button>';
+                }
+                $h .= '<button type="button" class="btn btn-sm btn-ghost" data-bulk-clear>Clear selection</button></div>';
+            }
         }
         $h .= '<div class="table-wrap"><table class="table' . ($link ? ' clickable' : '') . '" data-table><thead><tr>';
+        if ($bulk) $h .= '<th class="dt-check" data-nosort><input type="checkbox" data-bulk-all aria-label="Select all"></th>';
         foreach ($columns as $c) {
-            $h .= '<th class="' . self::align($c) . '" data-type="' . e($c['type'] ?? 'text') . '">' . e($c['label']) . '</th>';
+            $nosort = $c['label'] === '' || ($c['sortable'] ?? true) === false ? ' data-nosort' : '';
+            $h .= '<th class="' . self::align($c) . '" data-type="' . e($c['type'] ?? 'text') . '"' . $nosort . '>' . e($c['label']) . '</th>';
         }
         $h .= '</tr></thead><tbody>';
         foreach ($rows as $r) {
             $cls = trim(($r['_class'] ?? '') . (!empty($r['_bold']) ? ' bold' : ''));
             $h .= '<tr' . ($cls ? ' class="' . e($cls) . '"' : '') . ($link ? ' data-href="' . e($link($r)) . '"' : '') . '>';
+            if ($bulk) {
+                $h .= '<td class="dt-check">' . (empty($r['_nobulk']) ? '<input type="checkbox" data-bulk-id value="' . e($r[$idKey]) . '" aria-label="Select">' : '') . '</td>';
+            }
             foreach ($columns as $i => $c) {
                 $raw = $r[$c['key']] ?? null;
                 $style = $i === 0 && !empty($r['_indent']) ? ' style="padding-left:' . (12 + 18 * (int) $r['_indent']) . 'px"' : '';
@@ -57,7 +79,7 @@ class Table
         }
         $h .= '</tbody>';
         if ($totals && $rows) {
-            $h .= '<tfoot><tr>';
+            $h .= '<tfoot><tr>' . ($bulk ? '<td></td>' : '');
             foreach ($columns as $c) {
                 $v = $totals[$c['key']] ?? '';
                 $h .= '<td class="' . self::align($c) . '">' . (is_string($v) ? e($v) : self::format($c['type'] ?? 'money', $v)) . '</td>';

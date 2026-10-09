@@ -66,10 +66,11 @@ class CashSessions
             "SELECT COUNT(*) cnt, COALESCE(SUM(subtotal),0) gross, COALESCE(SUM(discount_amount),0) discounts,
                     COALESCE(SUM(service_charge),0) svc, COALESCE(SUM(vatable_sales),0) vatable, COALESCE(SUM(vat_amount),0) vat,
                     COALESCE(SUM(vat_exempt_sales),0) exempt, COALESCE(SUM(total),0) net, COALESCE(SUM(pax),0) pax,
+                    COALESCE(SUM(CASE WHEN vat_inclusive = 0 THEN vat_amount ELSE 0 END),0) vat_added,
                     MIN(receipt_no) first_or, MAX(receipt_no) last_or
              FROM tickets WHERE cash_session_id = ? AND status = 'paid'", [$sessionId]
         );
-        foreach (['gross', 'discounts', 'svc', 'vatable', 'vat', 'exempt', 'net'] as $k) $sales[$k] = r2($sales[$k]);
+        foreach (['gross', 'discounts', 'svc', 'vatable', 'vat', 'exempt', 'net', 'vat_added'] as $k) $sales[$k] = r2($sales[$k]);   // vat_added: VAT added on top of VAT-exclusive prices
         $sales['cnt'] = (int) $sales['cnt'];
         $sales['pax'] = (int) $sales['pax'];
         $voided = DB::one("SELECT COUNT(*) cnt, COALESCE(SUM(total),0) amount FROM tickets WHERE cash_session_id = ? AND status = 'void' AND receipt_no IS NOT NULL", [$sessionId]);

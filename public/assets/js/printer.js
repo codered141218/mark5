@@ -1,43 +1,62 @@
 /**
- * Mark5 receipt printing — built for portable 58 mm Bluetooth thermal printers on Android tablets,
- * and also 80 mm desk printers.
+ * Mark5 printing — thermal receipt / order-slip printers set up inside the system (no browser print dialog).
+ * Built for portable 58 mm Bluetooth printers (GOOJPRT PT-210 / MTP-II, Xprinter …) on Android tablets, and 80 mm
+ * desk printers.
  *
- * One receipt layout ("doc") is rendered two ways:
- *   - ESC/POS bytes for thermal printers (58 mm = 32 characters, 80 mm = 48 characters), sent through
- *       bluetooth : Web Bluetooth (BLE printers) — Chrome on Android / Windows / Mac. Needs HTTPS or localhost
- *                   (or the Chrome flag "Insecure origins treated as secure" for a LAN address).
- *       serial    : Web Serial — a USB printer or a classic Bluetooth printer paired as a COM port (Chrome desktop).
- *       rawbt     : the RawBT app on Android (any Bluetooth thermal printer, works over plain http on the LAN).
- *   - HTML for the browser print dialog (method "browser", and the fallback when a printer is unavailable).
+ * A device can have several printers, for example:
+ *   - "Cashier"  — Bluetooth, prints receipts, bills, X/Z readings and the Grill order slips
+ *   - "Kitchen"  — Bluetooth, prints only the Kitchen order slips
+ * Each printer chooses what it prints: receipts (yes/no) and order slips of which prep stations (Kitchen, Grill …,
+ * plus "items without a station"). When the cashier presses Done, the new items are grouped per station and every
+ * group is printed, as its own slip, on the printers that take that station. If no printer takes a station, its
+ * slip goes to the first printer that prints order slips, so nothing is ever lost.
  *
- * Portable printers go to sleep and drop the connection, so this module: remembers the printer, reconnects
- * automatically (with back-off), keeps jobs that failed while disconnected in a queue and prints them on reconnect,
- * lets you tune the Bluetooth packet size / delay for printers that garble long receipts, and keeps a diagnostic log.
+ * How a printer is reached ("method"):
+ *   bluetooth : Web Bluetooth (BLE printers) — Chrome / Edge on Android, Windows, Mac. Needs https or localhost.
+ *   serial    : Web Serial — a USB printer, or a classic Bluetooth printer paired as a COM port (Chrome / Edge on a PC).
+ *   rawbt     : the RawBT app on Android (any Bluetooth thermal printer, also classic-only models). One printer only.
  *
- * Settings are stored per device (localStorage), because every tablet / PC has its own printer.
+ * Portable printers go to sleep and drop the connection, so every printer is remembered, reconnects automatically
+ * (with back-off), keeps jobs that could not print in its own queue and prints them on reconnect, has tunable
+ * Bluetooth packet size / delay, and writes to a diagnostic log.
+ *
+ * Settings are stored per device (localStorage), because every tablet / PC has its own printers.
  *
  * API (window.Printer):
- *   config(), saveConfig(cfg), capabilities(), status(), onStatus(fn), log(), onLog(fn)
- *   isConnected(), connect() [needs a click], reconnect(), disconnect(), forget(), channels(), setChannel(svc, chr)
- *   printReceipt(ticket, ctx), printKitchen(ticket, lines, ctx), printOrderSlip(ticket, ctx), printReading(report, ctx, isZ),
- *   testPrint(ctx), selfTest(ctx), retryQueue(), clearQueue(), dropJob(id), keepAwake(on)
- *   ctx = { business: {name, address, tin, phone, receipt_title, receipt_footer}, tax: {vatRegistered, vatRate},
- *           methods: [{key, label}], reprint: bool, method: 'browser' (optional: force the browser dialog) }
- * A print that cannot reach a disconnected printer rejects with an Error whose .queued = true and .jobId set:
- * the job prints by itself when the printer reconnects (call dropJob(id) if you print it another way instead).
+ *   config(), saveConfig(cfg)                         device-wide options (auto print, currency, keep awake …)
+ *   printers(), printer(id), addPrinter(p), updatePrinter(id, p), removePrinter(id)
+ *   capabilities(), status(), onStatus(fn), log(), onLog(fn)
+ *   isConnected(id), connect(id) [needs a click], reconnect(id), disconnect(id), forget(id), channels(id), setChannel(id, svc, chr)
+ *   retryQueue(id?), clearQueue(id?), dropJob(jobId), keepAwake(on)
+ *   printReceipt(ticket, ctx), printSlips(ticket, lines, ctx), printReading(report, ctx, isZ), testPrint(id, ctx), selfTest(id, ctx)
+ *   routeSlips(lines, ctx)                            which printer gets which station group (no printing)
+ *   ctx = { business: {...}, tax: {vatRegistered, vatRate}, methods: [{key, label}], stations: [{id, name}],
+ *           reprint: bool, only: printerId (print on that printer only, e.g. a retry) }
+ * Every print resolves to a list of results [{printer: {id, name}, ok, queued, error, what}] — it never throws,
+ * except Error.noPrinter when this device has no printer for the job.
  */
 (function () {
   'use strict';
 
-  const STORE_KEY = 'mark5_printer';
-  const DEFAULTS = {
-    method: 'browser', paper: 58, autoPrint: true, kitchenSlip: true, copies: 1, kitchenCopies: 1, openDrawer: false,
-    deviceName: '', deviceId: '', channel: null, baudRate: 9600,
-    bleFilter: 'printers', packetSize: 'auto', packetDelay: 'auto', cutter: false, feedLines: 3,
+  const STORE_KEY = 'mark5_printers_v3';
+  const OLD_KEY = 'mark5_printer';
+  const OPTIONS = {
+    autoPrint: true,          // receipt after payment
+    slipOnDone: true,         // order slips when the cashier presses Done
+    slipPerStation: true,     // one slip per station (else one slip with every item, grouped by station)
     currency: 'P', bigItems: true, autoReconnect: true, keepAwake: true,
   };
+  const PRINTER_DEFAULTS = {
+    id: '', name: 'Printer', method: 'bluetooth', paper: 58,
+    receipts: true,           // receipts, bills, X/Z readings
+    slips: true,              // order slips
+    stations: 'all',          // 'all' or [station ids], 0 = items without a station
+    copies: 1, slipCopies: 1, openDrawer: false,
+    deviceName: '', deviceId: '', channel: null, portInfo: null, baudRate: 9600,
+    bleFilter: 'printers', packetSize: 'auto', packetDelay: 'auto', cutter: false, feedLines: 3,
+  };
 
-  // Service UUIDs used by common BLE thermal printers (Goojprt PT-210, Xprinter, MTP-II, PeriPage, Rongta,
+  // Service UUIDs used by common BLE thermal printers (GOOJPRT PT-210, Xprinter, MTP-II, PeriPage, Rongta,
   // generic "BlueTooth Printer" ...). Web Bluetooth can only talk to services listed here.
   const BLE_SERVICES = [
     '000018f0-0000-1000-8000-00805f9b34fb',
@@ -51,21 +70,84 @@
     '0000ff12-0000-1000-8000-00805f9b34fb',
   ];
   // Name prefixes of common portable printers, used by the "printers only" device filter
-  const NAME_PREFIXES = ['Printer', 'BlueTooth Printer', 'BT', 'MTP', 'MPT', 'PT-', 'PT2', 'RPP', 'ZJ-', 'XP-', 'Xprinter', 'GOOJPRT',
+  const NAME_PREFIXES = ['Printer', 'BlueTooth Printer', 'BT', 'MTP', 'MPT', 'PT-', 'PT2', 'RPP', 'ZJ-', 'XP-', 'Xprinter', 'GOOJPRT', 'Goojprt',
     'InnerPrinter', 'POS', 'Thermal', 'P58', 'P80', 'PeriPage', 'HM-', 'MP', 'QR', 'Rongta', 'SP-', 'JP-', 'M58', 'T58', 'T80'];
 
   // ------------------------------------------------------------------ settings
-  let memoryConfig = null;   // used when localStorage is unavailable (private mode)
-  function config() {
-    try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(STORE_KEY) || '{}') }; } catch (e) { return { ...DEFAULTS, ...(memoryConfig || {}) }; }
+  let memory = null;   // used when localStorage is unavailable (private mode)
+  function load() {
+    let raw = null;
+    try { raw = JSON.parse(localStorage.getItem(STORE_KEY) || 'null'); } catch (e) { raw = memory; }
+    if (!raw) raw = migrate();
+    raw.printers = (raw.printers || []).map((p) => ({ ...PRINTER_DEFAULTS, ...p }));
+    return { ...OPTIONS, ...raw };
   }
+  function store(data) {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(data)); } catch (e) { memory = data; }
+  }
+  /** Settings of the one-printer version: becomes printer "Printer 1" doing everything. */
+  function migrate() {
+    let old = null;
+    try { old = JSON.parse(localStorage.getItem(OLD_KEY) || 'null'); } catch (e) { old = null; }
+    const out = { printers: [] };
+    if (old) {
+      out.autoPrint = old.autoPrint !== false;
+      out.slipOnDone = old.kitchenSlip !== false;
+      ['currency', 'bigItems', 'autoReconnect', 'keepAwake'].forEach((k) => { if (k in old) out[k] = old[k]; });
+      if (['bluetooth', 'serial', 'rawbt'].includes(old.method)) {
+        out.printers.push({ ...PRINTER_DEFAULTS, id: 'p1', name: old.deviceName || 'Printer 1', method: old.method, paper: Number(old.paper) || 58,
+          copies: Number(old.copies) || 1, slipCopies: Number(old.kitchenCopies) || 1, openDrawer: !!old.openDrawer,
+          deviceName: old.deviceName || '', deviceId: old.deviceId || '', channel: old.channel || null, baudRate: old.baudRate || 9600,
+          bleFilter: old.bleFilter || 'printers', packetSize: old.packetSize || 'auto', packetDelay: old.packetDelay || 'auto',
+          cutter: !!old.cutter, feedLines: old.feedLines ?? 3 });
+      }
+    }
+    store(out);
+    return out;
+  }
+
+  const config = () => { const c = load(); delete c.printers; return c; };
   function saveConfig(cfg) {
-    const next = { ...config(), ...cfg };
-    try { localStorage.setItem(STORE_KEY, JSON.stringify(next)); } catch (e) { memoryConfig = next; }
-    if ('keepAwake' in cfg) keepAwake(!!next.keepAwake && wake.wanted);
+    const data = load();
+    Object.keys(OPTIONS).forEach((k) => { if (k in cfg) data[k] = cfg[k]; });
+    store(data);
+    if ('keepAwake' in cfg) keepAwake(!!data.keepAwake && wake.wanted);
     emit();
-    return next;
+    return config();
   }
+  const printers = () => load().printers;
+  const printer = (id) => printers().find((p) => p.id === id) || null;
+  function addPrinter(p = {}) {
+    const data = load();
+    let n = data.printers.length + 1;
+    while (data.printers.some((x) => x.id === 'p' + n)) n++;
+    const first = !data.printers.length;
+    const np = { ...PRINTER_DEFAULTS, receipts: first, slips: true, ...p, id: 'p' + n };
+    if (!p.name) np.name = first ? 'Cashier printer' : `Printer ${n}`;
+    data.printers.push(np);
+    store(data);
+    addLog('info', `Added printer "${np.name}"`);
+    emit();
+    return np.id;
+  }
+  function updatePrinter(id, p) {
+    const data = load();
+    const i = data.printers.findIndex((x) => x.id === id);
+    if (i < 0) throw new Error('Printer not found');
+    data.printers[i] = { ...data.printers[i], ...p, id };
+    store(data);
+    emit();
+    return data.printers[i];
+  }
+  async function removePrinter(id) {
+    await forget(id).catch(() => {});
+    const data = load();
+    data.printers = data.printers.filter((p) => p.id !== id);
+    store(data);
+    delete conns[id];
+    emit();
+  }
+
   function capabilities() {
     return {
       secure: window.isSecureContext,
@@ -80,10 +162,10 @@
   // ------------------------------------------------------------------ diagnostic log
   const logLines = [];
   const logListeners = [];
-  function addLog(level, msg) {
-    const entry = { time: new Date().toLocaleTimeString('en-PH'), level, msg: String(msg) };
+  function addLog(level, msg, p) {
+    const entry = { time: new Date().toLocaleTimeString('en-PH'), level, msg: (p ? `[${p.name}] ` : '') + String(msg) };
     logLines.push(entry);
-    if (logLines.length > 100) logLines.shift();
+    if (logLines.length > 150) logLines.shift();
     logListeners.forEach((fn) => { try { fn(entry); } catch (e) { /* ignore */ } });
   }
   const log = () => logLines.slice();
@@ -142,8 +224,7 @@
 
   // ------------------------------------------------------------------ ESC/POS renderer
   const ESC = 0x1b; const GS = 0x1d;
-  function escpos(doc, { drawer = false } = {}) {
-    const cfg = config();
+  function escpos(doc, p, { drawer = false } = {}) {
     const out = [];
     const push = (...b) => out.push(...b);
     const str = (s) => { for (const ch of ascii(s)) out.push(ch.charCodeAt(0)); };
@@ -163,14 +244,14 @@
       }
     }
     push(ESC, 0x45, 0, GS, 0x21, 0, ESC, 0x61, 0);
-    const feed = Math.max(0, Math.min(Number(cfg.feedLines) || 0, 8));
+    const feed = Math.max(0, Math.min(Number(p.feedLines) || 0, 8));
     for (let i = 0; i < feed; i++) push(0x0a);            // paper feed so the tear-off clears the print head
-    if (cfg.cutter) push(GS, 0x56, 0x42, 0x00);          // feed and partial cut (desk printers with a cutter)
+    if (p.cutter) push(GS, 0x56, 0x42, 0x00);            // feed and partial cut (desk printers with a cutter)
     if (drawer) push(ESC, 0x70, 0x00, 0x19, 0xfa);       // kick cash drawer (pin 2)
     return new Uint8Array(out);
   }
 
-  // ------------------------------------------------------------------ HTML renderer (browser print dialog)
+  // ------------------------------------------------------------------ HTML renderer (on-screen previews only)
   const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   function html(doc, paper) {
     // Printable width is 48 mm (58 mm paper) or 72 mm (80 mm paper); size the monospace font so that
@@ -186,215 +267,248 @@
     }
     return h + '</div>';
   }
-  function browserPrint(markup) {
-    return new Promise((resolve) => {
-      let root = document.getElementById('print-root');
-      if (!root) { root = document.createElement('div'); root.id = 'print-root'; document.body.appendChild(root); }
-      root.innerHTML = markup;
-      setTimeout(() => { window.print(); resolve(); }, 60);
-    });
-  }
 
-  // ------------------------------------------------------------------ connection state
-  const state = {
-    ble: { device: null, characteristic: null, channels: [], packet: 180 },
-    serial: { port: null },
-    connecting: false,
-    lastError: '',
-    queue: [],                 // [{id, label, bytes, time}]
-    reconnectTimer: null,
-    reconnectDelay: 1000,
-  };
+  // ------------------------------------------------------------------ connections (one per printer)
+  const conns = {};   // printer id -> connection state
+  function conn(id) {
+    if (!conns[id]) {
+      conns[id] = { ble: { device: null, characteristic: null, channels: [], packet: 180 }, serial: { port: null },
+        connecting: false, lastError: '', queue: [], reconnectTimer: null, reconnectDelay: 1000, flushing: false };
+    }
+    return conns[id];
+  }
   const listeners = [];
+  function printerStatus(p) {
+    const c = conn(p.id);
+    const linkable = p.method === 'bluetooth' || p.method === 'serial';
+    return { id: p.id, name: p.name, method: p.method, linkable, connected: isConnected(p.id), connecting: c.connecting,
+      deviceName: p.deviceName, queue: c.queue.length, lastError: c.lastError, receipts: !!p.receipts, slips: !!p.slips };
+  }
   function status() {
-    const c = config();
-    return { connected: isConnected(), connecting: state.connecting, method: c.method, deviceName: c.deviceName, queue: state.queue.length, lastError: state.lastError };
+    const list = printers().map(printerStatus);
+    const down = list.filter((s) => s.linkable && !s.connected);
+    return { printers: list, configured: list.length, problems: down.length, connecting: list.some((s) => s.connecting),
+      queue: list.reduce((n, s) => n + s.queue, 0), ready: list.length > 0 && !down.length };
   }
   function emit() { const s = status(); listeners.forEach((fn) => { try { fn(s); } catch (e) { /* ignore */ } }); }
   function onStatus(fn) { listeners.push(fn); fn(status()); }
 
-  function isConnected() {
-    const m = config().method;
-    if (m === 'bluetooth') return !!(state.ble.device && state.ble.device.gatt && state.ble.device.gatt.connected && state.ble.characteristic);
-    if (m === 'serial') return !!(state.serial.port && state.serial.port.writable);
-    return true;
+  function isConnected(id) {
+    const p = printer(id);
+    if (!p) return false;
+    const c = conn(id);
+    if (p.method === 'bluetooth') return !!(c.ble.device && c.ble.device.gatt && c.ble.device.gatt.connected && c.ble.characteristic);
+    if (p.method === 'serial') return !!(c.serial.port && c.serial.port.writable);
+    return true;   // rawbt: always "ready"
   }
 
-  function fail(msg) {
-    state.lastError = msg;
-    addLog('error', msg);
+  function fail(p, msg) {
+    if (p) conn(p.id).lastError = msg;
+    addLog('error', msg, p);
     emit();
     return new Error(msg);
   }
 
-  const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(msg)), ms))]);
+  const withTimeout = (pr, ms, msg) => Promise.race([pr, new Promise((_, rej) => setTimeout(() => rej(new Error(msg)), ms))]);
 
   /** Find every writable characteristic in the printer's services (the user can pick one under Advanced). */
   async function discoverChannels(server) {
     const found = [];
     for (const svc of await server.getPrimaryServices()) {
       for (const ch of await svc.getCharacteristics()) {
-        const p = ch.properties;
-        const props = ['read', 'write', 'writeWithoutResponse', 'notify', 'indicate'].filter((k) => p[k]);
-        found.push({ service: svc.uuid, characteristic: ch.uuid, properties: props, writable: p.write || p.writeWithoutResponse, ref: ch });
+        const pr = ch.properties;
+        const props = ['read', 'write', 'writeWithoutResponse', 'notify', 'indicate'].filter((k) => pr[k]);
+        found.push({ service: svc.uuid, characteristic: ch.uuid, properties: props, writable: pr.write || pr.writeWithoutResponse, ref: ch });
       }
     }
     return found;
   }
 
-  async function bleAttach(device) {
-    state.connecting = true;
+  async function bleAttach(id, device) {
+    const p = printer(id);
+    const c = conn(id);
+    c.connecting = true;
     emit();
     try {
-      addLog('info', `Connecting to ${device.name || 'Bluetooth device'}…`);
+      addLog('info', `Connecting to ${device.name || 'Bluetooth device'}…`, p);
       const server = await withTimeout(device.gatt.connect(), 12000, 'The printer did not answer. Is it switched on and close by?');
       const channels = await discoverChannels(server);
-      const writable = channels.filter((c) => c.writable);
-      if (!writable.length) throw new Error('This Bluetooth device has no printable channel. Is it a thermal printer? (Classic-only printers: use RawBT.)');
-      const saved = config().channel;
-      const chosen = (saved && writable.find((c) => c.service === saved.service && c.characteristic === saved.characteristic))
-        || writable.find((c) => c.properties.includes('writeWithoutResponse')) || writable[0];
-      state.ble = { device, characteristic: chosen.ref, channels, packet: state.ble.packet || 180 };
+      const writable = channels.filter((x) => x.writable);
+      if (!writable.length) throw new Error('This Bluetooth device has no printable channel. Is it a thermal printer? (Classic-only printers: use RawBT or USB / serial.)');
+      const saved = p.channel;
+      const chosen = (saved && writable.find((x) => x.service === saved.service && x.characteristic === saved.characteristic))
+        || writable.find((x) => x.properties.includes('writeWithoutResponse')) || writable[0];
+      c.ble = { device, characteristic: chosen.ref, channels, packet: c.ble.packet || 180 };
       if (!device.__mark5) {
-        device.__mark5 = true;
-        device.addEventListener('gattserverdisconnected', onBleDisconnected);
+        device.__mark5 = id;
+        device.addEventListener('gattserverdisconnected', () => onBleDisconnected(device.__mark5));
       }
-      state.lastError = '';
-      state.reconnectDelay = 1000;
-      saveConfig({ method: 'bluetooth', deviceName: device.name || 'Bluetooth printer', deviceId: device.id || '' });
-      addLog('info', `Connected: ${device.name || 'printer'} (channel ${chosen.characteristic.slice(4, 8)})`);
+      c.lastError = '';
+      c.reconnectDelay = 1000;
+      updatePrinter(id, { deviceName: device.name || 'Bluetooth printer', deviceId: device.id || '' });
+      addLog('info', `Connected: ${device.name || 'printer'} (channel ${chosen.characteristic.slice(4, 8)})`, p);
     } catch (e) {
-      throw fail(e.message || String(e));
+      throw fail(p, e.message || String(e));
     } finally {
-      state.connecting = false;
+      c.connecting = false;
       emit();
     }
-    retryQueue();
+    retryQueue(id);
   }
 
-  function onBleDisconnected() {
-    state.ble.characteristic = null;
-    addLog('warn', 'Printer disconnected (switched off, out of range or asleep).');
+  function onBleDisconnected(id) {
+    const c = conn(id);
+    c.ble.characteristic = null;
+    addLog('warn', 'Printer disconnected (switched off, out of range or asleep).', printer(id));
     emit();
-    scheduleReconnect();
+    scheduleReconnect(id);
   }
 
   /** Try again after 1 s, 2 s, 5 s, 10 s, then every 30 s while the page is visible. */
-  function scheduleReconnect() {
-    const cfg = config();
-    if (!cfg.autoReconnect || cfg.method !== 'bluetooth' || !state.ble.device || state.reconnectTimer) return;
-    const delay = state.reconnectDelay;
-    state.reconnectTimer = setTimeout(async () => {
-      state.reconnectTimer = null;
-      if (isConnected() || document.hidden) { if (!isConnected()) scheduleReconnect(); return; }
-      try { await bleAttach(state.ble.device); } catch (e) {
-        state.reconnectDelay = Math.min(delay < 2000 ? 2000 : delay < 5000 ? 5000 : delay < 10000 ? 10000 : 30000, 30000);
-        scheduleReconnect();
+  function scheduleReconnect(id) {
+    const p = printer(id);
+    const c = conn(id);
+    if (!p || !config().autoReconnect || p.method !== 'bluetooth' || !c.ble.device || c.reconnectTimer) return;
+    const delay = c.reconnectDelay;
+    c.reconnectTimer = setTimeout(async () => {
+      c.reconnectTimer = null;
+      if (!printer(id)) return;
+      if (isConnected(id) || document.hidden) { if (!isConnected(id)) scheduleReconnect(id); return; }
+      try { await bleAttach(id, c.ble.device); } catch (e) {
+        c.reconnectDelay = delay < 2000 ? 2000 : delay < 5000 ? 5000 : delay < 10000 ? 10000 : 30000;
+        scheduleReconnect(id);
       }
     }, delay);
   }
 
-  /** Must be called from a button click (the browser shows its device picker). */
-  async function connect() {
-    const cfg = config();
-    if (cfg.method === 'bluetooth') {
+  /** Choose and connect the printer. Must be called from a button click (the browser shows its device picker). */
+  async function connect(id) {
+    const p = printer(id);
+    if (!p) throw new Error('Printer not found');
+    if (p.method === 'bluetooth') {
       if (!capabilities().bluetooth) {
-        throw fail(window.isSecureContext
-          ? 'Web Bluetooth is not supported in this browser. Use Chrome on Android/Windows/Mac, or choose the RawBT method.'
+        throw fail(p, window.isSecureContext
+          ? 'Web Bluetooth is not supported in this browser. Use Chrome or Edge on Android / Windows / Mac, or choose RawBT or USB / serial.'
           : 'Bluetooth needs a secure address (https:// or localhost). Use RawBT, or allow this address in chrome://flags (see Printer setup).');
       }
-      const options = cfg.bleFilter === 'all'
+      const options = p.bleFilter === 'all'
         ? { acceptAllDevices: true, optionalServices: BLE_SERVICES }
-        : { filters: [...BLE_SERVICES.map((s) => ({ services: [s] })), ...NAME_PREFIXES.map((p) => ({ namePrefix: p }))], optionalServices: BLE_SERVICES };
+        : { filters: [...BLE_SERVICES.map((s) => ({ services: [s] })), ...NAME_PREFIXES.map((n) => ({ namePrefix: n }))], optionalServices: BLE_SERVICES };
       let device;
       try {
         device = await navigator.bluetooth.requestDevice(options);
       } catch (e) {
-        if (e.name === 'NotFoundError') throw fail('No printer chosen. If yours was not listed, switch on "Show all Bluetooth devices" and try again.');
-        throw fail(e.message);
+        if (e.name === 'NotFoundError') throw fail(p, 'No printer chosen. If yours was not listed, tick "Show all Bluetooth devices" and try again.');
+        throw fail(p, e.message);
       }
-      await bleAttach(device);
-    } else if (cfg.method === 'serial') {
-      if (!capabilities().serial) throw fail('Web Serial is not available. Use Chrome or Edge on a computer over https or localhost.');
-      const port = await navigator.serial.requestPort();
-      await port.open({ baudRate: Number(cfg.baudRate) || 9600 });
-      state.serial.port = port;
-      saveConfig({ deviceName: 'Serial / COM printer' });
-      addLog('info', 'Serial printer connected');
-      retryQueue();
+      // a different device than before: forget the old channel choice
+      if (device.id !== p.deviceId) updatePrinter(id, { channel: null });
+      const old = conn(id).ble.device;
+      if (old && old !== device) { try { old.gatt.disconnect(); } catch (e) { /* ignore */ } }
+      await bleAttach(id, device);
+    } else if (p.method === 'serial') {
+      if (!capabilities().serial) throw fail(p, 'Web Serial is not available. Use Chrome or Edge on a computer over https or localhost.');
+      let port;
+      try { port = await navigator.serial.requestPort(); } catch (e) { throw fail(p, e.name === 'NotFoundError' ? 'No port chosen.' : e.message); }
+      await openSerial(id, port);
+    } else {
+      addLog('info', 'RawBT needs no connection: press Test print.', p);
     }
     emit();
+  }
+
+  async function openSerial(id, port) {
+    const p = printer(id);
+    const c = conn(id);
+    try {
+      if (!port.writable) await port.open({ baudRate: Number(p.baudRate) || 9600 });
+    } catch (e) {
+      throw fail(p, `Could not open the port: ${e.message}. Is another program (or another printer here) using it?`);
+    }
+    c.serial.port = port;
+    c.lastError = '';
+    const info = port.getInfo ? port.getInfo() : {};
+    updatePrinter(id, { deviceName: info.usbProductId ? `USB printer ${info.usbVendorId}:${info.usbProductId}` : 'Serial / COM printer', portInfo: info });
+    addLog('info', 'Serial printer connected', p);
+    retryQueue(id);
   }
 
   /** Reconnect to the printer chosen earlier — no picker. Works while this page stays open, or after a reload
-   *  when the browser remembers the permission (navigator.bluetooth.getDevices). */
-  async function reconnect() {
-    const cfg = config();
-    if (cfg.method === 'bluetooth') {
-      let device = state.ble.device;
+   *  when the browser remembers the permission (navigator.bluetooth.getDevices / navigator.serial.getPorts). */
+  async function reconnect(id) {
+    const p = printer(id);
+    if (!p) throw new Error('Printer not found');
+    const c = conn(id);
+    if (p.method === 'bluetooth') {
+      let device = c.ble.device;
       if (!device && navigator.bluetooth && navigator.bluetooth.getDevices) {
         const devices = await navigator.bluetooth.getDevices();
-        device = devices.find((d) => d.id === cfg.deviceId) || devices.find((d) => d.name === cfg.deviceName);
+        device = devices.find((d) => d.id === p.deviceId) || devices.find((d) => p.deviceName && d.name === p.deviceName);
       }
-      if (!device) throw fail('Tap “Connect printer” to choose the printer again.');
-      await bleAttach(device);
-    } else if (cfg.method === 'serial') {
+      if (!device) throw fail(p, 'Tap “Connect” to choose the printer again.');
+      await bleAttach(id, device);
+    } else if (p.method === 'serial') {
       const ports = navigator.serial && navigator.serial.getPorts ? await navigator.serial.getPorts() : [];
-      if (!ports[0]) throw fail('Tap “Connect printer” to choose the printer again.');
-      if (!ports[0].writable) await ports[0].open({ baudRate: Number(cfg.baudRate) || 9600 });
-      state.serial.port = ports[0];
-      emit();
-      retryQueue();
+      const same = (port) => JSON.stringify(port.getInfo ? port.getInfo() : {}) === JSON.stringify(p.portInfo || {});
+      const taken = new Set(Object.entries(conns).filter(([k]) => k !== id).map(([, x]) => x.serial.port).filter(Boolean));
+      const port = c.serial.port || ports.find((x) => same(x) && !taken.has(x)) || (ports.filter((x) => !taken.has(x)).length === 1 ? ports.find((x) => !taken.has(x)) : null);
+      if (!port) throw fail(p, 'Tap “Connect” to choose the printer’s port again.');
+      await openSerial(id, port);
     }
+    emit();
   }
 
   async function autoConnect() {
-    const cfg = config();
-    if (cfg.method !== 'bluetooth' && cfg.method !== 'serial') { emit(); return; }
-    try { await reconnect(); } catch (e) { /* stays disconnected; the user can press Connect */ }
+    for (const p of printers()) {
+      if (p.method !== 'bluetooth' && p.method !== 'serial') continue;
+      try { await reconnect(p.id); } catch (e) { /* stays disconnected; the user can press Connect */ }
+    }
     emit();
   }
 
-  async function disconnect() {
-    clearTimeout(state.reconnectTimer);
-    state.reconnectTimer = null;
-    const dev = state.ble.device;
-    state.ble = { device: null, characteristic: null, channels: [], packet: 180 };
+  async function disconnect(id) {
+    const c = conn(id);
+    clearTimeout(c.reconnectTimer);
+    c.reconnectTimer = null;
+    const dev = c.ble.device;
+    c.ble = { device: null, characteristic: null, channels: [], packet: 180 };
     try { if (dev && dev.gatt.connected) dev.gatt.disconnect(); } catch (e) { /* ignore */ }
-    try { if (state.serial.port) await state.serial.port.close(); } catch (e) { /* ignore */ }
-    state.serial = { port: null };
-    addLog('info', 'Disconnected');
+    try { if (c.serial.port) await c.serial.port.close(); } catch (e) { /* ignore */ }
+    c.serial = { port: null };
+    addLog('info', 'Disconnected', printer(id));
     emit();
   }
 
-  /** Disconnect and forget the remembered printer (and its permission, where the browser supports it). */
-  async function forget() {
-    const dev = state.ble.device;
-    await disconnect();
+  /** Disconnect and forget the remembered device (and its permission, where the browser supports it). */
+  async function forget(id) {
+    const dev = conn(id).ble.device;
+    await disconnect(id);
     try { if (dev && dev.forget) await dev.forget(); } catch (e) { /* ignore */ }
-    saveConfig({ deviceName: '', deviceId: '', channel: null });
+    if (printer(id)) updatePrinter(id, { deviceName: '', deviceId: '', channel: null, portInfo: null });
   }
 
-  function channels() {
-    const cur = state.ble.characteristic;
-    return state.ble.channels.map((c) => ({ service: c.service, characteristic: c.characteristic, properties: c.properties, writable: c.writable, selected: !!cur && c.ref === cur }));
+  function channels(id) {
+    const c = conn(id);
+    const cur = c.ble.characteristic;
+    return c.ble.channels.map((x) => ({ service: x.service, characteristic: x.characteristic, properties: x.properties, writable: x.writable, selected: !!cur && x.ref === cur }));
   }
-  function setChannel(service, characteristic) {
-    const c = state.ble.channels.find((x) => x.service === service && x.characteristic === characteristic && x.writable);
-    if (!c) throw fail('That channel is not available on the connected printer.');
-    state.ble.characteristic = c.ref;
-    saveConfig({ channel: { service, characteristic } });
-    addLog('info', `Using channel ${characteristic}`);
+  function setChannel(id, service, characteristic) {
+    const c = conn(id);
+    const x = c.ble.channels.find((ch) => ch.service === service && ch.characteristic === characteristic && ch.writable);
+    if (!x) throw fail(printer(id), 'That channel is not available on the connected printer.');
+    c.ble.characteristic = x.ref;
+    updatePrinter(id, { channel: { service, characteristic } });
+    addLog('info', `Using channel ${characteristic}`, printer(id));
   }
 
   // ------------------------------------------------------------------ writing bytes
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  async function bleWrite(bytes) {
-    const cfg = config();
-    const ch = state.ble.characteristic;
-    const fixed = cfg.packetSize !== 'auto' ? Number(cfg.packetSize) : 0;
-    let packet = fixed || state.ble.packet || 180;
-    const pause = () => (cfg.packetDelay !== 'auto' ? Number(cfg.packetDelay) || 0 : packet > 20 ? 20 : 10);
+  async function bleWrite(p, bytes) {
+    const c = conn(p.id);
+    const ch = c.ble.characteristic;
+    const fixed = p.packetSize !== 'auto' ? Number(p.packetSize) : 0;
+    let packet = fixed || c.ble.packet || 180;
+    const pause = () => (p.packetDelay !== 'auto' ? Number(p.packetDelay) || 0 : packet > 20 ? 20 : 10);
     const write = (part) => (ch.properties.writeWithoutResponse && ch.writeValueWithoutResponse
       ? ch.writeValueWithoutResponse(part) : (ch.writeValueWithResponse ? ch.writeValueWithResponse(part) : ch.writeValue(part)));
     const started = Date.now();
@@ -406,22 +520,22 @@
       } catch (e) {
         if (!fixed && packet > 20) {                    // default BLE packets are 20 bytes — fall back once
           packet = 20;
-          state.ble.packet = 20;
-          addLog('warn', 'Large Bluetooth packets refused; switching to 20-byte packets.');
+          c.ble.packet = 20;
+          addLog('warn', 'Large Bluetooth packets refused; switching to 20-byte packets.', p);
           continue;
         }
         throw new Error('Bluetooth printing failed: ' + e.message);
       }
       await sleep(pause());                             // let small printers empty their buffer
     }
-    addLog('info', `Sent ${bytes.length} bytes in ${Date.now() - started} ms (${packet}-byte packets)`);
+    addLog('info', `Sent ${bytes.length} bytes in ${Date.now() - started} ms (${packet}-byte packets)`, p);
   }
-  async function serialWrite(bytes) {
-    const writer = state.serial.port.writable.getWriter();
+  async function serialWrite(p, bytes) {
+    const writer = conn(p.id).serial.port.writable.getWriter();
     try { await writer.write(bytes); } finally { writer.releaseLock(); }
-    addLog('info', `Sent ${bytes.length} bytes to the serial printer`);
+    addLog('info', `Sent ${bytes.length} bytes to the serial printer`, p);
   }
-  function rawbtSend(bytes) {
+  function rawbtSend(p, bytes) {
     let bin = '';
     for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
     const a = document.createElement('a');
@@ -429,94 +543,106 @@
     document.body.appendChild(a);
     a.click();
     a.remove();
-    addLog('info', `Sent ${bytes.length} bytes to RawBT`);
+    addLog('info', `Sent ${bytes.length} bytes to RawBT`, p);
     return Promise.resolve();
   }
 
-  /** Send to the connected Bluetooth / serial printer; reconnect once if the printer went to sleep. */
-  async function sendBytes(bytes) {
-    const m = config().method;
-    if (!isConnected()) {
-      try { await reconnect(); } catch (e) { /* handled below */ }
+  /** Send to a connected Bluetooth / serial printer; reconnect once if the printer went to sleep. */
+  async function sendBytes(p, bytes) {
+    if (p.method === 'rawbt') return rawbtSend(p, bytes);
+    if (!isConnected(p.id)) {
+      try { await reconnect(p.id); } catch (e) { /* handled below */ }
     }
-    if (!isConnected()) {
+    if (!isConnected(p.id)) {
       const err = new Error('Printer not connected.');
       err.notConnected = true;
       throw err;
     }
-    return m === 'bluetooth' ? bleWrite(bytes) : serialWrite(bytes);
+    return p.method === 'bluetooth' ? bleWrite(p, bytes) : serialWrite(p, bytes);
   }
 
-  // ------------------------------------------------------------------ print queue (jobs that failed while disconnected)
+  // ------------------------------------------------------------------ print queue (jobs that could not print yet)
   let jobSeq = 1;
-  function enqueue(label, bytes) {
+  function enqueue(p, label, bytes) {
+    const c = conn(p.id);
     const job = { id: jobSeq++, label, bytes, time: new Date().toLocaleTimeString('en-PH') };
-    state.queue.push(job);
-    if (state.queue.length > 20) state.queue.shift();
-    addLog('warn', `Queued "${label}" — it will print when the printer reconnects.`);
+    c.queue.push(job);
+    if (c.queue.length > 30) c.queue.shift();
+    addLog('warn', `Queued "${label}" — it will print when the printer reconnects.`, p);
     emit();
     return job;
   }
-  function dropJob(id) {
-    state.queue = state.queue.filter((j) => j.id !== id);
+  function dropJob(jobId) {
+    Object.values(conns).forEach((c) => { c.queue = c.queue.filter((j) => j.id !== jobId); });
     emit();
   }
-  function clearQueue() {
-    state.queue = [];
-    addLog('info', 'Print queue cleared');
+  function clearQueue(id) {
+    (id ? [conn(id)] : Object.values(conns)).forEach((c) => { c.queue = []; });
+    addLog('info', 'Print queue cleared', id ? printer(id) : null);
     emit();
   }
-  let flushing = false;
-  async function retryQueue() {
-    if (flushing || !state.queue.length || !isConnected()) return;
-    flushing = true;
+  async function retryQueue(id) {
+    if (!id) { await Promise.all(printers().map((p) => retryQueue(p.id))); return; }
+    const p = printer(id);
+    const c = conn(id);
+    if (!p || c.flushing || !c.queue.length || !isConnected(id)) return;
+    c.flushing = true;
     try {
-      while (state.queue.length && isConnected()) {
-        const job = state.queue[0];
-        await sendBytes(job.bytes);
-        state.queue.shift();
-        addLog('info', `Printed queued "${job.label}"`);
+      while (c.queue.length && isConnected(id)) {
+        const job = c.queue[0];
+        await sendBytes(p, job.bytes);
+        c.queue.shift();
+        addLog('info', `Printed queued "${job.label}"`, p);
         emit();
       }
     } catch (e) {
-      addLog('error', 'Queue paused: ' + e.message);
+      addLog('error', 'Queue paused: ' + e.message, p);
     } finally {
-      flushing = false;
+      c.flushing = false;
     }
   }
 
-  /** Send a doc to the configured printer. opts: {copies, drawer, method, label} */
-  async function output(doc, opts = {}) {
-    const cfg = config();
-    const method = opts.method || cfg.method;
-    if (method === 'browser') return browserPrint(html(doc, cfg.paper));
+  /**
+   * Print docs on one printer as a single job. Resolves {printer, ok, queued, error}.
+   * opts: {copies, drawer, label}
+   */
+  async function output(p, docs, opts = {}) {
     const copies = Math.max(1, Math.min(Number(opts.copies || 1), 5));
     const parts = [];
-    for (let i = 0; i < copies; i++) parts.push(escpos(doc, { drawer: opts.drawer && i === 0 }));
-    const bytes = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+    for (let i = 0; i < copies; i++) docs.forEach((d, j) => parts.push(escpos(d, p, { drawer: opts.drawer && i === 0 && j === 0 })));
+    const bytes = new Uint8Array(parts.reduce((n, x) => n + x.length, 0));
     let o = 0;
-    parts.forEach((p) => { bytes.set(p, o); o += p.length; });
-    if (method === 'rawbt') return rawbtSend(bytes);
-    if (method !== 'bluetooth' && method !== 'serial') throw fail('Unknown printer method');
+    parts.forEach((x) => { bytes.set(x, o); o += x.length; });
+    const res = { printer: { id: p.id, name: p.name }, what: opts.label, ok: false, queued: false, error: '' };
     try {
-      await sendBytes(bytes);
-      state.lastError = '';
+      await sendBytes(p, bytes);
+      conn(p.id).lastError = '';
+      res.ok = true;
       emit();
     } catch (e) {
-      if (e.notConnected && cfg.autoReconnect) {
-        const job = enqueue(opts.label || 'print job', bytes);
-        scheduleReconnect();
-        const err = fail('Printer not connected — the job is saved and will print when the printer reconnects.');
-        err.queued = true;
-        err.jobId = job.id;
-        throw err;
+      if (e.notConnected && config().autoReconnect && p.method === 'bluetooth') {
+        const job = enqueue(p, opts.label || 'print job', bytes);
+        scheduleReconnect(p.id);
+        res.queued = true;
+        res.jobId = job.id;
+        res.error = 'Printer not connected — saved, it prints when the printer reconnects.';
+        fail(p, res.error);
+      } else {
+        res.error = e.notConnected ? 'Printer not connected. Switch it on and tap Connect.' : e.message;
+        fail(p, res.error);
       }
-      throw fail(e.notConnected ? 'Printer not connected. Tap the printer button to connect it.' : e.message);
     }
+    return res;
+  }
+
+  function noPrinter(what) {
+    const err = new Error(`No printer on this device prints ${what}. Set one up under Printer setup.`);
+    err.noPrinter = true;
+    return err;
   }
 
   // ------------------------------------------------------------------ layouts
-  const colsFor = () => (Number(config().paper) === 80 ? 48 : 32);
+  const colsFor = (p) => (Number(p && p.paper) === 80 ? 48 : 32);
   const ORDER_TYPE = { dine_in: 'Dine-in', takeout: 'Take-out', delivery: 'Delivery' };
   const DISC_LABEL = { sc: 'Senior Citizen Disc.', pwd: 'PWD Disc.', percent: 'Discount', amount: 'Discount' };
 
@@ -528,10 +654,11 @@
     doc.hr();
   }
 
-  function receiptDoc(t, ctx) {
-    const doc = new Doc(colsFor());
+  function receiptDoc(t, ctx, cols = 32) {
+    const doc = new Doc(cols);
     const b = ctx.business || {};
     const isBill = t.status === 'open';
+    const vatAdded = Number(t.vat_inclusive) === 0 && ctx.tax && ctx.tax.vatRegistered;   // VAT-exclusive prices
     const label = (m) => ((ctx.methods || []).find((x) => x.key === m) || {}).label || m;
     header(doc, b);
     doc.center(isBill ? 'BILL / STATEMENT' : t.status === 'void' ? 'VOIDED RECEIPT' : (b.receipt_title || 'RECEIPT'), { bold: true });
@@ -551,14 +678,10 @@
       if (i.notes) doc.text('  * ' + i.notes);
     }
     doc.hr();
-    doc.lr('Subtotal', money(t.subtotal));
-    const hasSplit = t.sc_discount !== undefined && t.promo_discount !== undefined;
-    if (hasSplit) {
-      if (t.sc_discount > 0) doc.lr(t.discount_type === 'pwd' ? 'PWD Discount' : 'SC/PWD Discount', '-' + money(t.sc_discount));
-      if (t.promo_discount > 0) doc.lr(['percent', 'amount'].includes(t.discount_type) && t.discount_name ? t.discount_name : 'Other Discounts', '-' + money(t.promo_discount));
-    } else if (t.discount_amount > 0) {
-      doc.lr(DISC_LABEL[t.discount_type] || 'Discount', '-' + money(t.discount_amount));
-    }
+    doc.lr(vatAdded ? 'Subtotal (VAT-exclusive)' : 'Subtotal', money(t.subtotal));
+    if (t.sc_discount > 0) doc.lr(t.discount_type === 'pwd' ? 'PWD Discount' : 'SC/PWD Discount', '-' + money(t.sc_discount));
+    if (t.promo_discount > 0) doc.lr(['percent', 'amount'].includes(t.discount_type) && t.discount_name ? t.discount_name : 'Other Discounts', '-' + money(t.promo_discount));
+    if (vatAdded) doc.lr(`Add: VAT (${Math.round(ctx.tax.vatRate * 100)}%)`, money(t.vat_amount));
     if (t.service_charge > 0) doc.lr('Service Charge', money(t.service_charge));
     doc.lr('TOTAL DUE', money(t.total), { bold: true, big: true });
     if (!isBill) {
@@ -594,10 +717,12 @@
     return doc;
   }
 
-  /** Kitchen slip (new items) and order slip (whole order, reprint) share this layout. */
-  function slipDoc(t, lines, title, reprint) {
-    const doc = new Doc(colsFor());
-    const big = !!config().bigItems;
+  /**
+   * Order slip for one station (or the whole order): big table number, the items, notes.
+   * title: e.g. "KITCHEN", "GRILL", "ORDER SLIP".
+   */
+  function slipDoc(t, lines, title, { reprint = false, cols = 32, big = true } = {}) {
+    const doc = new Doc(cols);
     doc.center(title, { bold: true, big: true });
     if (reprint) doc.center('*** REPRINT ***', { bold: true });
     doc.lr(t.table_label ? 'TABLE ' + t.table_label : (ORDER_TYPE[t.order_type] || '').toUpperCase(), t.ticket_no, { bold: true, big: true });
@@ -611,11 +736,12 @@
     }
     doc.hr();
     doc.lr('Items', String(lines.reduce((n, l) => n + Number(l.qty), 0)));
+    if (t.created_by_name) doc.lr('Taken by', t.created_by_name);
     return doc;
   }
 
-  function readingDoc(r, ctx, isZ) {
-    const doc = new Doc(colsFor());
+  function readingDoc(r, ctx, isZ, cols = 32) {
+    const doc = new Doc(cols);
     const s = r.session;
     header(doc, ctx.business || {});
     doc.center(isZ ? 'Z-READING (END OF DAY)' : 'X-READING', { bold: true });
@@ -632,6 +758,7 @@
     doc.hr();
     doc.lr('Gross Sales', money(r.sales.gross));
     doc.lr('Less: Discounts', money(r.sales.discounts));
+    if (Number(r.sales.vat_added) > 0) doc.lr('Add: VAT (on top)', money(r.sales.vat_added));
     doc.lr('Add: Service Charge', money(r.sales.svc));
     doc.lr('NET SALES', money(r.sales.net), { bold: true });
     if (ctx.tax && ctx.tax.vatRegistered) {
@@ -674,12 +801,13 @@
     return doc;
   }
 
-  function testDoc(ctx) {
-    const doc = new Doc(colsFor());
+  function testDoc(p, ctx) {
+    const doc = new Doc(colsFor(p));
     header(doc, (ctx && ctx.business) || { name: 'Mark5 Restaurant Suite' });
     doc.center('PRINTER TEST', { bold: true, big: true });
-    doc.lr('Paper', `${config().paper} mm / ${colsFor()} chars`);
-    doc.lr('Method', config().method);
+    doc.lr('Printer', p.name);
+    doc.lr('Paper', `${p.paper} mm / ${colsFor(p)} chars`);
+    doc.lr('Prints', [p.receipts ? 'receipts' : '', p.slips ? 'order slips' : ''].filter(Boolean).join(' + ') || 'nothing yet');
     doc.lr('Adobo Rice Meal x2', money(398));
     doc.lr('TOTAL', money(398), { bold: true, big: true });
     doc.center('If you can read this, printing works!');
@@ -687,15 +815,14 @@
   }
 
   /** Longer diagnostic page: alignment, bold, sizes, column ruler, currency, long text wrap. */
-  function selfTestDoc(ctx) {
-    const cols = colsFor();
-    const cfg = config();
+  function selfTestDoc(p, ctx) {
+    const cols = colsFor(p);
     const doc = new Doc(cols);
     header(doc, (ctx && ctx.business) || { name: 'Mark5 Restaurant Suite' });
     doc.center('PRINTER SELF-TEST', { bold: true, big: true });
-    doc.lr('Printer', cfg.deviceName || cfg.method);
-    doc.lr('Paper / columns', `${cfg.paper} mm / ${cols}`);
-    doc.lr('Packets / delay', `${cfg.packetSize} / ${cfg.packetDelay}`);
+    doc.lr('Printer', p.deviceName || p.name);
+    doc.lr('Paper / columns', `${p.paper} mm / ${cols}`);
+    doc.lr('Packets / delay', `${p.packetSize} / ${p.packetDelay}`);
     doc.lr('Printed', dt());
     doc.hr();
     doc.text('Column ruler (must fit on one line):');
@@ -713,6 +840,38 @@
     doc.hr();
     doc.center('END OF SELF-TEST');
     return doc;
+  }
+
+  // ------------------------------------------------------------------ routing
+  const takesStation = (p, sid) => p.slips && (p.stations === 'all' || (Array.isArray(p.stations) && p.stations.map(Number).includes(Number(sid || 0))));
+
+  /**
+   * Which printer prints which station's items: [{printer, groups: [{stationId, title, lines}]}].
+   * lines need .station_id (null = no station). A station no printer takes goes to the first order-slip printer.
+   */
+  function routeSlips(lines, ctx = {}) {
+    const names = {};
+    (ctx.stations || []).forEach((s) => { names[s.id] = s.name; });
+    const groups = new Map();   // station id (0 = none) -> lines
+    for (const l of lines) {
+      const sid = l.station_id && names[l.station_id] !== undefined ? Number(l.station_id) : 0;
+      if (!groups.has(sid)) groups.set(sid, []);
+      groups.get(sid).push(l);
+    }
+    const order = [...(ctx.stations || []).map((s) => Number(s.id)), 0];
+    const sorted = [...groups.entries()].sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]));
+    const slipPrinters = printers().filter((p) => p.slips);
+    const out = new Map();
+    for (const [sid, ls] of sorted) {
+      const title = sid ? String(names[sid]).toUpperCase() : 'ORDER SLIP';
+      let targets = slipPrinters.filter((p) => takesStation(p, sid));
+      if (!targets.length && slipPrinters.length) targets = [slipPrinters[0]];
+      for (const p of targets) {
+        if (!out.has(p.id)) out.set(p.id, { printer: p, groups: [] });
+        out.get(p.id).groups.push({ stationId: sid, title, lines: ls });
+      }
+    }
+    return [...out.values()].filter((r) => !ctx.only || r.printer.id === ctx.only);   // ctx.only: retry on one printer
   }
 
   // ------------------------------------------------------------------ screen wake lock (keeps the tablet awake)
@@ -735,33 +894,55 @@
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) return;
     if (wake.wanted && config().keepAwake) keepAwake(true);          // the lock is released when the tab is hidden
-    if (config().autoReconnect && !isConnected() && state.ble.device) scheduleReconnect();
+    if (config().autoReconnect) printers().forEach((p) => { if (!isConnected(p.id) && conn(p.id).ble.device) scheduleReconnect(p.id); });
   });
 
   // ------------------------------------------------------------------ public API
+  const receiptPrinters = (ctx = {}) => printers().filter((p) => p.receipts && (!ctx.only || p.id === ctx.only));
   const Printer = {
-    config, saveConfig, capabilities, status, onStatus, log, onLog,
+    config, saveConfig, printers, printer, addPrinter, updatePrinter, removePrinter,
+    capabilities, status, onStatus, log, onLog,
     isConnected, connect, reconnect, disconnect, forget, autoConnect, channels, setChannel,
-    retryQueue, clearQueue, dropJob, keepAwake,
-    printReceipt(ticket, ctx = {}) {
-      const cfg = config();
-      return output(receiptDoc(ticket, ctx), {
-        method: ctx.method, copies: ctx.reprint ? 1 : cfg.copies, label: `Receipt ${ticket.receipt_no || ticket.ticket_no}`,
-        drawer: cfg.openDrawer && !ctx.reprint && ticket.status === 'paid',
-      });
+    retryQueue, clearQueue, dropJob, keepAwake, routeSlips,
+
+    /** Receipt / bill on the receipt printer (the first one, or ctx.only). */
+    async printReceipt(ticket, ctx = {}) {
+      const p = receiptPrinters(ctx)[0];
+      if (!p) throw noPrinter('receipts');
+      const label = `${ticket.status === 'open' ? 'Bill' : 'Receipt'} ${ticket.receipt_no || ticket.ticket_no}`;
+      return [await output(p, [receiptDoc(ticket, ctx, colsFor(p))], {
+        copies: ctx.reprint ? 1 : p.copies, label, drawer: p.openDrawer && !ctx.reprint && ticket.status === 'paid',
+      })];
     },
-    printKitchen(ticket, lines, ctx = {}) {
-      return output(slipDoc(ticket, lines, 'KITCHEN ORDER', false), { method: ctx.method, copies: config().kitchenCopies, label: `Kitchen ${ticket.ticket_no}` });
+
+    /** Order slips for `lines`, routed per prep station (see routeSlips). */
+    async printSlips(ticket, lines, ctx = {}) {
+      if (!lines.length) return [];
+      const routes = routeSlips(lines, ctx);
+      if (!routes.length) throw noPrinter('order slips');
+      const opts = config();
+      return Promise.all(routes.map(({ printer: p, groups }) => {
+        const cols = colsFor(p);
+        const docs = opts.slipPerStation || groups.length === 1
+          ? groups.map((g) => slipDoc(ticket, g.lines, g.title, { reprint: ctx.reprint, cols, big: opts.bigItems }))
+          : [slipDoc(ticket, groups.flatMap((g) => g.lines), 'ORDER SLIP', { reprint: ctx.reprint, cols, big: opts.bigItems })];
+        return output(p, docs, { copies: p.slipCopies, label: `${ctx.reprint ? 'Reprint ' : ''}${groups.map((g) => g.title.toLowerCase()).join(' + ')} slip ${ticket.ticket_no}` });
+      }));
     },
-    printOrderSlip(ticket, ctx = {}) {
-      const lines = ticket.items.filter((i) => i.status === 'active');
-      return output(slipDoc(ticket, lines, 'ORDER SLIP', true), { method: ctx.method, label: `Order slip ${ticket.ticket_no}` });
+
+    async printReading(report, ctx = {}, isZ = false) {
+      const p = receiptPrinters(ctx)[0];
+      if (!p) throw noPrinter('receipts and readings');
+      return [await output(p, [readingDoc(report, ctx, isZ, colsFor(p))], { label: isZ ? 'Z-reading' : 'X-reading' })];
     },
-    printReading(report, ctx = {}, isZ = false) { return output(readingDoc(report, ctx, isZ), { method: ctx.method, label: isZ ? 'Z-reading' : 'X-reading' }); },
-    testPrint(ctx = {}) { return output(testDoc(ctx), { method: ctx.method, label: 'Test print' }); },
-    selfTest(ctx = {}) { return output(selfTestDoc(ctx), { method: ctx.method, label: 'Self-test' }); },
+    async testPrint(id, ctx = {}) { const p = printer(id); if (!p) throw new Error('Printer not found'); return [await output(p, [testDoc(p, ctx)], { label: 'Test print' })]; },
+    async selfTest(id, ctx = {}) { const p = printer(id); if (!p) throw new Error('Printer not found'); return [await output(p, [selfTestDoc(p, ctx)], { label: 'Self-test' })]; },
+
+    /** Paper width used for on-screen previews: the receipt printer's, else 58 mm. */
+    previewPaper() { const p = receiptPrinters()[0] || printers()[0]; return p && Number(p.paper) === 80 ? 80 : 58; },
+
     // exposed for previews, tests and custom layouts
-    _internals: { Doc, escpos, html, receiptDoc, kitchenDoc: (t, l) => slipDoc(t, l, 'KITCHEN ORDER', false), slipDoc, readingDoc, selfTestDoc, lrLines, ascii },
+    _internals: { Doc, escpos, html, receiptDoc, slipDoc, readingDoc, selfTestDoc, testDoc, lrLines, ascii, takesStation, BLE_SERVICES, NAME_PREFIXES },
   };
   window.Printer = Printer;
   if (document.readyState !== 'loading') autoConnect();

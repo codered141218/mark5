@@ -44,6 +44,27 @@ class Migrations
                 DB::run("UPDATE tickets SET promo_discount = discount_amount WHERE discount_type IN ('percent','amount') AND promo_discount = 0");
                 Discounts::seedDefaults();
             },
+            // 2: prep stations for order slips, GL account overrides per category, VAT-exclusive pricing
+            2 => function () {
+                DB::pdo()->exec("CREATE TABLE IF NOT EXISTS prep_stations (
+                    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                    name VARCHAR(40) NOT NULL UNIQUE,
+                    sort_order INT NOT NULL DEFAULT 0,
+                    active TINYINT(1) NOT NULL DEFAULT 1
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+                self::addColumn('categories', 'station_id', 'INT UNSIGNED NULL');
+                self::addColumn('categories', 'sales_account_id', 'INT UNSIGNED NULL');
+                self::addColumn('categories', 'cogs_account_id', 'INT UNSIGNED NULL');
+                self::addColumn('categories', 'inventory_account_id', 'INT UNSIGNED NULL');
+                self::addColumn('items', 'station_id', 'INT UNSIGNED NULL AFTER sort_order');
+                self::addColumn('tickets', 'vat_inclusive', 'TINYINT(1) NOT NULL DEFAULT 1 AFTER cogs');
+                Stations::seedDefaults();
+                // Give every item and category its own position (new ones are added at the end)
+                foreach (['categories' => 'sort_order, name', 'items' => 'category_id, sort_order, name'] as $table => $order) {
+                    $pos = 0;
+                    foreach (DB::all("SELECT id FROM `$table` ORDER BY $order") as $r) DB::run("UPDATE `$table` SET sort_order = ? WHERE id = ?", [$pos += 10, $r['id']]);
+                }
+            },
         ];
     }
 

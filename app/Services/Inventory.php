@@ -145,16 +145,34 @@ class Inventory
     /**
      * Deduct (sign -1) the stock used by sold lines [['item_id'=>, 'qty'=>], ...].
      * Returns the total cost (positive) = cost of goods sold.
+     * $detail (optional) receives ['stock' => [stocked item id => cost], 'lines' => [line key => cost]] so the
+     * caller can post to per-category inventory / COGS accounts; the parts add up to the returned total.
      */
-    public static function consume(array $lines, string $mtype, array $ref, int $sign = -1): float
+    public static function consume(array $lines, string $mtype, array $ref, int $sign = -1, ?array &$detail = null): float
     {
         $need = [];
-        foreach ($lines as $l) self::explode((int) $l['item_id'], (float) $l['qty'], $need);
-        $total = 0.0;
-        foreach ($need as $itemId => $q) {
-            $total += abs(self::move(['item_id' => $itemId, 'qty' => $sign * $q, 'mtype' => $mtype] + $ref));
+        $perLine = [];
+        foreach ($lines as $k => $l) {
+            self::explode((int) $l['item_id'], (float) $l['qty'], $need);
+            $one = [];
+            $perLine[$k] = self::explode((int) $l['item_id'], (float) $l['qty'], $one);
         }
-        return r2($total);
+        $total = 0.0;
+        $stock = [];
+        foreach ($need as $itemId => $q) {
+            $stock[$itemId] = abs(self::move(['item_id' => $itemId, 'qty' => $sign * $q, 'mtype' => $mtype] + $ref));
+            $total += $stock[$itemId];
+        }
+        $total = r2($total);
+        // Cost of each sold line = its share of every ingredient's cost
+        $lineCost = [];
+        foreach ($perLine as $k => $one) {
+            $c = 0.0;
+            foreach ($one as $itemId => $q) $c += $need[$itemId] > 0 ? $stock[$itemId] * $q / $need[$itemId] : 0;
+            $lineCost[$k] = $c;
+        }
+        $detail = ['stock' => $stock, 'lines' => $lineCost ? Ledger::allocate($total, $lineCost) : []];
+        return $total;
     }
 
     /**

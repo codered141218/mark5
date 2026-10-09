@@ -14,6 +14,7 @@ class PosController
 
     public function printer(Request $req): string
     {
-        return view('pos/printer', ['title' => 'Printer setup', 'scripts' => ['js/printer.js', 'js/printer-setup.js']]);
+        return view('pos/printer', ['title' => 'Printer setup', 'scripts' => ['js/printer.js', 'js/printer-setup.js'],
+            'stations' => \App\Services\Stations::all(true)]);
     }
 }

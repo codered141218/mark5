@@ -7,7 +7,8 @@
  * Screens
  *   Orders board  - cards of the open orders + "New order / Take-out / Delivery" buttons.
  *   Order screen  - menu tiles on the left, the order panel on the right (phones: one at a time + bottom bar).
- * Workflow: customer buys -> cashier takes the order -> assigns a table (any time, or when sending / paying).
+ * Workflow: customer buys -> cashier takes the order -> assigns a table -> Done: the order slips print, one per prep
+ * station (Kitchen, Grill …) on the printer(s) set up for that station -> the cashier hands them over -> pay later.
  *
  * Built for Android tablets: numbers (amounts, quantities, tables, cash counts, PINs) are typed on an on-screen
  * keypad so the phone keyboard never covers the screen; text fields keep the normal keyboard and the layout
@@ -87,9 +88,11 @@
   };
 
   const activeLines = (t) => (t ? t.items.filter((i) => i.status === 'active') : []);
-  const unsentLines = (t) => activeLines(t).filter((i) => !i.kitchen_sent);
+  const unsentLines = (t) => activeLines(t).filter((i) => !i.kitchen_sent);   // order slip not printed yet
   const itemCount = (t) => activeLines(t).reduce((s, i) => s + Number(i.qty), 0);
   const needsTable = (t) => t.order_type === 'dine_in' && !t.table_label;
+  const OPT = B.options || {};
+  const stationName = (id) => ((B.stations || []).find((s) => s.id === id) || {}).name || 'No station';
   const isSc = (kind) => kind === 'sc' || kind === 'pwd';
   function orderTitle(t) {
     if (t.table_label) return 'Table ' + t.table_label;
@@ -103,6 +106,7 @@
       pax: 1, notes: null, status: 'open', items: [], payments: [], discount_type: 'none', discount_name: null, discount_rate: 0,
       sc_count: 0, sc_details: [], subtotal: 0, discount_amount: 0, sc_discount: 0, promo_discount: 0, service_charge: 0,
       vat_amount: 0, vat_exempt_sales: 0, vatable_sales: 0, total: 0, created_at: null, created_by_name: B.user.name,
+      vat_inclusive: OPT.prices_include_vat === false ? 0 : 1,
     };
   }
 
@@ -131,14 +135,14 @@
     updateLine: (id, line, data) => post(`/orders/${id}/items/${line}`, data),
     voidLine: (id, line, reason, pin) => post(`/orders/${id}/items/${line}/void`, { reason, pin }),
     discountLine: (id, line, data) => post(`/orders/${id}/items/${line}/discount`, data),  // {discount_id, value, sc_person, pin}
-    send: (id) => post(`/orders/${id}/send`),                       // {ticket, sent}
+    done: (id) => post(`/orders/${id}/done`),                       // {ticket, sent}: lines whose slips must print now
     discount: (id, data) => post(`/orders/${id}/discount`, data),   // {discount_id, value, sc_count, pax, sc_details, pin}
     split: (id, data) => post(`/orders/${id}/split`, data),         // {source, target}
     merge: (id, sourceId) => post(`/orders/${id}/merge`, { source_id: sourceId }),
     pay: (id, payments) => post(`/orders/${id}/pay`, { payments }),
     void: (id, reason, pin) => post(`/orders/${id}/void`, { reason, pin }),
     reprint: (id) => post(`/orders/${id}/reprint`),
-    reprintOrder: (id) => post(`/orders/${id}/reprint-order`),
+    reprintOrder: (id, stations) => post(`/orders/${id}/reprint-order`, { stations }),
     receipts: (q) => get('/receipts' + (q ? '?q=' + encodeURIComponent(q) : '')),
     customers: () => get('/customers'),
     openDay: (data) => post('/day/open', data),
@@ -279,7 +283,7 @@
     } catch (e) { showError(e); return false; }
   }
 
-  /** Open the table dialog. prompt = asked before Send / Pay (has a Skip button). Resolves false when cancelled. */
+  /** Open the table dialog. prompt = asked before Done / Pay (has a Skip button). Resolves false when cancelled. */
   async function assignTable(prompt = false) {
     const r = await tableDialog(S.order, { prompt });
     if (!r) return false;
@@ -287,16 +291,43 @@
     return setTable(r.label);
   }
 
-  async function sendToKitchen() {
-    if (!unsentLines(S.order).length) return;
-    if (needsTable(S.order) && !(await assignTable(true))) return;
+  /**
+   * Before Done / Pay: a dine-in order without a table must get one when Settings → POS requires it
+   * (or be switched to take-out). Without the setting the cashier may skip. Resolves true to go on.
+   */
+  async function ensureTable() {
+    if (!needsTable(S.order)) return true;
+    const required = OPT.require_table !== false;
+    const r = await tableDialog(S.order, { prompt: true, required });
+    if (!r) return false;
+    if (r.skip) return true;
+    if (r.takeout) {
+      if (S.order.draft) { S.order.order_type = 'takeout'; renderOrder(); return true; }
+      return !!(await run(() => mutate((o) => Api.update(o.id, { order_type: 'takeout' }))));
+    }
+    return setTable(r.label);
+  }
+
+  /**
+   * Done taking the order: check the table, print the order slips of the items not printed yet (one slip per
+   * prep station, on the printer(s) of that station) and go back to the orders board.
+   */
+  async function doneOrder() {
     await S.queue;
-    const r = await run(() => Api.send(S.order.id), $('[data-act="send"]'));
+    const o = S.order;
+    if (!o || o.draft || !activeLines(o).length) { closeOrder(); return; }
+    if (!(await ensureTable())) return;
+    await S.queue;
+    const r = await run(() => Api.done(S.order.id), $('[data-act="done"]'));
     if (!r) return;
-    setOrder(r.ticket);
-    if (!r.sent.length) { App.toast('Nothing new to send', 'info'); return; }
-    App.toast(`${r.sent.length} item(s) sent to the kitchen`);
-    if (Printer.config().kitchenSlip) Print.kitchen(r.ticket, r.sent);
+    closeOrder();
+    if (!r.sent.length) return;
+    if (Printer.config().slipOnDone) {
+      Print.slips(r.ticket, r.sent);
+      App.toast(`${orderTitle(r.ticket)}: order slip printing (${plural(r.sent.reduce((n, l) => n + Number(l.qty), 0), 'item')})`);
+    } else {
+      App.toast(`${orderTitle(r.ticket)} saved`);
+    }
   }
 
   /**
@@ -320,19 +351,19 @@
 
   async function startPay() {
     if (!activeLines(S.order).length) return;
-    if (needsTable(S.order) && !(await assignTable(true))) return;
+    if (!(await ensureTable())) return;
     await S.queue;
     payDialog(S.order);
   }
 
-  /** After a successful payment: success screen, receipt, kitchen slip for items never sent. */
+  /** After a successful payment: success screen, receipt, order slips for items never printed (paid without Done). */
   async function afterPaid(t, unsent) {
     closeOrder();
     loadMenu(); // retail stock changed
     const cfg = Printer.config();
     const job = paidDialog(t, cfg.autoPrint);
     if (cfg.autoPrint) job.printed = await Print.receipt(t, false);
-    if (cfg.kitchenSlip && unsent.length) Print.kitchen(t, unsent);
+    if (cfg.slipOnDone && unsent.length) Print.slips(t, unsent);
   }
 
   async function cancelOrder() {
@@ -348,10 +379,36 @@
     }
   }
 
-  /** Reprint the order slip (all items on the order) — e.g. the kitchen lost the slip. */
+  /**
+   * Reprint the order slip — e.g. the kitchen lost it, or the cashier needs a copy for the grill too.
+   * With items for more than one station the cashier picks: every station, or only one of them.
+   */
   async function reprintOrder(id, btn) {
-    const t = await run(() => Api.reprintOrder(id), btn);
-    if (t) Print.orderSlip(t);
+    const t = await run(() => Api.show(id), btn);
+    if (!t) return;
+    const lines = activeLines(t);
+    if (!lines.length) { App.toast('The order has no items', 'error'); return; }
+    const ids = [...new Set(lines.map((l) => l.station_id || 0))];
+    const go = async (stations, b) => {
+      const chosen = lines.filter((l) => stations.includes(l.station_id || 0));
+      if (!(await run(() => Api.reprintOrder(id, stations), b))) return false;
+      Print.slips(t, chosen, { reprint: true });
+      return true;
+    };
+    if (ids.length === 1) { go(ids); return; }
+    const m = modal({
+      title: `Reprint order slip · ${orderTitle(t)}`,
+      cls: 'dlg-card',
+      body: `<div class="col gap-sm">
+          <button type="button" class="btn btn-xl btn-primary" data-act="all">All stations</button>
+          ${ids.map((sid) => `<button type="button" class="btn btn-xl" data-act="one" data-sid="${sid}">${esc(sid ? stationName(sid) : 'Items without a station')} only
+            <span class="muted small">· ${plural(lines.filter((l) => (l.station_id || 0) === sid).reduce((n, l) => n + Number(l.qty), 0), 'item')}</span></button>`).join('')}
+        </div>`,
+      actions: {
+        all: async (b) => { if (await go(ids, b)) m.close(); },
+        one: async (b) => { if (await go([Number(b.dataset.sid)], b)) m.close(); },
+      },
+    });
   }
 
   function logout() {
@@ -406,7 +463,7 @@
             <button type="button" class="oc-more" data-act="cardMenu" data-id="${o.id}" aria-label="More">⋯</button></span>
           <span class="oc-sub">${esc(sub)}</span>
           <span class="oc-foot"><span>${plural(o.item_count, 'item')}${o.pax > 1 ? ` · ${o.pax} pax` : ''}</span><b>${peso(o.total)}</b></span>
-          ${Number(o.unsent) ? `<span class="oc-unsent">● ${o.unsent} not sent to kitchen</span>` : ''}
+          ${Number(o.unsent) ? `<span class="oc-unsent">● ${o.unsent} new — slip not printed yet</span>` : ''}
         </div>`;
     }).join('');
     const off = S.session ? '' : 'disabled';
@@ -451,7 +508,7 @@
       const color = i.color || catColor[i.category_id];
       return `<button type="button" class="tile${out ? ' out' : ''}" data-item="${i.id}" ${color ? `style="--c:${esc(color)}"` : ''}>
           <span class="tile-name">${esc(i.name)}</span>
-          <span><span class="tile-price">${peso(i.price)}</span>${retail ? `<span class="tile-stock"> · ${out ? 'out of stock' : Math.floor(i.stock_qty) + ' left'}</span>` : ''}</span>
+          <span><span class="tile-price">${peso(i.price)}${OPT.prices_include_vat === false ? '<small> +VAT</small>' : ''}</span>${retail ? `<span class="tile-stock"> · ${out ? 'out of stock' : Math.floor(i.stock_qty) + ' left'}</span>` : ''}</span>
         </button>`;
     }).join('');
     $('#tiles').innerHTML = tiles || `<div class="empty" style="grid-column:1/-1">${q ? 'No item matches “' + esc(q) + '”.' : 'No items. Add sellable items under Inventory → Items.'}</div>`;
@@ -466,7 +523,7 @@
       <div class="tline${l.status === 'void' ? ' voided' : ''}" ${l.status === 'active' ? `data-act="line" data-id="${l.id}"` : ''}>
         <span class="tline-qty">${qtyStr(l.qty)}</span>
         <div>
-          <div class="tline-name">${esc(l.name)}${l.kitchen_sent ? '<span class="sent-dot" title="Sent to kitchen"></span>' : ''}</div>
+          <div class="tline-name">${esc(l.name)}${l.kitchen_sent ? '<span class="sent-dot" title="Order slip printed"></span>' : ''}</div>
           ${l.notes ? `<div class="tline-note">${esc(l.notes)}</div>` : ''}
           ${l.status === 'active' && l.discount_kind ? `<div class="tline-disc"><span>${esc(l.discount_name || 'Discount')}</span><span>−${money(l.discount_amount)}</span></div>` : ''}
           ${l.status === 'void' ? `<div class="small">VOID: ${esc(l.void_reason || '')}</div>` : ''}
@@ -496,19 +553,19 @@
         ${t.sc_discount > 0 ? `<div class="row text-green"><span>${esc(scLabel)}</span><span>−${money(t.sc_discount)}</span></div>` : ''}
         ${t.promo_discount > 0 ? `<div class="row text-green"><span>${esc(promoLabel)}</span><span>−${money(t.promo_discount)}</span></div>` : ''}
         ${t.service_charge > 0 ? `<div class="row"><span>Service charge</span><span>${money(t.service_charge)}</span></div>` : ''}
-        ${B.tax.vatRegistered ? `<div class="row muted small"><span>VAT incl. ${money(t.vat_amount)}${t.vat_exempt_sales > 0 ? ' · VAT-exempt ' + money(t.vat_exempt_sales) : ''}</span></div>` : ''}
+        ${B.tax.vatRegistered && Number(t.vat_inclusive) === 0 ? `<div class="row"><span>VAT ${Math.round(B.tax.vatRate * 100)}% (added)</span><span>${money(t.vat_amount)}</span></div>` : ''}
+        ${B.tax.vatRegistered && Number(t.vat_inclusive) !== 0 ? `<div class="row muted small"><span>VAT incl. ${money(t.vat_amount)}${t.vat_exempt_sales > 0 ? ' · VAT-exempt ' + money(t.vat_exempt_sales) : ''}</span></div>` : ''}
         <div class="row grand"><span>TOTAL</span><span>${peso(t.total)}</span></div>
       </div>
       <div class="ticket-actions">
-        <button type="button" class="btn" data-act="send" ${off(unsent)}>Send${unsent ? ` (${unsent})` : ''}</button>
         <button type="button" class="btn" data-act="discount" ${off(active.length)}>Discount</button>
-        ${split ? `<button type="button" class="btn" data-act="split" ${off(active.length)}>Split</button>` : ''}
+        ${split ? `<button type="button" class="btn" data-act="split" ${off(active.length && !t.draft)}>Split / Move</button>` : ''}
         ${split ? `<button type="button" class="btn" data-act="merge" ${off(!t.draft)}>Merge</button>` : ''}
         <button type="button" class="btn" data-act="table">Table</button>
         <button type="button" class="btn" data-act="bill" ${off(active.length)}>Print bill</button>
         <button type="button" class="btn" data-act="reprintOrder" ${off(active.length && !t.draft)}>Reprint order</button>
         <button type="button" class="btn btn-danger" data-act="cancel">Cancel order</button>
-        <button type="button" class="btn" data-act="done">Done</button>
+        <button type="button" class="btn btn-primary done-btn" data-act="done">Done${unsent ? ` · print ${unsent}` : ''}</button>
         ${can('pos.settle') ? `<button type="button" class="btn btn-success pay" data-act="pay" ${off(active.length)}>PAY ${peso(t.total)}</button>` : ''}
       </div>`;
     renderBottom();
@@ -689,8 +746,11 @@
   }
 
   // ------------------------------------------------------------------ assign / change table
-  /** Resolves {label} ('' = no table), {skip: true} or null (cancelled). */
-  function tableDialog(order, { prompt = false } = {}) {
+  /**
+   * Resolves {label} ('' = no table), {skip: true}, {takeout: true} or null (cancelled).
+   * prompt = asked before Done / Pay; required = a table must be chosen (or the order made take-out).
+   */
+  function tableDialog(order, { prompt = false, required = false } = {}) {
     return new Promise((resolve) => {
       let result = null;
       const busy = S.tables.filter((l) => l !== order.table_label);
@@ -699,9 +759,10 @@
       const chips = labels.map((l) => `<button type="button" class="table-chip${busy.includes(l) ? ' busy' : ''}${l === order.table_label ? ' current' : ''}"
           data-act="chip" data-label="${esc(l)}">${esc(l)}${busy.includes(l) ? '<small>in use</small>' : ''}</button>`).join('');
       const m = modal({
-        title: prompt ? 'Assign a table?' : (order.table_label ? `Change table (now ${order.table_label})` : 'Assign table'),
+        title: required ? 'Table number needed' : prompt ? 'Assign a table?' : (order.table_label ? `Change table (now ${order.table_label})` : 'Assign table'),
         cls: 'dlg-table',
-        body: `${prompt ? '<p class="muted mt-0">This dine-in order has no table yet. Pick the table the customer sits at, or skip.</p>' : ''}
+        body: `${required ? '<div class="alert alert-warn mt-0">This dine-in order has no table yet. Pick or type the table number the customer sits at — or make it a take-out order.</div>'
+          : prompt ? '<p class="muted mt-0">This dine-in order has no table yet. Pick the table the customer sits at, or skip.</p>' : ''}
           <div class="table-entry">
             <input class="input table-input" name="label" maxlength="30" autocomplete="off" placeholder="Table no." data-num="text" readonly inputmode="none" value="${esc(order.table_label || '')}">
             <button type="button" class="btn btn-lg abc-btn" data-act="abc" title="Type letters, e.g. Patio 2">ABC</button>
@@ -711,8 +772,8 @@
             <div><div class="field-label mb-sm">Tap a table</div><div class="table-chips">${chips}</div></div>
             <div class="table-keys-box"><div class="field-label mb-sm">or type the number</div>${keypad(INT_KEYS, 'table-keys')}</div>
           </div>`,
-        foot: `<button type="button" class="btn" data-act="none">No table</button>
-          ${prompt ? '<button type="button" class="btn" data-act="skip">Skip</button>' : ''}
+        foot: `${required ? '<button type="button" class="btn" data-act="takeout">Make it take-out</button>'
+          : `<button type="button" class="btn" data-act="none">No table</button>${prompt ? '<button type="button" class="btn" data-act="skip">Skip</button>' : ''}`}
           <span class="grow"></span>
           <button type="button" class="btn" data-x>Cancel</button>
           <button type="submit" class="btn btn-primary btn-lg">Assign table</button>`,
@@ -738,6 +799,7 @@
           },
           none: () => done({ label: '' }),
           skip: () => done({ skip: true }),
+          takeout: () => done({ takeout: true }),
         },
       });
       const input = m.$('[name=label]');
@@ -791,8 +853,8 @@
           ${numField('qty', qtyStr(line.qty), 'money', 'data-act="qty"')}
           <button type="button" class="btn btn-lg" data-act="plus">+</button>
         </div>
-        <p class="muted small">${peso(line.price)} each · ${sent ? '<b class="text-green">Already sent to the kitchen</b>' : 'Not yet sent to the kitchen'}</p>
-        <label class="field"><span class="field-label">Kitchen note</span>
+        <p class="muted small">${peso(line.price)} each · ${sent ? '<b class="text-green">Order slip already printed</b>' : 'Order slip not printed yet'}</p>
+        <label class="field"><span class="field-label">Note for the kitchen / grill</span>
           <input class="input" name="notes" value="${esc(line.notes || '')}" placeholder="e.g. no onions, extra spicy, less ice" autocomplete="off"></label>
         <div class="note-chips">${NOTE_CHIPS.map((n) => `<button type="button" class="btn btn-sm" data-act="note" data-note="${esc(n)}">${esc(n)}</button>`).join('')}</div>
 
@@ -956,28 +1018,34 @@
     numpad(m.el);
   }
 
-  // ------------------------------------------------------------------ split: move lines to a new or another order
-  async function splitDialog() {
+  // ------------------------------------------------------------------ split / move: selected items to a new or another order
+  /**
+   * Choose items (whole or part quantities) of `source` (default: the open order) and move them to a new order
+   * (separate bill, any table) or to another open order — e.g. move two drinks from Table 3 to Table 5.
+   * presetTarget = id of the order to move to (used by Merge → "Pick items").
+   */
+  async function splitDialog(source = null, presetTarget = null) {
     await S.queue;
     await loadOrders();
-    const t = S.order;
+    const t = source || S.order;
     const lines = activeLines(t);
     const sel = {};   // line id -> qty to move
     const others = S.orders.filter((o) => o.id !== t.id);
     const m = modal({
-      title: 'Split order — choose the items to move',
+      title: `Split / move items from ${orderTitle(t)}`,
       cls: 'dlg-split',
-      body: `<div class="row gap-sm mb"><button type="button" class="btn" data-act="all">Select all</button><button type="button" class="btn" data-act="clear">Clear</button></div>
+      body: `<div class="row gap-sm mb"><button type="button" class="btn" data-act="all">Select all</button><button type="button" class="btn" data-act="clear">Clear</button>
+          <span class="muted small">Tap + / All on the items to move</span></div>
         <div class="split-lines"></div>
         <div class="form-grid mt">
           <label class="field"><span class="field-label">Move the selected items to</span><select class="input" name="target">
             <option value="">A new order (separate bill)</option>
-            ${others.map((o) => `<option value="${o.id}">${esc(o.ticket_no)} · ${esc(orderTitle(o))} · ${peso(o.total)}</option>`).join('')}</select></label>
+            ${others.map((o) => `<option value="${o.id}"${o.id === presetTarget ? ' selected' : ''}>${esc(orderTitle(o))} · ${esc(o.ticket_no)} · ${peso(o.total)}</option>`).join('')}</select></label>
           <div class="field new-only"><span class="field-label">Table of the new order</span>
             <button type="button" class="btn btn-lg split-table" data-act="table">${t.table_label ? 'Table ' + esc(t.table_label) : 'No table'}</button></div>
           <label class="field new-only"><span class="field-label">Customer name (optional)</span><input class="input" name="customer_name" autocomplete="off"></label>
         </div>`,
-      foot: '<span class="muted split-sum"></span><span class="grow"></span><button type="button" class="btn btn-lg" data-x>Cancel</button><button type="submit" class="btn btn-primary btn-lg">Split</button>',
+      foot: '<span class="muted split-sum"></span><span class="grow"></span><button type="button" class="btn btn-lg" data-x>Cancel</button><button type="submit" class="btn btn-primary btn-lg">Move items</button>',
       actions: {
         all: () => { lines.forEach((l) => { sel[l.id] = l.qty; }); paint(); },
         clear: () => { lines.forEach((l) => { sel[l.id] = 0; }); paint(); },
@@ -997,12 +1065,16 @@
         const target = m.$('[name=target]').value;
         const data = target ? { lines: chosen, target_id: Number(target) }
           : { lines: chosen, table_label: newTable, customer_name: m.$('[name=customer_name]').value.trim() };
+        await S.queue;
         const r = await run(() => Api.split(t.id, data), btn);
         if (!r) return;
         m.close();
-        App.toast(`Items moved to ${r.target.ticket_no}`);
-        // When everything was moved, continue with the order that now has the items
-        if (activeLines(r.source).length) setOrder(r.source); else openOrder(r.target, 'order');
+        App.toast(`Items moved to ${orderTitle(r.target)} (${r.target.ticket_no})`);
+        if (S.order && S.order.id === r.target.id) setOrder(r.target);
+        else if (S.order && S.order.id === r.source.id) {
+          // When everything was moved, continue with the order that now has the items
+          if (activeLines(r.source).length) setOrder(r.source); else openOrder(r.target, 'order');
+        }
         loadOrders();
       },
     });
@@ -1024,9 +1096,10 @@
       const amt = lines.reduce((s, l) => s + (sel[l.id] || 0) * l.price, 0);
       m.$('.split-sum').textContent = `Moving ${peso(amt)}`;
     }
-    m.$('[name=target]').addEventListener('change', (e) => {
-      m.el.querySelectorAll('.new-only').forEach((el) => el.classList.toggle('hidden', !!e.target.value));
-    });
+    const targetSel = m.$('[name=target]');
+    const toggleNew = () => m.el.querySelectorAll('.new-only').forEach((el) => el.classList.toggle('hidden', !!targetSel.value));
+    targetSel.addEventListener('change', toggleNew);
+    toggleNew();
     paint();
   }
 
@@ -1037,16 +1110,24 @@
     const t = S.order;
     const others = S.orders.filter((o) => o.id !== t.id);
     const m = modal({
-      title: `Merge another order into ${orderTitle(t)}`,
-      body: `<p class="muted mt-0">All items of the chosen order move to this order; the other order is closed.</p>
+      title: `Merge into ${orderTitle(t)}`,
+      body: `<p class="muted mt-0"><b>Merge all</b> moves every item of the other order here and closes it.
+          <b>Pick items</b> lets you choose which items (and how many) to bring over.</p>
         ${others.map((o) => `<div class="pick-row">
           <div><b>${esc(orderTitle(o))}</b> <span class="muted">· ${esc(o.ticket_no)}${o.table_label && o.customer_name ? ' · ' + esc(o.customer_name) : ''}</span>
             <div class="muted small">${plural(o.item_count, 'item')} · ${peso(o.total)} · ${elapsed(o.created_at)}</div></div>
-          <button type="button" class="btn btn-primary btn-lg" data-act="merge" data-id="${o.id}">Merge</button></div>`).join('') || '<div class="empty">No other open orders.</div>'}`,
+          <div class="row gap-sm"><button type="button" class="btn btn-lg" data-act="pick" data-id="${o.id}">Pick items</button>
+            <button type="button" class="btn btn-primary btn-lg" data-act="merge" data-id="${o.id}">Merge all</button></div></div>`).join('') || '<div class="empty">No other open orders.</div>'}`,
       actions: {
         merge: async (b) => {
           const r = await run(() => Api.merge(t.id, Number(b.dataset.id)), b);
           if (r) { m.close(); setOrder(r); App.toast('Orders merged'); loadOrders(); }
+        },
+        pick: async (b) => {
+          const other = await run(() => Api.show(Number(b.dataset.id)), b);
+          if (!other) return;
+          m.close();
+          splitDialog(other, t.id);
         },
       },
     });
@@ -1066,7 +1147,7 @@
         </div>`,
       actions: {
         open: () => { m.close(); openOrderById(id); },
-        reprint: async (b) => { await reprintOrder(id, b); m.close(); },
+        reprint: () => { m.close(); reprintOrder(id); },
         bill: async (b) => { const t = await run(() => Api.show(id), b); if (t) { m.close(); Print.receipt(t, false); } },
       },
     });
@@ -1476,140 +1557,144 @@
     });
   }
 
-  // ------------------------------------------------------------------ printer: status, reconnect, quick settings
+  // ------------------------------------------------------------------ printers: status, reconnect, quick settings
   function printerDialog() {
     const m = modal({
-      title: 'Printer',
+      title: 'Printers',
       cls: 'dlg-printer',
       body: '<div class="printer-body"></div>',
-      foot: `<a class="btn btn-lg" href="${esc(B.links.printerSetup)}" target="_blank" rel="noopener">Open printer setup ↗</a><span class="grow"></span>
+      foot: `<a class="btn btn-lg" href="${esc(B.links.printerSetup)}">Printer setup</a><span class="grow"></span>
         <button type="button" class="btn btn-lg" data-x>Close</button>`,
       actions: {
-        reconnect: (b) => run(() => Printer.reconnect(), b),
-        connect: (b) => run(() => Printer.connect(), b),
-        retry: (b) => run(() => Printer.retryQueue(), b),
-        clear: () => Printer.clearQueue(),
-        test: () => printSafe('Test print', (o) => Printer.testPrint({ business: B.business, ...o })),
+        reconnect: (b) => run(() => Printer.reconnect(b.dataset.id), b),
+        connect: (b) => run(() => Printer.connect(b.dataset.id), b),
+        retry: (b) => run(() => Printer.retryQueue(b.dataset.id), b),
+        clear: (b) => Printer.clearQueue(b.dataset.id),
+        test: (b) => report('Test print', () => Printer.testPrint(b.dataset.id, { business: B.business })),
         toggle: (b) => { Printer.saveConfig({ [b.dataset.key]: b.checked }); },
       },
     });
-    function paint(s) {
+    function paint(st) {
       if (!m.el.isConnected) return;
       const c = Printer.config();
-      const p = printerState(s);
-      const linkable = c.method === 'bluetooth' || c.method === 'serial';
+      const rows = st.printers.map((p) => {
+        const s1 = printerLine(p);
+        const prints = [p.receipts ? 'receipts' : '', p.slips ? 'order slips' : ''].filter(Boolean).join(' + ') || 'nothing';
+        return `<div class="printer-row ${s1.cls}">
+            <div class="grow"><b>${esc(p.name)}</b> <span class="muted small">· ${esc(prints)}</span>
+              <div class="small">${esc(s1.long)}${p.lastError && !p.connected && p.linkable ? ' · ' + esc(p.lastError) : ''}</div>
+              ${p.queue ? `<div class="small text-amber">${plural(p.queue, 'print job')} waiting
+                <button type="button" class="btn btn-sm" data-act="retry" data-id="${p.id}">Print now</button>
+                <button type="button" class="btn btn-sm btn-ghost" data-act="clear" data-id="${p.id}">Discard</button></div>` : ''}
+            </div>
+            <div class="row gap-sm">
+              ${p.linkable && !p.connected ? `<button type="button" class="btn btn-primary" data-act="${p.deviceName ? 'reconnect' : 'connect'}" data-id="${p.id}" ${p.connecting ? 'disabled' : ''}>${p.deviceName ? '↻ Reconnect' : 'Connect'}</button>` : ''}
+              <button type="button" class="btn" data-act="test" data-id="${p.id}">⎙ Test</button>
+            </div>
+          </div>`;
+      }).join('');
       m.$('.printer-body').innerHTML = `
-        <div class="printer-status ${p.cls}"><b>${esc(p.long)}</b>
-          <div class="small">${c.paper} mm paper${s.lastError && !s.connected ? ' · ' + esc(s.lastError) : ''}</div></div>
-        ${s.queue ? `<div class="alert alert-warn mt">${plural(s.queue, 'print job')} waiting for the printer.
-            <div class="row gap-sm mt"><button type="button" class="btn" data-act="retry">Print now</button><button type="button" class="btn" data-act="clear">Discard</button></div></div>` : ''}
-        <div class="printer-actions mt">
-          ${linkable ? `<button type="button" class="btn btn-primary btn-xl" data-act="reconnect" ${s.connected || s.connecting ? 'disabled' : ''}>↻ Reconnect</button>
-            <button type="button" class="btn btn-xl" data-act="connect">＋ Connect new printer</button>` : ''}
-          <button type="button" class="btn btn-xl" data-act="test">⎙ Test print</button>
-        </div>
+        ${rows || `<div class="alert alert-warn">No printer is set up on this device yet. Open <b>Printer setup</b> and add your Bluetooth printer.</div>`}
         <div class="col gap-sm mt">
           <label class="checkbox"><input type="checkbox" data-act="toggle" data-key="autoPrint" ${c.autoPrint ? 'checked' : ''}> Print the receipt automatically after payment</label>
-          <label class="checkbox"><input type="checkbox" data-act="toggle" data-key="kitchenSlip" ${c.kitchenSlip ? 'checked' : ''}> Print a kitchen slip when sending orders</label>
+          <label class="checkbox"><input type="checkbox" data-act="toggle" data-key="slipOnDone" ${c.slipOnDone ? 'checked' : ''}> Print the order slips when I press Done</label>
         </div>`;
     }
     Printer.onStatus(paint);
   }
 
   // =====================================================================================================
-  // 7. Printing hooks (window.Printer from printer.js)
+  // 7. Printing hooks (window.Printer from printer.js) — only the printers set up on this device, never the browser dialog
   // =====================================================================================================
-  const printCtx = (extra) => ({ business: B.business, tax: B.tax, methods: B.payment_methods, ...extra });
+  const printCtx = (extra) => ({ business: B.business, tax: B.tax, methods: B.payment_methods, stations: B.stations || [], ...extra });
   const Print = {
-    receipt: (t, reprint) => printSafe(t.status === 'open' ? 'Bill' : 'Receipt', (o) => Printer.printReceipt(t, printCtx({ reprint: !!reprint, ...o }))),
-    kitchen: (t, lines) => printSafe('Kitchen slip', (o) => Printer.printKitchen(t, lines, printCtx(o))),
-    orderSlip: (t) => printSafe('Order slip', (o) => Printer.printOrderSlip(t, printCtx(o))),
-    reading: (r, isZ) => printSafe(isZ ? 'Z-reading' : 'X-reading', (o) => Printer.printReading(r, printCtx(o), isZ)),
+    receipt: (t, reprint) => report(t.status === 'open' ? 'Bill' : 'Receipt', (o) => Printer.printReceipt(t, printCtx({ reprint: !!reprint, ...o }))),
+    slips: (t, lines, extra = {}) => report(extra.reprint ? 'Order slip reprint' : 'Order slip', (o) => Printer.printSlips(t, lines, printCtx({ ...extra, ...o }))),
+    reading: (r, isZ) => report(isZ ? 'Z-reading' : 'X-reading', (o) => Printer.printReading(r, printCtx(o), isZ)),
   };
 
   /**
-   * Run a print job. Resolves true when printed.
-   * - Printer asleep / out of range: printer.js keeps the job (err.queued) and prints it on reconnect.
-   * - Other failures: offer Retry / Print with browser.
+   * Run a print job and tell the cashier what happened. Resolves true when everything printed.
+   * - No printer for this job on this device: offer Printer setup.
+   * - A printer asleep / out of range: the job is kept by that printer and prints by itself on reconnect (toast).
+   * - Other failures: dialog with "Connect & retry" for that printer.
    */
-  async function printSafe(what, job) {
-    try {
-      await job({});
-      return true;
-    } catch (err) {
-      if (err.queued) return queuedDialog(what, err, job);
+  async function report(what, job) {
+    let results;
+    try { results = await job({}); } catch (err) {
+      if (err.noPrinter) { noPrinterDialog(what, err); return false; }
       App.toast(`${what}: ${err.message}`, 'error');
-      return printFailedDialog(what, err, job);
+      return false;
     }
+    let ok = true;
+    for (const r of results) {
+      if (r.ok) continue;
+      ok = false;
+      if (r.queued) App.toast(`${r.printer.name} is not connected — the ${what.toLowerCase()} will print when it reconnects.`, 'info');
+      else printFailedDialog(what, r, job);
+    }
+    return ok;
   }
 
-  function queuedDialog(what, err, job) {
-    return new Promise((resolve) => {
-      let ok = false;
-      const m = modal({
-        title: `${what} saved`,
-        body: `<div class="alert alert-warn">The printer is not connected. The ${esc(what.toLowerCase())} is saved and will print by itself when the printer reconnects.</div>
-          <p class="muted small">Check that the printer is switched on, charged and near this tablet.</p>`,
-        foot: '<button type="button" class="btn btn-lg" data-act="browser">Print with browser instead</button><span class="grow"></span><button type="submit" class="btn btn-primary btn-lg">OK</button>',
-        onSubmit: () => m.close(),
-        onClose: () => resolve(ok),
-        actions: {
-          browser: async (b) => {
-            Printer.dropJob(err.jobId);
-            if (await run(async () => { await job({ method: 'browser' }); return true; }, b)) { ok = true; m.close(); }
-          },
-        },
-      });
+  function noPrinterDialog(what, err) {
+    modal({
+      title: `${what} not printed`,
+      body: `<div class="alert alert-warn">${esc(err.message)}</div>
+        <p class="muted">Printing goes straight to the thermal printer(s) set up on this tablet — Bluetooth, RawBT or USB. Add one under Printer setup.</p>`,
+      foot: `<button type="button" class="btn btn-lg" data-x>Close</button><span class="grow"></span>
+        <a class="btn btn-primary btn-lg" href="${esc(B.links.printerSetup)}">Open printer setup</a>`,
     });
   }
 
-  function printFailedDialog(what, err, job) {
-    return new Promise((resolve) => {
-      let ok = false;
-      const linkable = ['bluetooth', 'serial'].includes(Printer.config().method);
-      const m = modal({
-        title: `${what} not printed`,
-        body: `<div class="alert alert-error">${esc(err.message)}</div><p class="muted">Check that the printer is on, has paper and is near this device.</p>`,
-        foot: `<button type="button" class="btn btn-lg" data-x>Close</button><span class="grow"></span>
-          <button type="button" class="btn btn-lg" data-act="browser">Print with browser</button>
-          <button type="button" class="btn btn-primary btn-lg" data-act="retry">${linkable && !Printer.isConnected() ? 'Connect & retry' : 'Retry'}</button>`,
-        onClose: () => resolve(ok),
-        actions: {
-          retry: async (b) => {
-            // This click lets the browser show its printer picker when the printer was never chosen
-            const r = await run(async () => {
-              if (linkable && !Printer.isConnected()) { try { await Printer.reconnect(); } catch (e) { await Printer.connect(); } }
-              await job({});
-              return true;
-            }, b);
-            if (r) { ok = true; m.close(); }
-          },
-          browser: async (b) => {
-            const r = await run(async () => { await job({ method: 'browser' }); return true; }, b);
-            if (r) { ok = true; m.close(); }
-          },
+  function printFailedDialog(what, res, job) {
+    const p = Printer.printer(res.printer.id) || {};
+    const linkable = p.method === 'bluetooth' || p.method === 'serial';
+    const m = modal({
+      title: `${what} not printed on ${res.printer.name}`,
+      body: `<div class="alert alert-error">${esc(res.error)}</div><p class="muted">Check that the printer is on, has paper and is near this device.</p>`,
+      foot: `<button type="button" class="btn btn-lg" data-x>Close</button><span class="grow"></span>
+        <button type="button" class="btn btn-primary btn-lg" data-act="retry">${linkable && !Printer.isConnected(p.id) ? 'Connect & retry' : 'Retry'}</button>`,
+      actions: {
+        retry: async (b) => {
+          // This click lets the browser show its printer picker when the printer was never chosen
+          const r = await run(async () => {
+            if (linkable && !Printer.isConnected(p.id)) { try { await Printer.reconnect(p.id); } catch (e) { await Printer.connect(p.id); } }
+            return job({ only: p.id });
+          }, b);
+          if (!r) return;
+          const bad = r.find((x) => !x.ok);
+          if (!bad) { m.close(); App.toast(`${what} printed`); } else App.toast(bad.error, 'error');
         },
-      });
+      },
     });
+  }
+
+  /** One printer's status line: {cls, long}. */
+  function printerLine(p) {
+    const names = { rawbt: 'RawBT app', bluetooth: 'Bluetooth', serial: 'USB / serial' };
+    const name = names[p.method] || p.method;
+    if (!p.linkable) return { cls: 'ok', long: `${name} — ready` };
+    if (p.connecting) return { cls: 'busy', long: `Connecting to ${p.deviceName || 'the printer'}…` };
+    if (p.connected) return { cls: 'ok', long: `Connected: ${p.deviceName || name}` };
+    return { cls: 'warn', long: p.deviceName ? `${p.deviceName} not connected` : `${name}: no printer chosen yet` };
   }
 
   /** Printer chip text / colour for the top bar, from Printer.status(). */
   function printerState(s = Printer.status()) {
-    const names = { browser: 'Browser print', rawbt: 'RawBT app', bluetooth: 'Bluetooth', serial: 'USB / serial' };
-    const name = names[s.method] || s.method;
-    if (s.method === 'browser' || s.method === 'rawbt') return { cls: 'ok', text: name, long: `${name} — ready`, queue: 0 };
-    if (s.connecting) return { cls: 'busy', text: 'Connecting…', long: `Connecting to ${s.deviceName || 'the printer'}…`, queue: s.queue };
-    if (s.connected) return { cls: 'ok', text: 'Connected', long: `Connected: ${s.deviceName || name}`, queue: s.queue };
-    return { cls: 'warn', text: 'Not connected', long: `${name} printer not connected${s.deviceName ? ' (' + s.deviceName + ')' : ''}`, queue: s.queue };
+    if (!s.configured) return { cls: 'warn', text: 'No printer', queue: 0 };
+    if (s.connecting) return { cls: 'busy', text: 'Connecting…', queue: s.queue };
+    if (s.problems) return { cls: 'warn', text: s.configured === 1 ? 'Not connected' : `${s.problems} of ${s.configured} offline`, queue: s.queue };
+    return { cls: 'ok', text: s.configured === 1 ? 'Printer ready' : `${s.configured} printers ready`, queue: s.queue };
   }
 
   /** On-screen previews use the same layout as the printed slip (printer.js document model). */
   function previewOf(doc) {
-    const paper = Number(Printer.config().paper) === 80 ? 80 : 58;
+    const paper = Printer.previewPaper();
     return `<div class="paper-${paper}">${Printer._internals.html(doc, paper)}</div>`;
   }
-  const previewReceipt = (t) => previewOf(Printer._internals.receiptDoc(t, printCtx({})));
-  const previewReading = (r, isZ) => previewOf(Printer._internals.readingDoc(r, printCtx({}), isZ));
+  const previewCols = () => (Printer.previewPaper() === 80 ? 48 : 32);
+  const previewReceipt = (t) => previewOf(Printer._internals.receiptDoc(t, printCtx({}), previewCols()));
+  const previewReading = (r, isZ) => previewOf(Printer._internals.readingDoc(r, printCtx({}), isZ, previewCols()));
 
   // =====================================================================================================
   // 8. Screen & keyboard (Android tablets) + install as an app
@@ -1694,14 +1779,13 @@
     details: detailsDialog,
     table: () => assignTable(false),
     line: (b) => S.queue.then(() => { const l = S.order && S.order.items.find((i) => i.id === Number(b.dataset.id)); if (l) lineDialog(l); }),
-    send: sendToKitchen,
     discount: () => S.queue.then(discountDialog),
-    split: splitDialog,
-    merge: mergeDialog,
+    split: () => splitDialog(),
+    merge: () => mergeDialog(),
     bill: () => S.queue.then(() => { if (activeLines(S.order).length) Print.receipt(S.order, false); }),
     reprintOrder: (b) => S.queue.then(() => reprintOrder(S.order.id, b)),
     cancel: cancelOrder,
-    done: () => S.queue.then(closeOrder),
+    done: doneOrder,
     pay: startPay,
     pane: (b) => { S.pane = b.dataset.pane; render(); },
   };

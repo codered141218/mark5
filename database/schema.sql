@@ -303,13 +303,25 @@ CREATE TABLE IF NOT EXISTS uom_conversions (
   CONSTRAINT fk_conv_to FOREIGN KEY (to_uom_id) REFERENCES uoms(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Where order slips go: Kitchen, Grill, Bar ... (items / categories are tagged with a station)
+CREATE TABLE IF NOT EXISTS prep_stations (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(40) NOT NULL UNIQUE,
+  sort_order INT NOT NULL DEFAULT 0,
+  active TINYINT(1) NOT NULL DEFAULT 1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS categories (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(80) NOT NULL UNIQUE,
   kind ENUM('menu','inventory','both') NOT NULL DEFAULT 'menu',
   color VARCHAR(9) NULL,
   sort_order INT NOT NULL DEFAULT 0,
-  active TINYINT(1) NOT NULL DEFAULT 1
+  active TINYINT(1) NOT NULL DEFAULT 1,
+  station_id INT UNSIGNED NULL,               -- default prep station of the category's menu items
+  sales_account_id INT UNSIGNED NULL,         -- GL account overrides (NULL = the default in GL account setup)
+  cogs_account_id INT UNSIGNED NULL,
+  inventory_account_id INT UNSIGNED NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- item_type: raw (ingredient, stocked) | composite (menu item with a recipe, not stocked itself)
@@ -321,7 +333,7 @@ CREATE TABLE IF NOT EXISTS items (
   category_id INT UNSIGNED NULL,
   item_type ENUM('raw','composite','retail','non_inventory') NOT NULL,
   base_uom_id INT UNSIGNED NULL,
-  price DECIMAL(14,2) NOT NULL DEFAULT 0,          -- selling price, VAT-inclusive
+  price DECIMAL(14,2) NOT NULL DEFAULT 0,          -- selling price (VAT-inclusive unless the VAT-exclusive pricing setting is on)
   avg_cost DECIMAL(14,4) NOT NULL DEFAULT 0,       -- moving average cost per base unit
   last_cost DECIMAL(14,4) NOT NULL DEFAULT 0,
   stock_qty DECIMAL(14,4) NOT NULL DEFAULT 0,      -- in base unit
@@ -333,6 +345,7 @@ CREATE TABLE IF NOT EXISTS items (
   barcode VARCHAR(60) NULL,
   description VARCHAR(255) NULL,
   sort_order INT NOT NULL DEFAULT 0,
+  station_id INT UNSIGNED NULL,                    -- prep station for order slips (NULL = the category's)
   created_at DATETIME NULL,
   updated_at DATETIME NULL,
   KEY ix_items_cat (category_id),
@@ -520,6 +533,7 @@ CREATE TABLE IF NOT EXISTS tickets (
   paid_total DECIMAL(14,2) NOT NULL DEFAULT 0,
   change_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
   cogs DECIMAL(14,2) NOT NULL DEFAULT 0,
+  vat_inclusive TINYINT(1) NOT NULL DEFAULT 1,   -- prices on this order include VAT (else VAT is added on top)
   notes VARCHAR(255) NULL,
   split_from_id INT UNSIGNED NULL,
   created_by INT UNSIGNED NULL,

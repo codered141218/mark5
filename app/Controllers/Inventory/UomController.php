@@ -72,20 +72,33 @@ class UomController
 
     public function delete(Request $req, string $id): Response
     {
-        $id = (int) $id;
+        self::remove((int) $id);
+        flash('success', 'Unit deleted.');
+        return redirect('/inventory/uom');
+    }
+
+    /** Bulk delete from the list (units in use are skipped with a message). */
+    public function bulk(Request $req): Response
+    {
+        if ($req->input('action') !== 'delete') throw HttpException::bad('Unknown action');
+        bulk_apply((array) $req->input('ids', []), 'unit', fn (int $id) => self::remove($id));
+        return redirect('/inventory/uom');
+    }
+
+    private static function remove(int $id): string
+    {
+        $abbr = DB::value('SELECT abbr FROM uoms WHERE id = ?', [$id]);
+        if ($abbr === null) throw HttpException::notFound('Unit');
         $used = DB::value(
             'SELECT 1 FROM items WHERE base_uom_id = ? UNION SELECT 1 FROM item_uoms WHERE uom_id = ?
              UNION SELECT 1 FROM item_components WHERE uom_id = ? UNION SELECT 1 FROM inv_doc_lines WHERE uom_id = ? LIMIT 1',
             [$id, $id, $id, $id]
         );
-        if ($used) throw HttpException::bad('Unit is in use and cannot be deleted');
-        DB::transaction(function () use ($id) {
-            DB::run('DELETE FROM uom_conversions WHERE from_uom_id = ? OR to_uom_id = ?', [$id, $id]);
-            DB::run('DELETE FROM uoms WHERE id = ?', [$id]);
-        });
-        Audit::log('delete', 'uom', $id);
-        flash('success', 'Unit deleted.');
-        return redirect('/inventory/uom');
+        if ($used) throw HttpException::bad("Unit “{$abbr}” is in use and cannot be deleted");
+        DB::run('DELETE FROM uom_conversions WHERE from_uom_id = ? OR to_uom_id = ?', [$id, $id]);
+        DB::run('DELETE FROM uoms WHERE id = ?', [$id]);
+        Audit::log('delete', 'uom', $id, $abbr);
+        return 'deleted';
     }
 
     /** Add a global conversion, or update its factor when the pair already exists. */

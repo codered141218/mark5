@@ -129,6 +129,15 @@ class Seeder
             $extraEgg = $menu('Extra Egg', $cats['ulam'], 20);
             $comp($extraEgg, $R['egg'], 1, 'pc');
             $item(['name' => 'Corkage Fee', 'cat' => $cats['drinks'], 'type' => 'non_inventory', 'uom' => 'pc', 'price' => 150, 'sellable' => true]);
+            // Prep stations for the order slips: most food is cooked in the kitchen, sisig is done on the grill;
+            // drinks have no station (the cashier prepares them).
+            $kitchen = DB::value("SELECT id FROM prep_stations WHERE name = 'Kitchen'");
+            $grill = DB::value("SELECT id FROM prep_stations WHERE name = 'Grill'");
+            if ($kitchen) DB::run('UPDATE categories SET station_id = ? WHERE id IN (?, ?, ?, ?)', [$kitchen, $cats['rice'], $cats['ulam'], $cats['noodles'], $cats['dessert']]);
+            if ($grill) DB::run('UPDATE items SET station_id = ? WHERE id IN (?, ?)', [$grill, $sisig, $sisigMeal]);
+            // Positions on the POS: in the order created
+            $pos = 0;
+            foreach (DB::all('SELECT id FROM items ORDER BY category_id, id') as $r) DB::run('UPDATE items SET sort_order = ? WHERE id = ?', [$pos += 10, $r['id']]);
             // keep the SKU sequence ahead of the sample SKUs
             DB::run("INSERT INTO sequences (name, prefix, next_no, pad) VALUES ('SKU','SKU',1,5) ON DUPLICATE KEY UPDATE name = name");
 

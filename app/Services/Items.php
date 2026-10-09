@@ -36,6 +36,7 @@ class Items
         if (DB::value('SELECT id FROM items WHERE sku = ?', [$row['sku']])) throw HttpException::bad('SKU already exists');
         $cost = in_array($row['item_type'], Inventory::STOCKED, true) ? max(num($data['avg_cost'] ?? 0), 0) : 0;
 
+        $row['sort_order'] = Positions::next('items', 'category_id <=> ?', [$row['category_id']]);   // new items go to the end of their category
         $id = DB::transaction(function () use ($row, $cost, $data) {
             $id = DB::insert('items', $row + ['avg_cost' => $cost, 'last_cost' => $cost, 'created_at' => now(), 'updated_at' => now()]);
             self::saveChildren($id, $data);
@@ -53,6 +54,9 @@ class Items
         if (empty($row['sku'])) unset($row['sku']);
         elseif (DB::value('SELECT id FROM items WHERE sku = ? AND id <> ?', [$row['sku'], $id])) throw HttpException::bad('SKU already exists');
 
+        if ((int) $row['category_id'] !== (int) $item['category_id']) {
+            $row['sort_order'] = Positions::next('items', 'category_id <=> ?', [$row['category_id']]);   // moved: goes to the end of the new category
+        }
         if ($row['item_type'] !== $item['item_type'] && abs((float) $item['stock_qty']) > 0.0001) {
             throw HttpException::bad('Cannot change item type while it has stock on hand. Adjust stock to zero first.');
         }
@@ -95,6 +99,14 @@ class Items
         return true;
     }
 
+    /** Activate / deactivate an item (inactive items are hidden from the POS and selections). */
+    public static function setActive(int $id, bool $active): string
+    {
+        DB::run('UPDATE items SET active = ?, updated_at = ? WHERE id = ?', [$active ? 1 : 0, now(), $id]);
+        Audit::log($active ? 'activate' : 'deactivate', 'item', $id);
+        return $active ? 'activated' : 'deactivated';
+    }
+
     /** The editable item columns from submitted data, validated and typed. */
     private static function fields(array $d): array
     {
@@ -116,7 +128,7 @@ class Items
             'color' => $text('color', 9),
             'barcode' => $text('barcode', 60),
             'description' => $text('description', 255),
-            'sort_order' => (int) ($d['sort_order'] ?? 0),
+            'station_id' => !empty($d['station_id']) && DB::value('SELECT id FROM prep_stations WHERE id = ?', [(int) $d['station_id']]) ? (int) $d['station_id'] : null,
         ];
     }
 
@@ -204,10 +216,10 @@ class Items
         return $costs;
     }
 
-    /** VAT divisor for selling prices (prices are VAT-inclusive): 1.12, or 1 when not VAT-registered. */
+    /** Divisor that turns a selling price into its net-of-VAT amount: 1.12 for VAT-inclusive prices, else 1. */
     public static function vatDivisor(): float
     {
-        return 1 + Settings::tax()['vatRate'];
+        return Settings::pricesIncludeVat() ? 1 + Settings::tax()['vatRate'] : 1.0;
     }
 
     /** Food cost % = unit cost / selling price net of VAT. Null when there is no price. */

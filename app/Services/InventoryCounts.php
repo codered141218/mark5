@@ -81,6 +81,7 @@ class InventoryCounts
 
             $gain = 0.0;
             $loss = 0.0;
+            $byAccount = [];   // inventory account (per item category) => [gain, loss]
             foreach ($counted as $l) {
                 $item = Inventory::item((int) $l['item_id']);
                 $onHand = (float) $item['stock_qty'];
@@ -92,17 +93,19 @@ class InventoryCounts
                 if ($variance == 0) continue;
                 Inventory::move(['item_id' => (int) $item['id'], 'qty' => $variance, 'mtype' => 'COUNT', 'unit_cost' => $cost,
                     'ref_type' => 'count', 'ref_id' => $id, 'ref_no' => $s['doc_no'], 'bdate' => $s['count_date']]);
-                if ($value > 0) $gain += $value;
-                else $loss -= $value;
+                $acct = Ledger::itemAccount((int) $item['id'], 'inventory');
+                $byAccount[$acct] ??= [0.0, 0.0];
+                if ($value > 0) { $gain += $value; $byAccount[$acct][0] += $value; }
+                else { $loss -= $value; $byAccount[$acct][1] -= $value; }
             }
             $gain = r2($gain);
             $loss = r2($loss);
             // Overages: Dr Inventory / Cr Variance.  Shortages: Dr Variance / Cr Inventory.
             $jeId = Ledger::post($s['count_date'], "Inventory count {$s['doc_no']} variance", [
-                ['key' => 'inventory', 'debit' => $gain, 'memo' => 'Count overage'],
+                ...Ledger::linesByAccount(array_map(fn ($x) => $x[0], $byAccount), 'debit', 'Count overage'),
                 ['key' => 'inv_variance', 'credit' => $gain, 'memo' => 'Count overage'],
                 ['key' => 'inv_variance', 'debit' => $loss, 'memo' => 'Count shortage'],
-                ['key' => 'inventory', 'credit' => $loss, 'memo' => 'Count shortage'],
+                ...Ledger::linesByAccount(array_map(fn ($x) => $x[1], $byAccount), 'credit', 'Count shortage'),
             ], 'inv_count', $id, $s['doc_no']);
             DB::update('count_sessions', $id, ['status' => 'posted', 'posted_by' => Auth::id(), 'posted_at' => now(),
                 'journal_entry_id' => $jeId, 'total_variance_value' => r2($gain - $loss)]);

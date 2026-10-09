@@ -68,3 +68,7 @@ $router->post('/cash-advances/repayments/{id}/void', [CashAdvanceController::cla
 
 $router->get('/employees', [EmployeeController::class, 'index'], 'employees.manage');
 $router->post('/employees', [EmployeeController::class, 'save'], 'employees.manage');
+
+// GL account determination (which account every automatic posting uses)
+$router->get('/finance/gl-setup', [App\Controllers\Finance\GlSetupController::class, 'index'], ['finance.accounts']);
+$router->post('/finance/gl-setup', [App\Controllers\Finance\GlSetupController::class, 'save'], 'finance.accounts');

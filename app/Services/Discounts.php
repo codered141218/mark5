@@ -71,18 +71,19 @@ class Discounts
         $row = [
             'name' => trim($data['name']), 'kind' => $data['kind'], 'value' => $value, 'scope' => $scope,
             'requires_approval' => !empty($data['requires_approval']) ? 1 : 0, 'active' => !empty($data['active']) ? 1 : 0,
-            'sort_order' => (int) ($data['sort_order'] ?? 0),
         ];
         $id = (int) ($data['id'] ?? 0);
         $isNew = $id === 0;
-        if ($isNew) $id = DB::insert('discounts', $row);
+        if (DB::value('SELECT id FROM discounts WHERE name = ? AND id <> ?', [$row['name'], $id])) throw HttpException::bad("A discount named \"{$row['name']}\" already exists");
+        if ($isNew) $id = DB::insert('discounts', $row + ['sort_order' => Positions::next('discounts')]);
         else DB::update('discounts', $id, $row);
         Audit::log($isNew ? 'create' : 'update', 'discount', $id, $row);
         return $id;
     }
 
-    public static function delete(int $id): void
+    public static function delete(int $id): string
     {
+        self::find($id);
         $used = DB::value('SELECT COUNT(*) FROM tickets WHERE discount_id = ?', [$id]) + DB::value('SELECT COUNT(*) FROM ticket_items WHERE discount_id = ?', [$id]);
         if ($used) {
             DB::update('discounts', $id, ['active' => 0]);
@@ -90,6 +91,7 @@ class Discounts
             DB::run('DELETE FROM discounts WHERE id = ?', [$id]);
         }
         Audit::log($used ? 'deactivate' : 'delete', 'discount', $id);
+        return $used ? 'deactivated (already used on receipts)' : 'deleted';
     }
 
     /**

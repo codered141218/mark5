@@ -4,7 +4,10 @@ namespace App\Services\Pos;
 use App\Services\Settings;
 
 /**
- * Philippine POS bill computation. Menu prices are VAT-inclusive.
+ * Philippine POS bill computation. Menu prices are VAT-inclusive, or VAT-exclusive when the business chose
+ * "VAT is added on top" (tickets.vat_inclusive = 0): then every price and fixed discount is first grossed up
+ * by the VAT rate, the bill is computed the same way, and the amounts shown (subtotal, discounts) are converted
+ * back to net of VAT so the receipt reads: Subtotal - Discounts + VAT + Service charge = Total.
  *
  * Discounts can be on single items (ticket_items.discount_*) and/or on the whole receipt (tickets.discount_*):
  *  - Senior Citizen / PWD (RA 9994 / RA 10754): the qualified amount is VAT-exempt and gets the SC rate (20%)
@@ -24,8 +27,10 @@ class Totals
     {
         $tax = Settings::tax();
         $div = 1 + $tax['vatRate'];
+        $incl = !isset($ticket['vat_inclusive']) || (int) $ticket['vat_inclusive'] === 1 || !$tax['vatRegistered'];
+        $mul = $incl ? 1.0 : $div;     // shown price -> VAT-inclusive amount
         $active = array_values(array_filter($lines, fn ($l) => $l['status'] === 'active'));
-        $gross = r2(array_sum(array_map(fn ($l) => (float) $l['line_total'], $active)));
+        $gross = r2(array_sum(array_map(fn ($l) => (float) $l['line_total'] * $mul, $active)));
         $orderType = $ticket['discount_type'] ?? 'none';
         $orderIsSc = in_array($orderType, ['sc', 'pwd'], true);
 
@@ -38,14 +43,14 @@ class Totals
             $id = (int) $l['id'];
             $lineDisc[$id] = 0.0;
             $kind = $orderIsSc ? null : ($l['discount_kind'] ?? null);
-            $lt = (float) $l['line_total'];
+            $lt = r2((float) $l['line_total'] * $mul);
             if ($kind === 'sc' || $kind === 'pwd') {
                 $itemScIncl += $lt;
                 $scLines[$id] = $lt;
             } elseif ($kind === 'percent') {
                 $lineDisc[$id] = r2($lt * min((float) $l['discount_value'], 100) / 100);
             } elseif ($kind === 'amount') {
-                $lineDisc[$id] = r2(min((float) $l['discount_value'], $lt));
+                $lineDisc[$id] = r2(min((float) $l['discount_value'] * $mul, $lt));
             }
             $itemPromo += $lineDisc[$id];
         }
@@ -76,7 +81,7 @@ class Totals
         $promoBase = r2($gross - $eligible - $itemPromo);
         $orderPromo = 0.0;
         if ($orderType === 'percent') $orderPromo = r2($promoBase * min((float) $ticket['discount_rate'], 100) / 100);
-        elseif ($orderType === 'amount') $orderPromo = r2(min((float) $ticket['discount_rate'], max($promoBase, 0)));
+        elseif ($orderType === 'amount') $orderPromo = r2(min((float) $ticket['discount_rate'] * $mul, max($promoBase, 0)));
         $promo = r2($itemPromo + $orderPromo);
 
         $vatableIncl = r2($gross - $eligible - $promo);
@@ -85,6 +90,13 @@ class Totals
         $svcApplies = $tax['svcRate'] > 0 && (!$tax['svcDineInOnly'] || ($ticket['order_type'] ?? '') === 'dine_in');
         $svc = $svcApplies ? r2($tax['svcRate'] * ($vatableSales + $eligibleNet - $scDisc)) : 0.0;
         $total = r2($vatableIncl + $eligibleNet - $scDisc + $svc);
+
+        if (!$incl) {
+            // Show net-of-VAT amounts; the promo shown is what makes Subtotal - Discounts + VAT + Service = Total.
+            foreach ($lineDisc as $id => $d) if (!isset($scLines[$id])) $lineDisc[$id] = r2($d / $div);
+            $gross = r2(array_sum(array_map(fn ($l) => (float) $l['line_total'], $active)));
+            $promo = r2($gross - $scDisc + $vat + $svc - $total);
+        }
 
         return [
             'subtotal' => $gross,
@@ -102,10 +114,11 @@ class Totals
 
     /**
      * Discounts net of VAT, as booked to "Sales Discounts":
-     * SC/PWD discounts are already computed on net-of-VAT amounts; promo discounts include VAT.
+     * SC/PWD discounts are already computed on net-of-VAT amounts; promo discounts include VAT when prices are
+     * VAT-inclusive (and are already net when VAT is added on top).
      */
-    public static function discountNetOfVat(array $totals): float
+    public static function discountNetOfVat(array $totals, bool $vatInclusive = true): float
     {
-        return r2($totals['sc_discount'] + $totals['promo_discount'] / (1 + Settings::tax()['vatRate']));
+        return r2($totals['sc_discount'] + ($vatInclusive ? $totals['promo_discount'] / (1 + Settings::tax()['vatRate']) : $totals['promo_discount']));
     }
 }

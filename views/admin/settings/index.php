@@ -6,7 +6,7 @@ $on = fn (string $k) => ($s[$k] ?? '') === '1' ? 'checked' : '';
 <div class="page-header">
   <div>
     <h1>Settings</h1>
-    <p class="muted">Business details printed on receipts, tax rules and backups.</p>
+    <p class="muted">Business details printed on receipts, tax rules, POS options and backups.</p>
   </div>
 </div>
 
@@ -44,9 +44,19 @@ $on = fn (string $k) => ($s[$k] ?? '') === '1' ? 'checked' : '';
     <div>
       <label class="checkbox"><input type="checkbox" name="vat_registered" value="1" <?= $on('vat_registered') ?>> <b>VAT-registered business</b></label>
       <p class="muted small" style="margin:4px 0 0 24px">
-        <b>VAT-registered:</b> menu prices are VAT-inclusive; receipts show VATable sales and the VAT amount. Senior Citizen / PWD sales are VAT-exempt.<br>
+        <b>VAT-registered:</b> receipts show VATable sales and the VAT amount. Senior Citizen / PWD sales are VAT-exempt.<br>
         <b>Non-VAT:</b> prices carry no VAT and receipts show no VAT breakdown. Non-VAT businesses generally pay the 3% percentage tax on gross sales instead.
       </p>
+    </div>
+    <div>
+      <span class="field-label">Selling prices (VAT-registered only)</span>
+      <div class="col gap-sm" style="align-items:flex-start;margin-top:6px">
+      <label class="checkbox"><input type="radio" name="prices_include_vat" value="1" <?= ($s['prices_include_vat'] ?? '1') !== '0' ? 'checked' : '' ?>>
+        <b>VAT-inclusive</b> — the menu price is what the customer pays (₱112 includes ₱12 VAT)</label>
+      <label class="checkbox"><input type="radio" name="prices_include_vat" value="0" <?= ($s['prices_include_vat'] ?? '1') === '0' ? 'checked' : '' ?>>
+        <b>VAT-exclusive</b> — VAT is added on top at the POS (₱100 + ₱12 VAT = ₱112)</label>
+      </div>
+      <p class="muted small" style="margin:4px 0 0 24px">Applies to new orders. Orders already open keep the way they were started.</p>
     </div>
     <div class="form-grid">
       <label class="field"><span class="field-label">VAT rate (%)</span><input class="input" type="number" step="any" min="0" max="100" name="vat_rate" value="<?= $v('vat_rate') ?>">
@@ -60,6 +70,20 @@ $on = fn (string $k) => ($s[$k] ?? '') === '1' ? 'checked' : '';
       <label class="checkbox"><input type="checkbox" name="service_charge_dine_in_only" value="1" <?= $on('service_charge_dine_in_only') ?>> Apply service charge to dine-in orders only (not take-out / delivery)</label>
       <label class="checkbox"><input type="checkbox" name="require_payment_ref" value="1" <?= $on('require_payment_ref') ?>> Require approval / reference no. for card and e-wallet (GCash, Maya) payments</label>
     </div>
+
+  <?php elseif ($tab === 'pos'): ?>
+    <div>
+      <label class="checkbox"><input type="checkbox" name="require_table_dine_in" value="1" <?= $on('require_table_dine_in') ?>> <b>Dine-in orders need a table number</b></label>
+      <p class="muted small" style="margin:4px 0 0 24px">The cashier cannot press <b>Done</b> or take payment on a dine-in order until a table is assigned.
+        Take-out and delivery orders don't need a table.</p>
+    </div>
+    <div class="form-grid">
+      <label class="field"><span class="field-label">Order of the menu tiles</span>
+        <select class="input" name="pos_menu_sort"><?= options(App\Services\Admin\SettingsForm::MENU_SORTS, $s['pos_menu_sort'] ?? 'custom') ?></select>
+        <span class="field-hint">“My arrangement” uses the order set under <a href="<?= url('/inventory/arrange') ?>">Inventory → Arrange menu</a>.</span></label>
+    </div>
+    <div class="alert alert-info" style="margin-bottom:0">Prep stations (Kitchen, Grill …) decide which order slip an item prints on:
+      <a href="<?= url('/admin/stations') ?>">Administration → Prep Stations</a>. Printers are set up on each tablet under <a href="<?= url('/printer') ?>">Printer Setup</a>.</div>
 
   <?php else: ?>
     <div>

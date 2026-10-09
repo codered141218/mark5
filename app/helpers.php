@@ -61,6 +61,32 @@ function back(): Response
     return new Response('', 302, ['Location' => $_SERVER['HTTP_REFERER'] ?? url('/')]);
 }
 
+/**
+ * Run a bulk action from a table's checkboxes (ids[] in the request): $fn(int $id) for each id, where $fn returns
+ * what happened ('deleted', 'deactivated' ...). One row failing does not stop the others. Flashes a summary like
+ * "3 items deleted, 1 deactivated. Could not delete “Rice”: ...". Returns the per-outcome counts.
+ */
+function bulk_apply(array $ids, string $noun, callable $fn): array
+{
+    $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+    if (!$ids) throw App\Core\HttpException::bad('Select at least one row');
+    $counts = [];
+    $errors = [];
+    foreach ($ids as $id) {
+        try {
+            $what = App\Core\DB::transaction(fn () => $fn($id)) ?: 'done';
+            $counts[$what] = ($counts[$what] ?? 0) + 1;
+        } catch (App\Core\HttpException | \RuntimeException | \PDOException $e) {
+            $errors[] = $e instanceof \PDOException ? "#$id is still in use" : $e->getMessage();
+        }
+    }
+    $parts = [];
+    foreach ($counts as $what => $n) $parts[] = "$n " . ($n === 1 ? $noun : $noun . 's') . " $what";
+    if ($parts) flash('success', implode(', ', $parts) . '.');
+    if ($errors) flash('error', count($errors) . ' could not be changed: ' . implode(' · ', array_slice(array_unique($errors), 0, 5)));
+    return $counts;
+}
+
 function json($data, int $status = 200): Response
 {
     return Response::json($data, $status);

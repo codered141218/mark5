@@ -176,11 +176,14 @@ class InventoryDocs
         $vatRate = $d['vat_inclusive'] ? Settings::tax()['vatRate'] : 0.0;
         $gross = 0.0;
         $net = 0.0;
+        $byAccount = [];   // inventory account (per item category) => net cost
         foreach ($d['lines'] as $l) {
             $lineTotal = (float) $l['line_total'];
             $lineNet = $vatRate ? r2($lineTotal / (1 + $vatRate)) : $lineTotal;
             $gross += $lineTotal;
             $net += $lineNet;
+            $acct = Ledger::itemAccount((int) $l['item_id'], 'inventory');
+            $byAccount[$acct] = ($byAccount[$acct] ?? 0) + $lineNet;
             $baseQty = (float) $l['base_qty'];
             Inventory::move($ref + ['item_id' => (int) $l['item_id'], 'qty' => $baseQty, 'mtype' => 'RECEIVE',
                 'unit_cost' => $baseQty ? $lineNet / $baseQty : 0, 'notes' => $d['supplier_name']]);
@@ -190,7 +193,7 @@ class InventoryDocs
         $memo = "Delivery {$d['doc_no']}" . ($d['supplier_name'] ? " - {$d['supplier_name']}" : '') . ($d['invoice_no'] ? " Inv#{$d['invoice_no']}" : '');
         $party = $d['supplier_id'] ? ['party_type' => 'supplier', 'party_id' => (int) $d['supplier_id']] : [];
         $jeId = Ledger::post($d['doc_date'], $memo, [
-            ['key' => 'inventory', 'debit' => $net],
+            ...Ledger::linesByAccount($byAccount, 'debit'),
             ['key' => 'input_vat', 'debit' => r2($gross - $net)],
             ['account_id' => Ledger::sourceAccount($d['payment_mode'], $d['bank_account_id']), 'credit' => $gross,
                 'bank_account_id' => $d['payment_mode'] === 'bank' ? (int) $d['bank_account_id'] : null] + $party,
@@ -216,9 +219,13 @@ class InventoryDocs
         $issue = $d['doc_type'] === 'ISSUE';
         $mtype = $issue ? 'ISSUE' : 'WASTE';
         $total = 0.0;
+        $byAccount = [];   // inventory account (per item category) => cost
         foreach ($d['lines'] as $l) {
             foreach (Inventory::explode((int) $l['item_id'], (float) $l['base_qty']) as $itemId => $q) {
-                $total += abs(Inventory::move($ref + ['item_id' => $itemId, 'qty' => -$q, 'mtype' => $mtype, 'notes' => $d['reason'] ?: $d['issued_to']]));
+                $cost = abs(Inventory::move($ref + ['item_id' => $itemId, 'qty' => -$q, 'mtype' => $mtype, 'notes' => $d['reason'] ?: $d['issued_to']]));
+                $total += $cost;
+                $acct = Ledger::itemAccount((int) $itemId, 'inventory');
+                $byAccount[$acct] = ($byAccount[$acct] ?? 0) + $cost;
             }
         }
         $total = r2($total);
@@ -227,7 +234,7 @@ class InventoryDocs
             : "Spoilage/wastage {$d['doc_no']} ({$d['reason']})";
         $jeId = Ledger::post($d['doc_date'], $memo, [
             ['account_id' => $issue ? (int) $d['expense_account_id'] : Ledger::account('wastage'), 'debit' => $total],
-            ['key' => 'inventory', 'credit' => $total],
+            ...Ledger::linesByAccount($byAccount, 'credit'),
         ], $issue ? 'inv_issue' : 'inv_waste', (int) $d['id'], $d['doc_no']);
         return ['journal_entry_id' => $jeId, 'total_cost' => $total];
     }

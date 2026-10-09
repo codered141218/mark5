@@ -52,4 +52,11 @@ if (Auth::check() && Backup::autoBackupDue()) {
 // Discount presets used at the POS
 $router->get('/admin/discounts', [App\Controllers\Admin\DiscountController::class, 'index'], 'admin.settings');
 $router->post('/admin/discounts', [App\Controllers\Admin\DiscountController::class, 'save'], 'admin.settings');
+$router->post('/admin/discounts/bulk', [App\Controllers\Admin\DiscountController::class, 'bulk'], 'admin.settings');
 $router->post('/admin/discounts/{id}/delete', [App\Controllers\Admin\DiscountController::class, 'delete'], 'admin.settings');
+
+// Prep stations (order slip routing)
+$router->get('/admin/stations', [App\Controllers\Admin\StationController::class, 'index'], ['admin.settings', 'inventory.manage']);
+$router->post('/admin/stations', [App\Controllers\Admin\StationController::class, 'save'], ['admin.settings', 'inventory.manage']);
+$router->post('/admin/stations/bulk', [App\Controllers\Admin\StationController::class, 'bulk'], ['admin.settings', 'inventory.manage']);
+$router->post('/admin/stations/{id}/delete', [App\Controllers\Admin\StationController::class, 'delete'], ['admin.settings', 'inventory.manage']);

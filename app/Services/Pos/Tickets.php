@@ -13,7 +13,8 @@ use App\Services\Settings;
 
 /**
  * Orders ("tickets") at the POS.
- * Flow: create order -> add items -> (send to kitchen) -> assign a table any time -> discount -> pay.
+ * Flow: create order -> add items -> assign a table -> Done (prints the order slips of the new items per prep station)
+ *       -> more items / Done again -> discount -> pay.
  * Paying assigns the receipt number, deducts recipe ingredients from stock and posts the sale to the GL.
  */
 class Tickets
@@ -27,7 +28,11 @@ class Tickets
              LEFT JOIN users vu ON vu.id = t.voided_by LEFT JOIN customers c ON c.id = t.customer_id WHERE t.id = ?', [$id]
         );
         if (!$t) throw HttpException::notFound('Order');
-        $t['items'] = DB::all('SELECT * FROM ticket_items WHERE ticket_id = ? ORDER BY id', [$id]);
+        // station_id: the prep station whose order slip the line prints on (the item's, else its category's)
+        $t['items'] = DB::all(
+            'SELECT ti.*, COALESCE(it.station_id, c.station_id) AS station_id FROM ticket_items ti
+             LEFT JOIN items it ON it.id = ti.item_id LEFT JOIN categories c ON c.id = it.category_id WHERE ti.ticket_id = ? ORDER BY ti.id', [$id]
+        );
         $t['payments'] = DB::all('SELECT * FROM payments WHERE ticket_id = ? ORDER BY id', [$id]);
         $t['sc_details'] = json_decode($t['sc_details'] ?? '[]', true) ?: [];
         return self::numeric($t);
@@ -38,10 +43,11 @@ class Tickets
     {
         $money = ['subtotal', 'discount_rate', 'discount_amount', 'sc_discount', 'promo_discount', 'vatable_sales', 'vat_amount', 'vat_exempt_sales', 'service_charge', 'total', 'paid_total', 'change_amount', 'cogs'];
         foreach ($money as $k) $t[$k] = (float) $t[$k];
-        foreach (['id', 'pax', 'sc_count', 'cash_session_id'] as $k) $t[$k] = $t[$k] === null ? null : (int) $t[$k];
+        foreach (['id', 'pax', 'sc_count', 'cash_session_id', 'vat_inclusive'] as $k) $t[$k] = $t[$k] === null ? null : (int) $t[$k];
         foreach ($t['items'] as &$i) {
             foreach (['qty', 'price', 'line_total', 'discount_value', 'discount_amount'] as $k) $i[$k] = (float) $i[$k];
             $i['id'] = (int) $i['id']; $i['item_id'] = (int) $i['item_id']; $i['kitchen_sent'] = (int) $i['kitchen_sent'];
+            $i['station_id'] = $i['station_id'] === null ? null : (int) $i['station_id'];
         }
         foreach ($t['payments'] as &$p) {
             foreach (['amount', 'tendered', 'change_amount'] as $k) $p[$k] = $p[$k] === null ? null : (float) $p[$k];
@@ -91,6 +97,7 @@ class Tickets
             'table_label' => self::cleanLabel($data['table_label'] ?? null), 'order_type' => $type,
             'customer_name' => trim((string) ($data['customer_name'] ?? '')) ?: null, 'pax' => max((int) ($data['pax'] ?? 1), 1),
             'status' => 'open', 'notes' => $data['notes'] ?? null, 'created_by' => Auth::id(), 'created_at' => now(),
+            'vat_inclusive' => Settings::pricesIncludeVat() ? 1 : 0,
         ]);
         return self::get($id);
     }
@@ -212,13 +219,31 @@ class Tickets
         return self::get($id);
     }
 
-    /** Mark unsent lines as sent to the kitchen. Returns [ticket, sent lines] for the kitchen slip. */
-    public static function send(int $id): array
+    /**
+     * "Done" taking the order: checks the table (dine-in orders need one when Settings → POS says so) and marks the
+     * lines not printed yet as printed. Returns [ticket, sent lines] — the POS prints the order slips of the sent lines.
+     */
+    public static function done(int $id): array
     {
         $t = self::getOpen($id);
+        self::requireTable($t);
         $pending = array_values(array_filter($t['items'], fn ($i) => $i['status'] === 'active' && !$i['kitchen_sent']));
         DB::run("UPDATE ticket_items SET kitchen_sent = 1 WHERE ticket_id = ? AND status = 'active' AND kitchen_sent = 0", [$id]);
         return ['ticket' => self::get($id), 'sent' => $pending];
+    }
+
+    /** Older name of done() (kept for API compatibility). */
+    public static function send(int $id): array
+    {
+        return self::done($id);
+    }
+
+    /** Dine-in orders must have a table before Done / payment (Settings → POS → "Dine-in orders need a table number"). */
+    public static function requireTable(array $t): void
+    {
+        if ($t['order_type'] === 'dine_in' && !$t['table_label'] && Settings::get('require_table_dine_in', '1') === '1') {
+            throw HttpException::bad('Assign a table number to this dine-in order first (or change it to take-out).');
+        }
     }
 
     /**
@@ -343,13 +368,13 @@ class Tickets
         $target = DB::transaction(function () use ($t, $sel, $targetId, $tableLabel, $customerName) {
             if ($targetId) {
                 if ($targetId === $t['id']) throw HttpException::bad('Choose a different order');
-                self::getOpen($targetId);
+                self::sameVatMode($t, self::getOpen($targetId));
             } else {
                 $targetId = DB::insert('tickets', [
                     'ticket_no' => Sequence::next('TKT', 'T', 6), 'cash_session_id' => $t['cash_session_id'], 'business_date' => $t['business_date'],
                     'table_label' => $tableLabel !== null ? self::cleanLabel($tableLabel) : $t['table_label'], 'order_type' => $t['order_type'],
                     'customer_name' => $customerName ?: $t['customer_name'], 'pax' => 1, 'status' => 'open', 'split_from_id' => $t['id'],
-                    'created_by' => Auth::id(), 'created_at' => now(),
+                    'created_by' => Auth::id(), 'created_at' => now(), 'vat_inclusive' => $t['vat_inclusive'],
                 ]);
                 if ($t['pax'] > 1) DB::update('tickets', $t['id'], ['pax' => $t['pax'] - 1]);
             }
@@ -383,12 +408,21 @@ class Tickets
         return ['source' => self::get($t['id']), 'target' => self::get($target)];
     }
 
+    /** Lines can only move between orders priced the same way (VAT-inclusive vs VAT added on top). */
+    private static function sameVatMode(array $a, array $b): void
+    {
+        if ((int) $a['vat_inclusive'] !== (int) $b['vat_inclusive']) {
+            throw HttpException::bad("{$a['ticket_no']} and {$b['ticket_no']} were started with different VAT pricing settings and cannot be combined");
+        }
+    }
+
     /** Move every line of $sourceId into $id; the source order is closed as merged. */
     public static function merge(int $id, int $sourceId): array
     {
         $t = self::getOpen($id);
         $src = self::getOpen($sourceId);
         if ($src['id'] === $t['id']) throw HttpException::bad('Choose a different order to merge');
+        self::sameVatMode($t, $src);
         DB::transaction(function () use ($t, $src) {
             DB::run('UPDATE ticket_items SET ticket_id = ? WHERE ticket_id = ?', [$t['id'], $src['id']]);
             DB::update('tickets', $t['id'], ['pax' => $t['pax'] + $src['pax'], 'table_label' => $t['table_label'] ?? $src['table_label']]);
@@ -412,6 +446,7 @@ class Tickets
         $session = CashSessions::requireOpen();
         $active = array_values(array_filter($t['items'], fn ($i) => $i['status'] === 'active'));
         if (!$active) throw HttpException::bad('The order has no items');
+        self::requireTable($t);
         $totals = self::recalc($id);
         $total = $totals['total'];
 
@@ -448,27 +483,36 @@ class Tickets
                     'tendered' => $p['method'] === 'cash' ? $p['amount'] : $amt, 'change_amount' => $p['method'] === 'cash' ? $change : 0,
                     'reference' => $p['reference'], 'customer_id' => $p['customer_id'], 'user_id' => Auth::id(), 'created_at' => now(),
                 ]);
-                $key = CashSessions::PAYMENT_METHODS[$p['method']]['account'];
+                $key = $p['method'] === 'cash' ? 'cash_on_hand' : ($p['method'] === 'charge' ? 'ar' : 'pay.' . $p['method']);
                 $applied[$key] = r2(($applied[$key] ?? 0) + $amt);
             }
 
             // Inventory: deduct recipe ingredients / retail stock
             $ref = ['ref_type' => 'ticket', 'ref_id' => $t['id'], 'ref_no' => $receiptNo, 'bdate' => $t['business_date']];
-            $cogs = Inventory::consume($active, 'SALE', $ref);
+            $cogs = Inventory::consume($active, 'SALE', $ref, -1, $used);
 
-            // General ledger
-            $discountNet = Totals::discountNetOfVat($totals);
+            // General ledger. Sales, COGS and inventory go to the accounts of each item's category (GL Account Setup).
+            $discountNet = Totals::discountNetOfVat($totals, (bool) $t['vat_inclusive']);
             $sales = r2($total - $totals['vat_amount'] - $totals['service_charge'] + $discountNet);
             $lines = [];
             foreach ($applied as $key => $amt) {
                 $lines[] = ['key' => $key, 'debit' => $amt, 'party_type' => $key === 'ar' ? 'customer' : null, 'party_id' => $key === 'ar' ? $charge['customer_id'] : null];
             }
             $lines[] = ['key' => 'sales_discounts', 'debit' => $discountNet, 'memo' => $totals['discount_amount'] > 0 ? ($t['discount_name'] ?: 'Item discounts') : null];
-            $lines[] = ['key' => 'sales', 'credit' => $sales];
+            $byAccount = function (array $amounts, string $role, callable $itemOf) {
+                $out = [];
+                foreach ($amounts as $k => $amt) {
+                    $acct = Ledger::itemAccount($itemOf($k), $role);
+                    $out[$acct] = ($out[$acct] ?? 0) + $amt;
+                }
+                return $out;
+            };
+            $salesWeights = $byAccount(array_map(fn ($l) => (float) $l['line_total'], $active), 'sales', fn ($k) => (int) $active[$k]['item_id']);
+            array_push($lines, ...Ledger::linesByAccount(Ledger::allocate($sales, $salesWeights), 'credit'));
             $lines[] = ['key' => 'output_vat', 'credit' => $totals['vat_amount']];
             $lines[] = ['key' => 'service_charge', 'credit' => $totals['service_charge']];
-            $lines[] = ['key' => 'cogs', 'debit' => $cogs];
-            $lines[] = ['key' => 'inventory', 'credit' => $cogs];
+            array_push($lines, ...Ledger::linesByAccount($byAccount($used['lines'], 'cogs', fn ($k) => (int) $active[$k]['item_id']), 'debit'));
+            array_push($lines, ...Ledger::linesByAccount($byAccount($used['stock'], 'inventory', fn ($k) => (int) $k), 'credit'));
             $jeId = Ledger::post($t['business_date'], "POS sale $receiptNo" . ($t['table_label'] ? " (Table {$t['table_label']})" : ''), $lines, 'pos_sale', $t['id'], $receiptNo);
 
             if ($charge) {

@@ -18,12 +18,13 @@ class DiscountController
             ['key' => 'value', 'label' => 'Value', 'value' => fn ($r) => self::valueLabel($r), 'html' => fn ($r) => e(self::valueLabel($r))],
             ['key' => 'scope', 'label' => 'Can be applied to', 'value' => fn ($r) => Discounts::SCOPES[$r['scope']], 'html' => fn ($r) => e(Discounts::SCOPES[$r['scope']])],
             ['key' => 'requires_approval', 'label' => 'Manager approval', 'value' => fn ($r) => $r['requires_approval'] ? 'Yes' : 'No', 'html' => fn ($r) => $r['requires_approval'] ? badge('required', 'amber') : badge('not needed', 'gray')],
-            ['key' => 'sort_order', 'label' => 'Sort', 'type' => 'int'],
             ['key' => 'active', 'label' => 'Status', 'value' => fn ($r) => $r['active'] ? 'active' : 'inactive', 'html' => fn ($r) => badge($r['active'] ? 'active' : 'inactive')],
             ['key' => 'id', 'label' => '', 'export' => false, 'html' => fn ($r) => view('admin/discounts/_actions', ['r' => $r], null)],
         ];
         if ($x = Table::export($req, 'discounts', 'Discount presets', '', $columns, $rows)) return $x;
-        return view('admin/discounts/index', ['title' => 'Discounts', 'rows' => $rows, 'columns' => $columns]);
+        return view('admin/discounts/index', ['title' => 'Discounts', 'rows' => $rows, 'columns' => $columns,
+            'bulk' => ['actions' => [['key' => 'delete', 'label' => 'Remove', 'url' => url('/admin/discounts/bulk'), 'danger' => true,
+                'confirm' => 'Remove {n} discount(s)? Discounts already used on receipts are deactivated instead.']]]]);
     }
 
     public static function valueLabel(array $r): string
@@ -37,6 +38,12 @@ class DiscountController
     {
         Discounts::save($req->all());
         flash('success', 'Discount saved.');
+        return redirect('/admin/discounts');
+    }
+
+    public function bulk(Request $req): Response
+    {
+        bulk_apply((array) $req->input('ids', []), 'discount', fn (int $id) => Discounts::delete($id));
         return redirect('/admin/discounts');
     }
 

@@ -30,6 +30,7 @@ $variance = $r['cash']['variance'] ?? null;
   <hr>
   <?= $line('Gross Sales', money($r['sales']['gross'])) ?>
   <?= $line('Less: Discounts', money($r['sales']['discounts'])) ?>
+  <?php if (($r['sales']['vat_added'] ?? 0) > 0): ?><?= $line('Add: VAT (on VAT-exclusive prices)', money($r['sales']['vat_added'])) ?><?php endif; ?>
   <?= $line('Add: Service Charge', money($r['sales']['svc'])) ?>
   <?= $line('NET SALES', money($r['sales']['net']), true) ?>
   <?php if ($vatRegistered): ?>

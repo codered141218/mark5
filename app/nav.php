@@ -19,6 +19,7 @@ return [
         ['/inventory/wastage', 'Spoilage & Wastage', '✕', ['inventory.waste']],
         ['/inventory/counts', 'Inventory Count', '#', ['inventory.count']],
         ['/inventory/categories', 'Categories', '❖', ['inventory.manage']],
+        ['/inventory/arrange', 'Arrange Menu', '⇅', ['inventory.manage']],
         ['/inventory/uom', 'Units & Conversions', '⚖', ['inventory.manage']],
     ],
     'Cash & Finance' => [
@@ -28,6 +29,7 @@ return [
         ['/finance/receivables', 'Accounts Receivable', '↙', ['finance.ar']],
         ['/finance/journals', 'Journal Entries', '✎', ['finance.view', 'finance.journal']],
         ['/finance/accounts', 'Chart of Accounts', '☰', ['finance.view', 'finance.accounts']],
+        ['/finance/gl-setup', 'GL Account Setup', '⚙', ['finance.accounts']],
         ['/finance/suppliers', 'Suppliers', '⛟', ['partners.manage', 'finance.ap']],
         ['/finance/customers', 'Customers', '☺', ['partners.manage', 'finance.ar']],
     ],
@@ -40,6 +42,7 @@ return [
         ['/admin/roles', 'Roles & Permissions', '⚿', ['admin.roles']],
         ['/admin/settings', 'Settings', '⚙', ['admin.settings']],
         ['/admin/discounts', 'Discounts', '%', ['admin.settings']],
+        ['/admin/stations', 'Prep Stations', '♨', ['admin.settings', 'inventory.manage']],
         ['/printer', 'Printer Setup', '⎙', ['pos.access', 'admin.settings']],
         ['/admin/backup', 'Backup & Restore', '⛁', ['admin.backup']],
         ['/admin/audit', 'Audit Trail', '⌕', ['admin.audit']],
