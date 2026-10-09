@@ -119,6 +119,16 @@ select.input { padding-right: 6px; }
 .nav a:hover { background: var(--side-2); color: #fff; text-decoration: none; }
 .nav a.active { background: var(--brand); color: #fff; }
 .nav .ico { width: 18px; text-align: center; opacity: .9; }
+/* Drop-down sections of the sidebar */
+.nav-dd { margin-top: 6px; }
+.nav-dd > summary { list-style: none; display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none;
+  padding: 8px 10px; border-radius: 6px; font-size: 11.5px; font-weight: 600; color: #9ca3af; }
+.nav-dd > summary::-webkit-details-marker { display: none; }
+.nav-dd > summary:hover { background: var(--side-2); color: #fff; }
+.nav-dd[data-current] > summary { color: #fff; }
+.nav-caret { transition: transform .15s; font-size: 12px; transform: rotate(-90deg); }
+.nav-dd[open] .nav-caret { transform: rotate(0deg); }
+.nav-dd-items { padding: 2px 0 4px 8px; }
 .pos-link { margin: 8px 16px 0; }
 .pos-link a { display: flex; justify-content: center; gap: 8px; align-items: center; height: 42px; border-radius: 8px; background: var(--green); color: #fff; font-weight: 700; }
 .pos-link a:hover { text-decoration: none; background: #166534; }

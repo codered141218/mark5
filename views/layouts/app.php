@@ -36,14 +36,24 @@ $business = App\Services\Settings::get('business_name', 'Mark5');
     <nav class="nav">
       <?php foreach ($nav as $group => $items):
           $visible = array_filter($items, fn ($i) => can(...$i[3]));
-          if (!$visible) continue; ?>
+          if (!$visible) continue;
+          $isActive = fn ($href) => $href === '/' ? $path === '/' : ($path === $href || str_starts_with($path, $href . '/'));
+          $hasActive = (bool) array_filter($visible, fn ($i) => $isActive($i[0]));
+          $links = '';
+          foreach ($visible as [$href, $label, $icon]) {
+              $links .= '<a href="' . url($href) . '" class="' . ($isActive($href) ? 'active' : '') . '"><span class="ico">' . $icon . '</span>' . e($label) . '</a>';
+          }
+          if ($group === 'Overview'): ?>
         <div class="nav-group">
           <div class="nav-group-title"><?= e($group) ?></div>
-          <?php foreach ($visible as [$href, $label, $icon]):
-              $active = $href === '/' ? $path === '/' : ($path === $href || str_starts_with($path, $href . '/')); ?>
-            <a href="<?= url($href) ?>" class="<?= $active ? 'active' : '' ?>"><span class="ico"><?= $icon ?></span><?= e($label) ?></a>
-          <?php endforeach; ?>
+          <?= $links ?>
         </div>
+          <?php else: /* every other section is a drop-down; the one holding the current page starts open */ ?>
+        <details class="nav-group nav-dd" data-nav-group="<?= e($group) ?>" <?= $hasActive ? 'open data-current' : '' ?>>
+          <summary class="nav-group-title"><span><?= e($group) ?></span><span class="nav-caret" aria-hidden="true">▾</span></summary>
+          <div class="nav-dd-items"><?= $links ?></div>
+        </details>
+          <?php endif; ?>
       <?php endforeach; ?>
     </nav>
     <div class="side-user">

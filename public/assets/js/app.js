@@ -90,6 +90,23 @@
   };
   window.App = App;
 
+  // ------------------------------------------------------------------ sidebar drop-down sections: remember which are open
+  (function navGroups() {
+    const KEY = 'mark5_nav_open';
+    let open = [];
+    try { open = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (e) { open = []; }
+    $$('details[data-nav-group]').forEach((d) => {
+      if (open.includes(d.dataset.navGroup)) d.open = true;
+      // only the user's own clicks are remembered (not the section opened because it holds the current page)
+      d.querySelector('summary').addEventListener('click', () => setTimeout(() => {
+        const name = d.dataset.navGroup;
+        open = open.filter((x) => x !== name);
+        if (d.open) open.push(name);
+        try { localStorage.setItem(KEY, JSON.stringify(open)); } catch (e) { /* private mode */ }
+      }));
+    });
+  })();
+
   // ------------------------------------------------------------------ sidebar (mobile)
   document.addEventListener('click', (e) => {
     if (e.target.closest('[data-toggle-sidebar]')) $('#sidebar')?.classList.toggle('open');
