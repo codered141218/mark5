@@ -16,7 +16,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: shivammathur/setup-php@v2
         with:
@@ -52,7 +52,7 @@ jobs:
         if: env.FTP_SERVER == ''
         run: echo "::notice::Tests passed. Add the FTP_SERVER, FTP_USERNAME and FTP_PASSWORD secrets to deploy automatically (see DEPLOY.md)."
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         if: env.FTP_SERVER != ''
 
       # Uploads only files that changed since the last deploy. Files the app creates on the server
