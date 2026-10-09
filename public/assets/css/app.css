@@ -372,3 +372,4 @@ dialog.modal:not([open]) { display: none; }
 .arrange-row .drag-handle { cursor: grab; touch-action: none; font-size: 18px; color: var(--muted, #6b7280); padding: 2px 6px; }
 .arrange-row .icon-btn { width: 30px; height: 30px; }
 .arrange-list .empty { padding: 16px; }
+.danger-zone { border-color: var(--red, #dc2626); }

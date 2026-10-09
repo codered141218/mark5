@@ -168,7 +168,7 @@ class DocController
         $editable = !$doc || $doc['status'] === 'draft';
         $old = old('_form') === 'doc' ? $GLOBALS['__old'] : null;
         $head = $old ?? $doc ?? ['doc_date' => today(), 'payment_mode' => 'credit', 'reason' => $type === 'WASTE' ? 'spoilage' : '',
-            'expense_account_id' => $type === 'ISSUE' ? Ledger::account('supplies') : null];
+            'expense_account_id' => $type === 'ISSUE' ? Ledger::accountOrNull('supplies') : null];
         if ($old) $head += ['vat_inclusive' => 0];
 
         $lines = $old ? array_values(array_filter($old['lines'] ?? [], fn ($l) => !empty($l['item_id']))) : ($doc['lines'] ?? []);
@@ -215,7 +215,7 @@ class DocController
             'issueTo' => self::ISSUE_TO,
             'vatRate' => Settings::tax()['vatRate'],
             'inputVat' => $doc && $doc['journal_entry_id'] ? (float) DB::value('SELECT COALESCE(SUM(debit), 0) FROM journal_lines WHERE entry_id = ? AND account_id = ?',
-                [$doc['journal_entry_id'], Ledger::account('input_vat')]) : 0.0,
+                [$doc['journal_entry_id'], Ledger::accountOrNull('input_vat')]) : 0.0,
             'canPost' => can('inventory.post'),
         ]);
     }

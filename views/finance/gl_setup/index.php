@@ -19,11 +19,11 @@
           <tbody>
           <?php foreach ($rows as $r): ?>
             <tr>
-              <td class="bold"><?= e($r['label']) ?><?= $r['changed'] ? ' ' . badge('changed', 'amber') : '' ?></td>
+              <td class="bold"><?= e($r['label']) ?><?= $r['changed'] ? ' ' . badge('changed', 'amber') : '' ?><?= !$r['account_id'] ? ' ' . badge('not set', 'red') : '' ?></td>
               <td class="muted small"><?= e($r['used_for']) ?></td>
               <td>
                 <select class="input" name="gl[<?= e($r['role']) ?>]" data-combo>
-                  <?= options(GlSetup::accountOptions($r['types']), $r['account_id']) ?>
+                  <?= options(GlSetup::accountOptions($r['types']), $r['account_id'], '— Not set —') ?>
                 </select>
               </td>
             </tr>

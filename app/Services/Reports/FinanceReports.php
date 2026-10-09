@@ -160,7 +160,7 @@ class FinanceReports
      */
     public static function pettyCash(string $from, string $to): array
     {
-        $pc = Ledger::account('petty_cash');
+        $pc = Ledger::accountOrNull('petty_cash');
         $rows = DB::all(
             'SELECT p.id, p.txn_date date, p.doc_no, p.txn_type type, p.source, p.payee, p.description, a.name account, p.or_no, p.amount, p.status,
                     u.full_name recorded_by
@@ -178,7 +178,7 @@ class FinanceReports
             else $added += (float) $r['amount'];
         }
         return [
-            'beginning' => Ledger::balance($pc, add_days($from, -1)), 'ending' => Ledger::balance($pc, $to),
+            'beginning' => $pc ? Ledger::balance($pc, add_days($from, -1)) : 0.0, 'ending' => $pc ? Ledger::balance($pc, $to) : 0.0,
             'spent' => r2($spent), 'added' => r2($added), 'rows' => $rows, 'by_account' => $byAccount,
         ];
     }

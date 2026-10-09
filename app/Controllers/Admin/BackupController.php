@@ -67,6 +67,15 @@ class BackupController
         return $this->signOut(Backup::restoreUpload($file), $file['name'] ?? 'upload');
     }
 
+    /** Start fresh: delete all data except this administrator (a backup is made first). */
+    public function reset(Request $req): Response
+    {
+        $backup = \App\Services\Admin\Reset::startFresh((int) Auth::id(), (string) $req->input('password'), (string) $req->input('confirm'));
+        flash('success', "All data was deleted. A backup of the old data was saved first ($backup) — you can restore it from this page. "
+            . 'Next: add your chart of accounts, then choose the accounts in Finance → GL Account Setup.');
+        return redirect('/admin/backup');
+    }
+
     /** After a restore the user table may be different, so everyone signs in again. */
     private function signOut(array $result, string $from): Response
     {

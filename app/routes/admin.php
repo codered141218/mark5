@@ -27,6 +27,7 @@ $router->post('/admin/backup/upload', [BackupController::class, 'upload'], 'admi
 $router->get('/admin/backup/download', [BackupController::class, 'download'], 'admin.backup');
 $router->post('/admin/backup/restore', [BackupController::class, 'restore'], 'admin.backup');
 $router->post('/admin/backup/delete', [BackupController::class, 'delete'], 'admin.backup');
+$router->post('/admin/backup/reset', [BackupController::class, 'reset'], 'admin.backup');
 
 $router->get('/admin/audit', [AuditController::class, 'index'], 'admin.audit');
 

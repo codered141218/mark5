@@ -96,10 +96,23 @@ class Ledger
                 if ($fallback !== $key) return self::$keyCache[$key] = self::account($fallback);
                 $id = DB::value('SELECT id FROM accounts WHERE system_key = ?', [$key]);
             }
-            if (!$id) throw new \RuntimeException("System account '$key' is missing from the chart of accounts");
+            if (!$id) {
+                $label = GlSetup::ROLES[$key][1] ?? GlSetup::ROLES['pay.' . $key][1] ?? $key;
+                throw HttpException::bad("No GL account is set for “{$label}”. Add the account under Finance → Chart of Accounts, then choose it in Finance → GL Account Setup.");
+            }
             self::$keyCache[$key] = (int) $id;
         }
         return self::$keyCache[$key];
+    }
+
+    /** Like account(), but null when no account is set for the role (for screens that only show balances). */
+    public static function accountOrNull(string $key): ?int
+    {
+        try {
+            return self::account($key);
+        } catch (HttpException $e) {
+            return null;
+        }
     }
 
     /**

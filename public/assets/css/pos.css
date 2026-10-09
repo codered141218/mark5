@@ -298,3 +298,12 @@ html.kb-open .pos-dlg .modal-body { padding-top: 10px; padding-bottom: 10px; }
 .printer-row .btn { min-height: 42px; }
 .ticket-actions .btn.pay { grid-column: 1 / -1; }
 .printer-banner { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* Order panel: easy to check what was entered — bigger quantity, and the line just added / changed flashes and scrolls into view */
+.tline-qty { font-size: 16px; min-width: 34px; padding: 4px 0; background: var(--brand-soft); color: var(--brand); }
+.tline-name { font-weight: 600; }
+.tline.flash { animation: tline-flash 1.6s ease-out; }
+@keyframes tline-flash {
+  0%, 35% { background: #fde68a; box-shadow: inset 4px 0 0 var(--brand); }
+  100% { background: transparent; box-shadow: inset 0 0 0 transparent; }
+}

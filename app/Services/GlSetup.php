@@ -82,7 +82,7 @@ class GlSetup
             foreach (self::ROLES as $role => [$group, $label, $usedFor, $types]) {
                 if (!array_key_exists($role, $map)) continue;
                 $id = (int) $map[$role];
-                if (!$id) throw HttpException::bad("Choose an account for “{$label}”");
+                if (!$id) { Settings::set('gl.' . $role, null); continue; }   // not chosen yet (e.g. a fresh chart of accounts)
                 $acct = DB::one('SELECT id, code, name, type FROM accounts WHERE id = ?', [$id]);
                 if (!$acct) throw HttpException::bad("Unknown account for “{$label}”");
                 if (!in_array($acct['type'], $types, true)) {

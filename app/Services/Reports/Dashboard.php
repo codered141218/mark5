@@ -86,8 +86,8 @@ class Dashboard
         $banks = DB::all('SELECT id, bank_name, account_no, gl_account_id FROM bank_accounts WHERE active = 1 ORDER BY bank_name');
         foreach ($banks as &$b) $b['balance'] = Ledger::balance((int) $b['gl_account_id'], $asOf);
         return [
-            'cash_on_hand' => Ledger::balance(Ledger::account('cash_on_hand'), $asOf),
-            'petty_cash' => Ledger::balance(Ledger::account('petty_cash'), $asOf),
+            'cash_on_hand' => ($id = Ledger::accountOrNull('cash_on_hand')) ? Ledger::balance($id, $asOf) : 0.0,
+            'petty_cash' => ($id = Ledger::accountOrNull('petty_cash')) ? Ledger::balance($id, $asOf) : 0.0,
             'banks' => $banks,
             'inventory_value' => r2(DB::value("SELECT COALESCE(SUM(CASE WHEN stock_qty > 0 THEN stock_qty * avg_cost ELSE 0 END),0) FROM items WHERE item_type IN ('raw','retail')")),
             'ap_total' => r2(DB::value("SELECT COALESCE(SUM(amount - paid_amount),0) FROM ap_bills WHERE status IN ('open','partial')")),

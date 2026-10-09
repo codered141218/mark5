@@ -22,7 +22,8 @@ class Backup
 {
     public const HEADER = '-- Mark5 backup';
     public const FOOTER = '-- End of Mark5 backup';
-    public const KINDS = ['manual' => ['Manual', 'green'], 'auto' => ['Automatic', 'blue'], 'pre-restore' => ['Before restore', 'amber']];
+    public const KINDS = ['manual' => ['Manual', 'green'], 'auto' => ['Automatic', 'blue'], 'pre-restore' => ['Before restore', 'amber'],
+        'pre-reset' => ['Before start fresh', 'red']];
 
     /** Rows per INSERT statement, and a size cap so statements stay below MySQL's max_allowed_packet (1 MB on XAMPP). */
     private const BATCH_ROWS = 500;

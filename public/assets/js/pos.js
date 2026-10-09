@@ -265,7 +265,23 @@
   function addItem(item) {
     if (!S.session) { App.toast('Open the business day first', 'error'); return; }
     if (item.item_type === 'retail' && item.stock_qty <= 0) App.toast(`${item.name}: out of stock in the system`, 'info');
-    mutate((t) => Api.addItem(t.id, item.id)).catch(showError);
+    mutate((t) => Api.addItem(t.id, item.id)).then((t) => {
+      // the line the tap went to: a new line, or the existing not-yet-printed line whose quantity went up
+      const lines = activeLines(t).filter((l) => l.item_id === item.id && !l.kitchen_sent && !l.discount_kind);
+      const line = lines.sort((a, b) => b.id - a.id)[0];
+      if (line) revealLine(line.id);
+    }).catch(showError);
+  }
+
+  /** Scroll the order panel so a line is in view and flash it (after adding an item or changing a quantity). */
+  function revealLine(id) {
+    S.flashLine = id;
+    const el = document.querySelector(`#order-pane .tline[data-id="${id}"]`);
+    if (!el) return;
+    el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    el.classList.remove('flash');
+    void el.offsetWidth;            // restart the animation when the same line is tapped again
+    el.classList.add('flash');
   }
 
   /** Change the table. Drafts are changed locally. Returns false if it failed. */
@@ -524,10 +540,13 @@
   function renderOrder() {
     const t = S.order;
     if (S.view !== 'order' || !t) return;
+    const oldList = document.querySelector('#order-pane .ticket-lines');
+    const keepScroll = oldList && S.renderedOrderId === t.id ? oldList.scrollTop : null;
+    S.renderedOrderId = t.id;
     const active = activeLines(t);
     const unsent = unsentLines(t).length;
     const lines = t.items.map((l) => `
-      <div class="tline${l.status === 'void' ? ' voided' : ''}" ${l.status === 'active' ? `data-act="line" data-id="${l.id}"` : ''}>
+      <div class="tline${l.status === 'void' ? ' voided' : ''}" data-id="${l.id}" ${l.status === 'active' ? 'data-act="line"' : ''}>
         <span class="tline-qty">${qtyStr(l.qty)}</span>
         <div>
           <div class="tline-name">${esc(l.name)}${l.kitchen_sent ? '<span class="sent-dot" title="Order slip printed"></span>' : ''}</div>
@@ -575,6 +594,8 @@
         <button type="button" class="btn btn-primary done-btn" data-act="done">Done${unsent ? ` · print ${unsent}` : ''}</button>
         ${can('pos.settle') ? `<button type="button" class="btn btn-success pay" data-act="pay" ${off(active.length)}>PAY ${peso(t.total)}</button>` : ''}
       </div>`;
+    const list = $('#order-pane .ticket-lines');
+    if (keepScroll !== null && list) list.scrollTop = keepScroll;
     renderBottom();
   }
 
@@ -926,7 +947,7 @@
         if (reducing && !val('reason')) { App.toast('Enter the void reason for the reduced quantity', 'error'); m.$('[name=reason]').focus(); return; }
         const ok = await withPin((pin) => mutate((o) => Api.updateLine(o.id, line.id, { qty: q, notes: notes.value, reason: val('reason'), pin })),
           { ask: reducing && needPin('pos.void_item'), btn });
-        if (ok) m.close();
+        if (ok) { m.close(); revealLine(line.id); }
       },
     });
     const qty = m.$('[name=qty]');

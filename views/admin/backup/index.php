@@ -45,4 +45,23 @@ $restoreMsg = 'This replaces ALL current data with the uploaded backup. A safety
       <span class="muted small">A .sql file downloaded from this page (largest upload allowed by the server: <?= e($uploadLimit) ?>).</span>
     </form>
   </div>
+
+  <div class="card danger-zone">
+    <div class="card-head"><h3>Start fresh — delete all data</h3></div>
+    <form class="card-body stack" method="post" action="<?= url('/admin/backup/reset') ?>" autocomplete="off"
+          data-danger data-ok="Delete everything" data-confirm="Delete ALL data now? Only your own administrator login is kept.">
+      <?= csrf_field() ?>
+      <p class="mt-0">Deletes <b>everything</b> so you can enter your own records one by one: sales and receipts, items and recipes, categories,
+        units of measure, inventory documents, the <b>chart of accounts</b> and journal entries, banks, payables and receivables,
+        suppliers, customers, employees, cash advances, discounts, prep stations, and <b>all other users and roles</b>.
+        Document numbers start again from 1.</p>
+      <p class="muted small" style="margin:0"><b>Kept:</b> your login (<?= e(App\Core\Auth::user()['username'] ?? '') ?>) with the full-access Administrator role,
+        and the business settings (name, TIN, receipt text, tax rates). A backup of the current data is saved first, so you can undo this with Restore.</p>
+      <div class="form-grid">
+        <label class="field"><span class="field-label">Type <b>DELETE ALL</b> to confirm</span><input class="input" name="confirm" required placeholder="DELETE ALL"></label>
+        <label class="field"><span class="field-label">Your password</span><input class="input" type="password" name="password" required autocomplete="current-password"></label>
+      </div>
+      <div><button class="btn btn-danger" type="submit">Delete all data and start fresh</button></div>
+    </form>
+  </div>
 </div>

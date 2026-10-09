@@ -47,7 +47,8 @@ class PettyCash
     /** Current balance of the Petty Cash Fund GL account (all dates). */
     public static function fundBalance(): float
     {
-        return Ledger::balance(Ledger::account('petty_cash'));
+        $id = Ledger::accountOrNull('petty_cash');
+        return $id ? Ledger::balance($id) : 0.0;
     }
 
     /**
