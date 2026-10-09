@@ -9,17 +9,22 @@
  *   Order screen  - menu tiles on the left, the order panel on the right (phones: one at a time + bottom bar).
  * Workflow: customer buys -> cashier takes the order -> assigns a table (any time, or when sending / paying).
  *
+ * Built for Android tablets: numbers (amounts, quantities, tables, cash counts, PINs) are typed on an on-screen
+ * keypad so the phone keyboard never covers the screen; text fields keep the normal keyboard and the layout
+ * shrinks above it (see section 8, "Screen & keyboard").
+ *
  * Sections of this file
  *   1. Helpers            small formatting / DOM utilities
  *   2. State              everything the screen knows (S) + start-up data from PHP (B)
  *   3. API calls          one function per endpoint
- *   4. Order actions      the business flow (add item, send, pay, ...)
+ *   4. Order actions      the business flow (add item, send, discount, pay, ...)
  *   5. Rendering          top bar, board, menu, order panel, phone bottom bar
- *   6. Dialogs            table, line, discount, split, merge, pay, receipts, payout, day open/close, printer
+ *   6. Dialogs            generic modal + keypad / PIN pad, then one function per dialog
  *   7. Printing hooks     calls into window.Printer (public/assets/js/printer.js) with error handling
- *   8. Events & start-up  click delegation (data-act="..."), search box, auto-refresh
+ *   8. Screen & keyboard  on-screen keyboard handling, install as an app
+ *   9. Events & start-up  click delegation (data-act="..."), search box, auto-refresh
  *
- * Buttons carry data-act="name"; one click handler per area maps the name to a function (see section 8).
+ * Buttons carry data-act="name"; one click handler per area maps the name to a function (see section 9).
  */
 (function () {
   'use strict';
@@ -34,10 +39,9 @@
   const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
   const qtyStr = (n) => App.qty(n);
   const TYPE = { dine_in: 'Dine-in', takeout: 'Take-out', delivery: 'Delivery' };
-  const DISC = { sc: 'Senior Citizen', pwd: 'PWD', percent: 'Promo', amount: 'Promo' };
   const NOTE_CHIPS = ['No onions', 'Extra spicy', 'Not spicy', 'Less ice', 'No ice', 'Well done', 'Extra rice', 'Take-out'];
   const MONEY_KEYS = ['7', '8', '9', '4', '5', '6', '1', '2', '3', '.', '0', '⌫'];
-  const TABLE_KEYS = ['7', '8', '9', '4', '5', '6', '1', '2', '3', 'C', '0', '⌫'];
+  const INT_KEYS = ['7', '8', '9', '4', '5', '6', '1', '2', '3', 'C', '0', '⌫'];
   const finePointer = window.matchMedia('(pointer: fine)').matches; // mouse: autofocus inputs; touch: avoid popping the keyboard
 
   /** "2026-10-08 13:05:00" -> Date (server times are local times). */
@@ -57,6 +61,7 @@
     return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
   }
   const denomLabel = (d) => (d >= 1 ? '₱' + d.toLocaleString() : `${Math.round(d * 100)}¢`);
+  const plural = (n, word) => `${qtyStr(n)} ${word}${Number(n) === 1 ? '' : 's'}`;
 
   // =====================================================================================================
   // 2. State
@@ -65,7 +70,7 @@
   const B = window.POS_BOOT;
   const CAN = B.can || {};
   const can = (...perms) => perms.some((p) => CAN[p]);
-  /** True when the user lacks a permission, so a manager PIN field must be shown. */
+  /** True when the user lacks a permission, so a manager PIN must be asked first. */
   const needPin = (perm) => !can(perm);
 
   const S = {
@@ -78,12 +83,14 @@
     pane: 'menu',                   // phones only: 'menu' | 'order'
     cat: 'all',                     // selected category id or 'all'
     queue: Promise.resolve(),       // order changes run one after another (fast taps never get lost)
+    installPrompt: null,            // Chrome's "install app" event, when available
   };
 
   const activeLines = (t) => (t ? t.items.filter((i) => i.status === 'active') : []);
   const unsentLines = (t) => activeLines(t).filter((i) => !i.kitchen_sent);
   const itemCount = (t) => activeLines(t).reduce((s, i) => s + Number(i.qty), 0);
   const needsTable = (t) => t.order_type === 'dine_in' && !t.table_label;
+  const isSc = (kind) => kind === 'sc' || kind === 'pwd';
   function orderTitle(t) {
     if (t.table_label) return 'Table ' + t.table_label;
     return t.customer_name || TYPE[t.order_type] || 'Order';
@@ -93,10 +100,19 @@
   function draftOrder(orderType, customerName) {
     return {
       draft: true, id: null, ticket_no: 'New order', order_type: orderType, table_label: null, customer_name: customerName || null,
-      pax: 1, notes: null, status: 'open', items: [], payments: [], discount_type: 'none', discount_rate: 0, sc_count: 0, sc_details: [],
-      subtotal: 0, discount_amount: 0, service_charge: 0, vat_amount: 0, vat_exempt_sales: 0, vatable_sales: 0, total: 0,
-      created_at: null, created_by_name: B.user.name,
+      pax: 1, notes: null, status: 'open', items: [], payments: [], discount_type: 'none', discount_name: null, discount_rate: 0,
+      sc_count: 0, sc_details: [], subtotal: 0, discount_amount: 0, sc_discount: 0, promo_discount: 0, service_charge: 0,
+      vat_amount: 0, vat_exempt_sales: 0, vatable_sales: 0, total: 0, created_at: null, created_by_name: B.user.name,
     };
+  }
+
+  // ---- discount presets (Administration → Discounts): {id, name, kind: sc|pwd|percent|amount, value|null, scope, requires_approval}
+  const presetsFor = (scope) => (B.discounts || []).filter((p) => p.scope === 'both' || p.scope === scope);
+  const presetNeedsPin = (p) => !!p.requires_approval && needPin('pos.discount');
+  function presetHint(p) {
+    if (isSc(p.kind)) return `VAT-exempt + ${Math.round(B.tax.scRate * 100)}%`;
+    if (p.value === null) return p.kind === 'percent' ? 'enter %' : 'enter ₱';
+    return p.kind === 'percent' ? `${Number(p.value)}%` : peso(p.value);
   }
 
   // =====================================================================================================
@@ -114,13 +130,15 @@
     addItem: (id, itemId, qty = 1) => post(`/orders/${id}/items`, { item_id: itemId, qty }),
     updateLine: (id, line, data) => post(`/orders/${id}/items/${line}`, data),
     voidLine: (id, line, reason, pin) => post(`/orders/${id}/items/${line}/void`, { reason, pin }),
+    discountLine: (id, line, data) => post(`/orders/${id}/items/${line}/discount`, data),  // {discount_id, value, sc_person, pin}
     send: (id) => post(`/orders/${id}/send`),                       // {ticket, sent}
-    discount: (id, data) => post(`/orders/${id}/discount`, data),
+    discount: (id, data) => post(`/orders/${id}/discount`, data),   // {discount_id, value, sc_count, pax, sc_details, pin}
     split: (id, data) => post(`/orders/${id}/split`, data),         // {source, target}
     merge: (id, sourceId) => post(`/orders/${id}/merge`, { source_id: sourceId }),
     pay: (id, payments) => post(`/orders/${id}/pay`, { payments }),
     void: (id, reason, pin) => post(`/orders/${id}/void`, { reason, pin }),
     reprint: (id) => post(`/orders/${id}/reprint`),
+    reprintOrder: (id) => post(`/orders/${id}/reprint-order`),
     receipts: (q) => get('/receipts' + (q ? '?q=' + encodeURIComponent(q) : '')),
     customers: () => get('/customers'),
     openDay: (data) => post('/day/open', data),
@@ -133,11 +151,32 @@
 
   const showError = (e) => App.toast(e.message, 'error');
 
-  /** Run an API call while a button shows it is busy. Returns the result, or null after showing the error. */
+  /** Show a spinner on a button while fn() runs (errors are passed on). */
+  async function spin(btn, fn) {
+    if (!btn) return fn();
+    const label = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>';
+    try { return await fn(); } finally { btn.disabled = false; btn.innerHTML = label; }
+  }
+  /** Run an API call with a busy button. Returns the result, or null after showing the error. */
   async function run(fn, btn) {
-    if (btn) { btn.disabled = true; btn.dataset.label = btn.innerHTML; btn.innerHTML = '<span class="spinner"></span>'; }
-    try { return await fn(); } catch (e) { showError(e); return null; } finally {
-      if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.label; }
+    try { return await spin(btn, fn); } catch (e) { showError(e); return null; }
+  }
+  /**
+   * Run an action that may need a manager's approval: fn(pin) calls the API.
+   * ask = true asks for the PIN first (the user's role lacks the permission); if the server still says a PIN is
+   * needed (or it was wrong) the PIN pad opens again. Returns the result, or null when cancelled / failed.
+   */
+  async function withPin(fn, { ask = false, btn = null } = {}) {
+    let pin = '';
+    if (ask) { pin = await askPin(); if (pin === null) return null; }
+    for (;;) {
+      try { return await spin(btn, () => fn(pin)); } catch (e) {
+        if (!/manager (authorization|PIN)/i.test(e.message)) { showError(e); return null; }
+        pin = await askPin(pin ? 'Wrong PIN, or that manager may not approve this. Try again.' : e.message);
+        if (pin === null) return null;
+      }
     }
   }
 
@@ -208,7 +247,7 @@
     S.pane = pane;
     $('#pos-search').value = '';
     render();
-    if (finePointer) $('#pos-search').focus();
+    if (finePointer) $('#pos-search').focus();   // never on tablets: it would pop the keyboard
   }
 
   /** Back to the orders board (Done). */
@@ -260,6 +299,25 @@
     if (Printer.config().kitchenSlip) Print.kitchen(r.ticket, r.sent);
   }
 
+  /**
+   * Apply a discount preset to the whole receipt (line = null) or one order line.
+   * Open presets (no value) ask the % / ₱ on the keypad; extra = SC/PWD details. Returns the ticket or null.
+   */
+  async function applyPreset(p, line = null, extra = {}, btn = null) {
+    let value;
+    if (p.value === null && !isSc(p.kind)) {
+      value = await askNumber({ title: p.name, label: p.kind === 'percent' ? 'Discount in %' : 'Discount amount in ₱', mode: 'money',
+        prefix: p.kind === 'amount' ? '₱' : '', suffix: p.kind === 'percent' ? '%' : '', max: p.kind === 'percent' ? 100 : null, okText: 'Apply' });
+      if (value === null) return null;
+    }
+    const data = { discount_id: p.id, value, ...extra };
+    const t = await withPin((pin) => mutate((o) => (line
+      ? Api.discountLine(o.id, line.id, { ...data, pin })
+      : Api.discount(o.id, { ...data, pin }))), { ask: presetNeedsPin(p), btn });
+    if (t) App.toast(`${p.name} applied${line ? ' to ' + line.name : ''}`);
+    return t;
+  }
+
   async function startPay() {
     if (!activeLines(S.order).length) return;
     if (needsTable(S.order) && !(await assignTable(true))) return;
@@ -281,17 +339,19 @@
     const o = S.order;
     if (o.draft) { closeOrder(); return; }
     const sent = activeLines(o).some((i) => i.kitchen_sent);
-    const r = await App.ask({
-      title: `Cancel order ${o.ticket_no}?`, message: 'All items on this order will be cancelled.', input: 'Reason', required: true,
-      pin: sent && needPin('pos.void_item'), danger: true, okText: 'Cancel order',
-    });
+    const r = await App.ask({ title: `Cancel order ${o.ticket_no}?`, message: 'All items on this order will be cancelled.', input: 'Reason', required: true, danger: true, okText: 'Cancel order' });
     if (!r) return;
     await S.queue;
-    if (await run(() => Api.void(o.id, r.value, r.pin))) { App.toast(`Order ${o.ticket_no} cancelled`); closeOrder(); }
+    if (await withPin((pin) => Api.void(o.id, r.value, pin), { ask: sent && needPin('pos.void_item') })) {
+      App.toast(`Order ${o.ticket_no} cancelled`);
+      closeOrder();
+    }
   }
 
-  function printBill() {
-    if (activeLines(S.order).length) Print.receipt(S.order, false);
+  /** Reprint the order slip (all items on the order) — e.g. the kitchen lost the slip. */
+  async function reprintOrder(id, btn) {
+    const t = await run(() => Api.reprintOrder(id), btn);
+    if (t) Print.orderSlip(t);
   }
 
   function logout() {
@@ -326,9 +386,10 @@
       can('pos.xreading', 'pos.close_day') && s ? '<button class="btn btn-ghost" type="button" data-act="xread">X-Read</button>' : '',
       can('pos.close_day') && s ? '<button class="btn btn-ghost" type="button" data-act="eod">End of Day</button>' : '',
       can('pos.open_day') && !s ? '<button class="btn btn-success" type="button" data-act="openday">Open Day</button>' : '',
-      `<button class="btn btn-ghost printer-chip ${p.cls}" type="button" data-act="printer" title="Printer">⎙ ${esc(p.text)}</button>`,
+      `<button class="btn btn-ghost printer-chip ${p.cls}" type="button" data-act="printer" title="Printer">⎙ ${esc(p.text)}${p.queue ? ` <span class="count">${p.queue}</span>` : ''}</button>`,
+      S.installPrompt ? '<button class="btn btn-ghost install-btn" type="button" data-act="install">⬇ Install app</button>' : '',
       B.links.backOffice ? `<a class="btn btn-ghost" href="${esc(B.links.backOffice)}">Back office</a>` : '',
-      `<span class="chip">${esc(B.user.name)}</span>`,
+      `<span class="chip user-chip">${esc(B.user.name)}</span>`,
       '<button class="btn btn-ghost" type="button" data-act="logout">Log out</button>',
     ];
     $('#pos-top').innerHTML = top.join('');
@@ -339,13 +400,14 @@
     const cards = S.orders.map((o) => {
       const sub = [o.table_label && o.customer_name ? o.customer_name : '', TYPE[o.order_type], o.ticket_no].filter(Boolean).join(' · ');
       const mins = minutesSince(o.created_at);
-      return `<button type="button" class="order-card t-${o.order_type}" data-act="open" data-id="${o.id}">
+      return `<div class="order-card t-${o.order_type}" role="button" tabindex="0" data-act="open" data-id="${o.id}">
           <span class="oc-head"><span class="oc-title">${esc(orderTitle(o))}</span>
-            <span class="oc-time${mins > 60 ? ' late' : mins > 30 ? ' slow' : ''}">${elapsed(o.created_at)}</span></span>
+            <span class="oc-time${mins > 60 ? ' late' : mins > 30 ? ' slow' : ''}">${elapsed(o.created_at)}</span>
+            <button type="button" class="oc-more" data-act="cardMenu" data-id="${o.id}" aria-label="More">⋯</button></span>
           <span class="oc-sub">${esc(sub)}</span>
-          <span class="oc-foot"><span>${qtyStr(o.item_count)} item${Number(o.item_count) === 1 ? '' : 's'}${o.pax > 1 ? ` · ${o.pax} pax` : ''}</span><b>${peso(o.total)}</b></span>
+          <span class="oc-foot"><span>${plural(o.item_count, 'item')}${o.pax > 1 ? ` · ${o.pax} pax` : ''}</span><b>${peso(o.total)}</b></span>
           ${Number(o.unsent) ? `<span class="oc-unsent">● ${o.unsent} not sent to kitchen</span>` : ''}
-        </button>`;
+        </div>`;
     }).join('');
     const off = S.session ? '' : 'disabled';
     const closedMsg = can('pos.open_day') ? 'Press “Open Day” and enter the beginning cash to start selling.' : 'Ask a cashier or manager to open the day.';
@@ -406,14 +468,18 @@
         <div>
           <div class="tline-name">${esc(l.name)}${l.kitchen_sent ? '<span class="sent-dot" title="Sent to kitchen"></span>' : ''}</div>
           ${l.notes ? `<div class="tline-note">${esc(l.notes)}</div>` : ''}
+          ${l.status === 'active' && l.discount_kind ? `<div class="tline-disc"><span>${esc(l.discount_name || 'Discount')}</span><span>−${money(l.discount_amount)}</span></div>` : ''}
           ${l.status === 'void' ? `<div class="small">VOID: ${esc(l.void_reason || '')}</div>` : ''}
           <div class="muted small">@ ${money(l.price)}</div>
         </div>
         <span class="tline-amt">${money(l.line_total)}</span>
       </div>`).join('');
-    const discLabel = t.discount_type === 'percent' ? `Promo ${Number(t.discount_rate)}%` : `${DISC[t.discount_type] || ''}${t.sc_count ? ' ×' + t.sc_count : ''}`;
+    const receiptDisc = t.discount_type !== 'none' && t.discount_name ? t.discount_name : '';
+    const scLabel = `SC/PWD discount${t.sc_count ? ' ×' + t.sc_count : ''}`;
+    const promoLabel = `Discounts${receiptDisc && !isSc(t.discount_type) ? ' (' + receiptDisc + ')' : ''}`;
     const sub = [t.draft ? 'New order' : t.ticket_no, `${t.pax} pax`, t.created_at ? fmtTime(t.created_at) : '', t.created_by_name].filter(Boolean).join(' · ');
     const split = can('pos.split_move');
+    const off = (cond) => (cond ? '' : 'disabled');
     $('#order-pane').innerHTML = `
       <div class="ticket-head">
         <div class="row between gap-sm">
@@ -427,21 +493,23 @@
       <div class="ticket-lines">${lines || '<div class="empty">Tap items on the menu to add them.</div>'}</div>
       <div class="ticket-totals">
         <div class="row"><span>Subtotal</span><span>${money(t.subtotal)}</span></div>
-        ${t.discount_amount > 0 ? `<div class="row text-green"><span>Discount (${esc(discLabel)})</span><span>−${money(t.discount_amount)}</span></div>` : ''}
+        ${t.sc_discount > 0 ? `<div class="row text-green"><span>${esc(scLabel)}</span><span>−${money(t.sc_discount)}</span></div>` : ''}
+        ${t.promo_discount > 0 ? `<div class="row text-green"><span>${esc(promoLabel)}</span><span>−${money(t.promo_discount)}</span></div>` : ''}
         ${t.service_charge > 0 ? `<div class="row"><span>Service charge</span><span>${money(t.service_charge)}</span></div>` : ''}
         ${B.tax.vatRegistered ? `<div class="row muted small"><span>VAT incl. ${money(t.vat_amount)}${t.vat_exempt_sales > 0 ? ' · VAT-exempt ' + money(t.vat_exempt_sales) : ''}</span></div>` : ''}
         <div class="row grand"><span>TOTAL</span><span>${peso(t.total)}</span></div>
       </div>
       <div class="ticket-actions">
-        <button type="button" class="btn" data-act="send" ${unsent ? '' : 'disabled'}>Send${unsent ? ` (${unsent})` : ''}</button>
-        <button type="button" class="btn" data-act="discount" ${active.length ? '' : 'disabled'}>Discount</button>
-        ${split ? `<button type="button" class="btn" data-act="split" ${active.length ? '' : 'disabled'}>Split</button>` : ''}
-        ${split ? `<button type="button" class="btn" data-act="merge" ${t.draft ? 'disabled' : ''}>Merge</button>` : ''}
+        <button type="button" class="btn" data-act="send" ${off(unsent)}>Send${unsent ? ` (${unsent})` : ''}</button>
+        <button type="button" class="btn" data-act="discount" ${off(active.length)}>Discount</button>
+        ${split ? `<button type="button" class="btn" data-act="split" ${off(active.length)}>Split</button>` : ''}
+        ${split ? `<button type="button" class="btn" data-act="merge" ${off(!t.draft)}>Merge</button>` : ''}
         <button type="button" class="btn" data-act="table">Table</button>
-        <button type="button" class="btn" data-act="bill" ${active.length ? '' : 'disabled'}>Print bill</button>
+        <button type="button" class="btn" data-act="bill" ${off(active.length)}>Print bill</button>
+        <button type="button" class="btn" data-act="reprintOrder" ${off(active.length && !t.draft)}>Reprint order</button>
         <button type="button" class="btn btn-danger" data-act="cancel">Cancel order</button>
         <button type="button" class="btn" data-act="done">Done</button>
-        ${can('pos.settle') ? `<button type="button" class="btn btn-success pay" data-act="pay" ${active.length ? '' : 'disabled'}>PAY ${peso(t.total)}</button>` : ''}
+        ${can('pos.settle') ? `<button type="button" class="btn btn-success pay" data-act="pay" ${off(active.length)}>PAY ${peso(t.total)}</button>` : ''}
       </div>`;
     renderBottom();
   }
@@ -453,7 +521,7 @@
     const n = itemCount(t);
     $('#pos-bottom').innerHTML = `
       <button type="button" class="${S.pane === 'menu' ? 'on' : ''}" data-act="pane" data-pane="menu">Menu</button>
-      <button type="button" class="${S.pane === 'order' ? 'on' : ''}" data-act="pane" data-pane="order">Order · ${qtyStr(n)} item${n === 1 ? '' : 's'} · <b>${peso(t.total)}</b></button>`;
+      <button type="button" class="${S.pane === 'order' ? 'on' : ''}" data-act="pane" data-pane="order">Order · ${plural(n, 'item')} · <b>${peso(t.total)}</b></button>`;
   }
 
   // =====================================================================================================
@@ -494,21 +562,130 @@
       if (b && actions[b.dataset.act] && !b.disabled) actions[b.dataset.act](b, e);
     });
     d.showModal();
+    // Focus the main field: number fields never open the keyboard; text fields only with a mouse
     const first = d.querySelector('[autofocus]');
-    if (first && finePointer) { first.focus(); if (first.select) first.select(); }
+    if (first && (finePointer || first.readOnly)) { first.focus(); if (first.select && !first.readOnly) first.select(); }
     return m;
   }
 
-  const pinField = (show, name = 'pin') => (show ? `<label class="field mt"><span class="field-label">Manager PIN</span>
-      <input class="input" name="${name}" type="password" inputmode="numeric" autocomplete="off">
-      <span class="field-hint">Your role needs a manager’s approval for this.</span></label>` : '');
-  const keypad = (keys, cls = '') => `<div class="keypad ${cls}">${keys.map((k) => `<button type="button" class="btn" data-act="key" data-k="${k}">${k}</button>`).join('')}</div>`;
-  /** Apply a keypad key to a text value. */
-  function keyInto(value, k, allowDot = true) {
+  // ------------------------------------------------------------------ on-screen number entry
+  /** A number field typed with the on-screen keypad (never opens the phone keyboard). mode: money (decimals) | int. */
+  const numField = (name, value = '', mode = 'money', attrs = '') =>
+    `<input class="input num-field" name="${name}" value="${esc(value)}" data-num="${mode}" readonly inputmode="none" autocomplete="off" ${attrs}>`;
+  const keypad = (keys, cls = '', extra = '') => `<div class="keypad ${cls}">${keys.map((k) => `<button type="button" class="btn" data-key="${k}">${k}</button>`).join('')}${extra}</div>`;
+  /** A − value + stepper for small whole numbers (pax, counts). */
+  const stepper = (name, value, min = 1) => `<div class="stepper" data-min="${min}"><button type="button" class="btn" data-step="-1">−</button>
+      ${numField(name, value, 'int')}<button type="button" class="btn" data-step="1">+</button></div>`;
+
+  /** Apply a keypad key to a value. mode: money (one dot, no leading zeros) | int (no leading zeros) | text (PINs, table numbers). */
+  function keyInto(value, k, mode = 'money') {
     if (k === '⌫') return value.slice(0, -1);
     if (k === 'C') return '';
-    if (k === '.' && (!allowDot || value.includes('.'))) return value;
-    return (value + k).replace(/^0+(?=\d)/, '');
+    if (k === '.' && (mode !== 'money' || value.includes('.'))) return value;
+    const v = value + k;
+    return mode === 'text' ? v : v.replace(/^0+(?=\d)/, '');
+  }
+
+  /**
+   * Wire a dialog's keypad to its number fields (data-num). Tap a field to select it; the first key replaces
+   * its value. Steppers (data-step) change the field next to them. A physical keyboard works too.
+   * onChange(field) runs after every change.
+   */
+  function numpad(root, onChange) {
+    let active = null;
+    let fresh = true;
+    const fields = () => [...root.querySelectorAll('[data-num]')].filter((el) => el.offsetParent !== null);
+    const select = (el) => {
+      if (active) active.classList.remove('active');
+      active = el;
+      fresh = true;
+      if (el) el.classList.add('active');
+    };
+    const changed = (el) => { el.dispatchEvent(new Event('input', { bubbles: true })); if (onChange) onChange(el); };
+    const type = (k) => {
+      if (k === 'next') { const all = fields(); select(all[all.indexOf(active) + 1] || all[0]); return; }
+      if (!active) return;
+      active.value = keyInto(fresh && k !== '⌫' ? '' : active.value, k, active.dataset.num);
+      fresh = false;
+      changed(active);
+    };
+    root.addEventListener('click', (e) => {
+      const step = e.target.closest('[data-step]');
+      if (step) {
+        const box = step.closest('.stepper');
+        const f = box.querySelector('[data-num]');
+        f.value = String(Math.max(Number(box.dataset.min) || 0, (Number(f.value) || 0) + Number(step.dataset.step)));
+        select(f);
+        changed(f);
+        return;
+      }
+      const f = e.target.closest('[data-num]');
+      if (f) { select(f); return; }
+      const k = e.target.closest('[data-key]');
+      if (k) type(k.dataset.key);
+    });
+    root.addEventListener('keydown', (e) => {
+      if (e.target.matches('input:not([data-num]), textarea, select') || e.ctrlKey || e.metaKey || e.altKey) return;
+      const k = /^[0-9.]$/.test(e.key) ? e.key : e.key === 'Backspace' ? '⌫' : null;
+      if (k) { e.preventDefault(); type(k); }
+    });
+    select(root.querySelector('[data-num]'));
+    return { select, type };
+  }
+
+  /** Ask one number on the keypad. Resolves the number, or null when cancelled. */
+  function askNumber({ title, label = '', value = '', mode = 'money', prefix = '', suffix = '', max = null, okText = 'OK' }) {
+    return new Promise((resolve) => {
+      let result = null;
+      const m = modal({
+        title,
+        cls: 'dlg-number',
+        body: `${label ? `<div class="field-label mb-sm">${esc(label)}</div>` : ''}
+          <div class="num-display">${prefix ? `<span>${esc(prefix)}</span>` : ''}${numField('n', value, mode, 'autofocus')}${suffix ? `<span>${esc(suffix)}</span>` : ''}</div>
+          ${keypad(mode === 'money' ? MONEY_KEYS : INT_KEYS, 'mt')}`,
+        foot: `<button type="button" class="btn btn-lg" data-x>Cancel</button><button type="submit" class="btn btn-primary btn-lg">${esc(okText)}</button>`,
+        onSubmit: () => {
+          const v = Number(m.$('[name=n]').value);
+          if (!(v > 0)) { App.toast('Enter a number greater than zero', 'error'); return; }
+          if (max !== null && v > max) { App.toast(`The maximum is ${max}`, 'error'); return; }
+          result = v;
+          m.close();
+        },
+        onClose: () => resolve(result),
+      });
+      numpad(m.el);
+    });
+  }
+
+  /** Manager PIN pad. Resolves the PIN, or null when cancelled. */
+  function askPin(message = 'This needs a manager’s approval. Ask a manager to enter their PIN.') {
+    return new Promise((resolve) => {
+      let result = null;
+      const m = modal({
+        title: 'Manager PIN',
+        cls: 'dlg-pin',
+        body: `<p class="muted mt-0">${esc(message)}</p>
+          <div class="pin-dots"></div>
+          <input type="hidden" name="pin" data-num="text">
+          ${keypad(INT_KEYS, 'mt')}`,
+        foot: '<button type="button" class="btn btn-lg" data-x>Cancel</button><button type="submit" class="btn btn-primary btn-lg">Approve</button>',
+        onSubmit: () => {
+          const pin = m.$('[name=pin]').value;
+          if (!pin) return;
+          result = pin;
+          m.close();
+        },
+        onClose: () => resolve(result),
+      });
+      const dots = () => {
+        const n = m.$('[name=pin]').value.length;
+        m.$('.pin-dots').innerHTML = n ? '●'.repeat(n) : '<span class="muted">Enter PIN</span>';
+      };
+      // The hidden field cannot be tapped: select it by hand so the keypad types into it
+      numpad(m.el, dots).select(m.$('[name=pin]'));
+      m.$('[type=submit]').focus();
+      dots();
+    });
   }
 
   // ------------------------------------------------------------------ assign / change table
@@ -525,11 +702,14 @@
         title: prompt ? 'Assign a table?' : (order.table_label ? `Change table (now ${order.table_label})` : 'Assign table'),
         cls: 'dlg-table',
         body: `${prompt ? '<p class="muted mt-0">This dine-in order has no table yet. Pick the table the customer sits at, or skip.</p>' : ''}
-          <input class="input table-input" name="label" maxlength="30" autocomplete="off" placeholder="Table, e.g. 5, 12A, Patio 2" value="${esc(order.table_label || '')}" autofocus>
+          <div class="table-entry">
+            <input class="input table-input" name="label" maxlength="30" autocomplete="off" placeholder="Table no." data-num="text" readonly inputmode="none" value="${esc(order.table_label || '')}">
+            <button type="button" class="btn btn-lg abc-btn" data-act="abc" title="Type letters, e.g. Patio 2">ABC</button>
+          </div>
           <div class="table-warn small"></div>
           <div class="table-layout">
             <div><div class="field-label mb-sm">Tap a table</div><div class="table-chips">${chips}</div></div>
-            <div><div class="field-label mb-sm">or type it</div>${keypad(TABLE_KEYS, 'table-keys')}</div>
+            <div class="table-keys-box"><div class="field-label mb-sm">or type the number</div>${keypad(INT_KEYS, 'table-keys')}</div>
           </div>`,
         foot: `<button type="button" class="btn" data-act="none">No table</button>
           ${prompt ? '<button type="button" class="btn" data-act="skip">Skip</button>' : ''}
@@ -538,7 +718,7 @@
           <button type="submit" class="btn btn-primary btn-lg">Assign table</button>`,
         onSubmit: () => {
           const v = input.value.trim();
-          if (!v) { input.focus(); return; }
+          if (!v) { App.toast('Enter or tap a table', 'error'); return; }
           done({ label: v });
         },
         onClose: () => resolve(result),
@@ -547,7 +727,15 @@
             input.value = b.dataset.label;
             if (busy.includes(b.dataset.label)) warn(); else done({ label: b.dataset.label });
           },
-          key: (b) => { input.value = keyInto(input.value, b.dataset.k, false); warn(); },
+          // Letters (e.g. "Patio 2"): switch the field to the phone keyboard; tap again for the keypad
+          abc: (b) => {
+            const typing = input.readOnly;
+            input.readOnly = !typing;
+            input.inputMode = typing ? 'text' : 'none';
+            b.textContent = typing ? '123' : 'ABC';
+            m.el.classList.toggle('typing', typing);
+            if (typing) input.focus(); else input.blur();
+          },
           none: () => done({ label: '' }),
           skip: () => done({ skip: true }),
         },
@@ -560,6 +748,7 @@
           ? `⚠ Table ${esc(v)} already has an open order${other ? ` (${esc(other.ticket_no)}, ${peso(other.total)})` : ''}. You can still use it.` : '';
       }
       function done(v) { result = v; m.close(); }
+      numpad(m.el, warn);
       input.addEventListener('input', warn);
       warn();
     });
@@ -570,14 +759,14 @@
     const t = S.order;
     const m = modal({
       title: 'Order details',
-      body: `<div class="form-grid">
-          <label class="field"><span class="field-label">Customer name</span><input class="input" name="customer_name" value="${esc(t.customer_name || '')}" autofocus></label>
-          <label class="field"><span class="field-label">No. of guests (pax)</span><input class="input" name="pax" type="number" min="1" inputmode="numeric" value="${t.pax}"></label>
+      body: `<label class="field"><span class="field-label">Customer name</span><input class="input" name="customer_name" value="${esc(t.customer_name || '')}" autocomplete="off"></label>
+        <div class="form-grid mt">
+          <label class="field"><span class="field-label">No. of guests (pax)</span>${stepper('pax', t.pax)}</label>
           <label class="field"><span class="field-label">Order type</span><select class="input" name="order_type">
             ${Object.entries(TYPE).map(([k, v]) => `<option value="${k}"${k === t.order_type ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
         </div>
-        <label class="field mt"><span class="field-label">Order notes</span><input class="input" name="notes" value="${esc(t.notes || '')}"></label>`,
-      foot: '<button type="button" class="btn" data-x>Cancel</button><button type="submit" class="btn btn-primary">Save</button>',
+        <label class="field mt"><span class="field-label">Order notes</span><input class="input" name="notes" value="${esc(t.notes || '')}" autocomplete="off"></label>`,
+      foot: '<button type="button" class="btn btn-lg" data-x>Cancel</button><button type="submit" class="btn btn-primary btn-lg">Save</button>',
       onSubmit: async (btn) => {
         const data = { customer_name: m.$('[name=customer_name]').value.trim(), pax: Math.max(1, Number(m.$('[name=pax]').value) || 1),
           order_type: m.$('[name=order_type]').value, notes: m.$('[name=notes]').value.trim() };
@@ -585,116 +774,186 @@
         if (await run(() => mutate((o) => Api.update(o.id, data)), btn)) m.close();
       },
     });
+    numpad(m.el);
   }
 
-  // ------------------------------------------------------------------ order line: quantity, kitchen note, void
+  // ------------------------------------------------------------------ order line: quantity, kitchen note, discount, void
   function lineDialog(line) {
     const sent = !!line.kitchen_sent;
+    const order = S.order;
+    const presets = presetsFor('item');
+    const receiptSc = isSc(order.discount_type);
     const m = modal({
       title: line.name,
       cls: 'dlg-line',
       body: `<div class="qty-row">
           <button type="button" class="btn btn-lg" data-act="minus">−</button>
-          <input class="input qty-input" name="qty" type="number" min="1" step="any" inputmode="decimal" value="${qtyStr(line.qty)}">
+          ${numField('qty', qtyStr(line.qty), 'money', 'data-act="qty"')}
           <button type="button" class="btn btn-lg" data-act="plus">+</button>
         </div>
         <p class="muted small">${peso(line.price)} each · ${sent ? '<b class="text-green">Already sent to the kitchen</b>' : 'Not yet sent to the kitchen'}</p>
         <label class="field"><span class="field-label">Kitchen note</span>
-          <input class="input" name="notes" value="${esc(line.notes || '')}" placeholder="e.g. no onions, extra spicy, less ice"></label>
+          <input class="input" name="notes" value="${esc(line.notes || '')}" placeholder="e.g. no onions, extra spicy, less ice" autocomplete="off"></label>
         <div class="note-chips">${NOTE_CHIPS.map((n) => `<button type="button" class="btn btn-sm" data-act="note" data-note="${esc(n)}">${esc(n)}</button>`).join('')}</div>
-        ${sent ? `<div class="void-box">
+
+        <div class="line-section">
+          <div class="row between"><span class="field-label">Discount this item</span>
+            ${line.discount_kind ? `<span class="tline-disc">${esc(line.discount_name)} −${money(line.discount_amount)}</span>` : ''}</div>
+          ${receiptSc ? '<p class="muted small">The whole receipt has a Senior Citizen / PWD discount. Remove it to discount single items.</p>' : `
+          <div class="preset-grid">
+            ${presets.map((p) => `<button type="button" class="preset${line.discount_id === p.id ? ' sel' : ''}" data-act="preset" data-id="${p.id}">
+              <b>${esc(p.name)}</b><small>${esc(presetHint(p))}${presetNeedsPin(p) ? ' · PIN' : ''}</small></button>`).join('')}
+            ${line.discount_kind ? '<button type="button" class="preset preset-remove" data-act="removeDisc"><b>Remove</b><small>no discount</small></button>' : ''}
+          </div>
+          <div class="sc-person hidden"></div>`}
+        </div>
+
+        ${sent ? `<div class="line-section">
             <label class="field"><span class="field-label">Void reason (to void or reduce a sent item)</span>
-              <input class="input" name="reason" placeholder="e.g. wrong order, customer changed mind"></label>
-            ${pinField(needPin('pos.void_item'))}
+              <input class="input" name="reason" placeholder="e.g. wrong order, customer changed mind" autocomplete="off"></label>
           </div>` : ''}`,
-      foot: `<button type="button" class="btn btn-danger" data-act="void">${sent ? 'Void item' : 'Remove'}</button>
+      foot: `<button type="button" class="btn btn-danger btn-lg" data-act="void">${sent ? 'Void item' : 'Remove'}</button>
         <span class="grow"></span>
-        <button type="button" class="btn" data-x>Cancel</button>
+        <button type="button" class="btn btn-lg" data-x>Cancel</button>
         <button type="submit" class="btn btn-primary btn-lg">Update</button>`,
       actions: {
         minus: () => { qty.value = qtyStr(Math.max(1, (Number(qty.value) || 1) - 1)); },
         plus: () => { qty.value = qtyStr((Number(qty.value) || 0) + 1); },
+        qty: async () => {
+          const v = await askNumber({ title: `Quantity — ${line.name}`, value: '', okText: 'Set quantity' });
+          if (v !== null) qty.value = qtyStr(v);
+        },
         note: (b) => { notes.value = (notes.value ? notes.value + ', ' : '') + b.dataset.note; },
+        preset: async (b) => {
+          const p = presets.find((x) => x.id === Number(b.dataset.id));
+          if (isSc(p.kind)) { scPersonForm(p); return; }
+          if (await applyPreset(p, line, {}, b)) m.close();
+        },
+        scApply: async (b) => {
+          const person = { name: val('sc_name'), id_no: val('sc_id') };
+          if (!person.name || !person.id_no) { App.toast('Enter the name and ID number', 'error'); return; }
+          const p = presets.find((x) => x.id === Number(b.dataset.id));
+          if (await applyPreset(p, line, { sc_person: person }, b)) m.close();
+        },
+        pickPerson: (b) => {
+          const p = order.sc_details[Number(b.dataset.i)];
+          m.$('[name=sc_name]').value = p.name;
+          m.$('[name=sc_id]').value = p.id_no;
+        },
+        removeDisc: async (b) => {
+          if (await run(() => mutate((o) => Api.discountLine(o.id, line.id, { discount_type: 'none' })), b)) { App.toast('Discount removed'); m.close(); }
+        },
         void: async (b) => {
           const reason = val('reason');
           if (sent && !reason) { App.toast('Enter the void reason', 'error'); m.$('[name=reason]').focus(); return; }
-          if (await run(() => mutate((o) => Api.voidLine(o.id, line.id, reason || 'Removed', val('pin'))), b)) m.close();
+          const ok = await withPin((pin) => mutate((o) => Api.voidLine(o.id, line.id, reason || 'Removed', pin)), { ask: sent && needPin('pos.void_item'), btn: b });
+          if (ok) m.close();
         },
       },
       onSubmit: async (btn) => {
         const q = Number(qty.value);
         if (!(q > 0)) { App.toast('Quantity must be greater than zero', 'error'); return; }
-        if (sent && q < line.qty && !val('reason')) { App.toast('Enter the void reason for the reduced quantity', 'error'); m.$('[name=reason]').focus(); return; }
-        if (await run(() => mutate((o) => Api.updateLine(o.id, line.id, { qty: q, notes: notes.value, reason: val('reason'), pin: val('pin') })), btn)) m.close();
+        const reducing = sent && q < line.qty;
+        if (reducing && !val('reason')) { App.toast('Enter the void reason for the reduced quantity', 'error'); m.$('[name=reason]').focus(); return; }
+        const ok = await withPin((pin) => mutate((o) => Api.updateLine(o.id, line.id, { qty: q, notes: notes.value, reason: val('reason'), pin })),
+          { ask: reducing && needPin('pos.void_item'), btn });
+        if (ok) m.close();
       },
     });
     const qty = m.$('[name=qty]');
     const notes = m.$('[name=notes]');
     const val = (name) => { const el = m.$(`[name=${name}]`); return el ? el.value.trim() : ''; };
+
+    /** SC / PWD on one item: the person's name + ID (people already on this order can be picked). */
+    function scPersonForm(p) {
+      const box = m.$('.sc-person');
+      box.classList.remove('hidden');
+      box.innerHTML = `<div class="field-label mt">${esc(p.name)} — who is this item for?</div>
+        ${order.sc_details.length ? `<div class="note-chips">${order.sc_details.map((x, i) => `<button type="button" class="btn btn-sm" data-act="pickPerson" data-i="${i}">${esc(x.name)} · ${esc(x.id_no)}</button>`).join('')}</div>` : ''}
+        <div class="form-grid mt">
+          <label class="field"><span class="field-label">Name</span><input class="input" name="sc_name" autocomplete="off"></label>
+          <label class="field"><span class="field-label">${p.kind === 'sc' ? 'OSCA' : 'PWD'} ID no.</span><input class="input" name="sc_id" autocomplete="off"></label>
+        </div>
+        <button type="button" class="btn btn-primary btn-lg mt" data-act="scApply" data-id="${p.id}">Apply ${esc(p.name)}</button>`;
+      box.scrollIntoView({ block: 'nearest' });
+    }
   }
 
-  // ------------------------------------------------------------------ discount (SC / PWD / promo % / fixed amount)
+  // ------------------------------------------------------------------ discount on the whole receipt (presets)
   function discountDialog() {
     const t = S.order;
-    const f = {
-      type: t.discount_type === 'none' ? 'sc' : t.discount_type,
-      rate: t.discount_rate ? String(t.discount_rate) : '',
-      pax: String(t.pax),
-      count: String(Math.max(t.sc_count || 1, 1)),
-      people: t.sc_details.length ? t.sc_details.map((p) => ({ ...p })) : [],
-    };
-    const tabs = [['sc', 'Senior Citizen'], ['pwd', 'PWD'], ['percent', 'Promo %'], ['amount', 'Fixed ₱']];
+    const presets = presetsFor('order');
+    const itemDiscounts = activeLines(t).filter((l) => l.discount_kind).length;
     const m = modal({
-      title: 'Discount',
+      title: 'Discount — whole receipt',
       cls: 'dlg-discount',
-      body: '<div class="tabs"></div><div class="disc-body"></div>' + pinField(needPin('pos.discount')),
-      foot: `${t.discount_type !== 'none' ? '<button type="button" class="btn btn-danger" data-act="remove">Remove discount</button>' : ''}
-        <span class="grow"></span><button type="button" class="btn" data-x>Cancel</button>
-        <button type="submit" class="btn btn-primary btn-lg">Apply</button>`,
+      body: `${t.discount_type !== 'none' ? `<div class="alert alert-success small">Now: <b>${esc(t.discount_name || 'Discount')}</b> on the whole receipt.</div>` : ''}
+        ${itemDiscounts ? `<p class="muted small mt-0">${plural(itemDiscounts, 'item')} on this order already ${itemDiscounts === 1 ? 'has' : 'have'} its own discount (tap the item to change it).</p>` : ''}
+        <div class="preset-grid big">
+          ${presets.map((p) => `<button type="button" class="preset${t.discount_id === p.id ? ' sel' : ''}" data-act="preset" data-id="${p.id}">
+            <b>${esc(p.name)}</b><small>${esc(presetHint(p))}${presetNeedsPin(p) ? ' · PIN' : ''}</small></button>`).join('')}
+        </div>
+        <div class="sc-form hidden"></div>`,
+      foot: `${t.discount_type !== 'none' ? '<button type="button" class="btn btn-danger btn-lg" data-act="remove">Remove discount</button>' : ''}
+        <span class="grow"></span><button type="button" class="btn btn-lg" data-x>Close</button>
+        <button type="button" class="btn btn-primary btn-lg hidden" data-act="scApply">Apply</button>`,
       actions: {
-        tab: (b) => { f.type = b.dataset.type; paint(); },
-        remove: async (b) => { if (await run(() => mutate((o) => Api.discount(o.id, { discount_type: 'none' })), b)) m.close(); },
-      },
-      onSubmit: async (btn) => {
-        const n = Math.max(Number(f.count) || 1, 1);
-        const data = { discount_type: f.type, discount_rate: Number(f.rate) || 0, sc_count: n, pax: Number(f.pax) || t.pax,
-          sc_details: Array.from({ length: n }, (_, i) => f.people[i] || { name: '', id_no: '' }), pin: (m.$('[name=pin]') || {}).value || '' };
-        if (await run(() => mutate((o) => Api.discount(o.id, data)), btn)) { App.toast('Discount applied'); m.close(); }
+        preset: async (b) => {
+          const p = presets.find((x) => x.id === Number(b.dataset.id));
+          if (isSc(p.kind)) { scForm(p); return; }
+          if (await applyPreset(p, null, {}, b)) m.close();
+        },
+        remove: async (b) => {
+          if (await run(() => mutate((o) => Api.discount(o.id, { discount_type: 'none' })), b)) { App.toast('Discount removed'); m.close(); }
+        },
+        scApply: async (b) => {
+          const n = Math.max(Number(f.count) || 1, 1);
+          const people = Array.from({ length: n }, (_, i) => f.people[i] || { name: '', id_no: '' });
+          if (people.some((x) => !x.name.trim() || !x.id_no.trim())) { App.toast('Enter the name and ID number of each person', 'error'); return; }
+          if (await applyPreset(f.preset, null, { sc_count: n, pax: Number(f.pax) || t.pax, sc_details: people }, b)) m.close();
+        },
       },
     });
-    function paint() {
-      m.$('.tabs').innerHTML = tabs.map(([k, v]) => `<button type="button" class="tab${f.type === k ? ' active' : ''}" data-act="tab" data-type="${k}">${v}</button>`).join('');
-      const box = m.$('.disc-body');
-      if (f.type === 'sc' || f.type === 'pwd') {
-        const n = Math.max(Number(f.count) || 1, 1);
-        const who = f.type === 'sc' ? 'senior citizen' : 'PWD';
-        box.innerHTML = `<div class="alert alert-info small">${B.tax.vatRegistered ? 'VAT-exempt + ' : ''}${Math.round(B.tax.scRate * 100)}% discount on the qualified share
-            of the bill (${n} of ${esc(f.pax || '1')} guests). Enter each ${who}’s name and ID number for the BIR sales book.</div>
-          <div class="form-grid">
-            <label class="field"><span class="field-label">Total guests (pax)</span><input class="input" data-f="pax" type="number" min="1" inputmode="numeric" value="${esc(f.pax)}"></label>
-            <label class="field"><span class="field-label">No. of ${who}s</span><input class="input" data-f="count" type="number" min="1" inputmode="numeric" value="${esc(f.count)}"></label>
-          </div>
-          ${Array.from({ length: n }, (_, i) => `<div class="form-grid mt person">
-            <label class="field"><span class="field-label">Name #${i + 1}</span><input class="input" data-p="${i}" data-k="name" value="${esc((f.people[i] || {}).name || '')}"></label>
-            <label class="field"><span class="field-label">${f.type === 'sc' ? 'OSCA' : 'PWD'} ID no.</span><input class="input" data-p="${i}" data-k="id_no" value="${esc((f.people[i] || {}).id_no || '')}"></label>
-          </div>`).join('')}`;
-      } else {
-        box.innerHTML = `<label class="field"><span class="field-label">${f.type === 'percent' ? 'Discount %' : 'Discount amount (₱)'}</span>
-          <input class="input input-xl" data-f="rate" type="number" min="0" step="any" inputmode="decimal" value="${esc(f.rate)}"></label>`;
-        if (finePointer) box.querySelector('input').focus();
-      }
+    // SC / PWD on the whole receipt: guests, number of SC/PWD, name + ID of each
+    const f = { preset: null, pax: String(t.pax), count: String(Math.max(t.sc_count || 1, 1)), people: t.sc_details.map((p) => ({ ...p })) };
+    function scForm(p) {
+      f.preset = p;
+      m.el.querySelectorAll('[data-act=preset]').forEach((b) => b.classList.toggle('sel', Number(b.dataset.id) === p.id));
+      const apply = m.$('[data-act=scApply]');
+      apply.classList.remove('hidden');
+      apply.textContent = `Apply ${p.name}`;
+      paintSc();
+      m.$('.sc-form').scrollIntoView({ block: 'nearest' });
     }
-    // Keep typed values in f; changing the number of people redraws the name rows
+    function paintSc() {
+      const box = m.$('.sc-form');
+      const p = f.preset;
+      const n = Math.max(Number(f.count) || 1, 1);
+      const who = p.kind === 'sc' ? 'senior citizen' : 'PWD';
+      box.classList.remove('hidden');
+      box.innerHTML = `<div class="alert alert-info small mt">${B.tax.vatRegistered ? 'VAT-exempt + ' : ''}${Math.round(B.tax.scRate * 100)}% discount on the qualified share
+          of the bill (${n} of ${esc(f.pax || '1')} guests). Enter each ${who}’s name and ID number for the BIR sales book.</div>
+        <div class="form-grid">
+          <label class="field"><span class="field-label">Total guests (pax)</span>${stepper('pax', f.pax)}</label>
+          <label class="field"><span class="field-label">No. of ${who}s</span>${stepper('count', f.count)}</label>
+        </div>
+        ${Array.from({ length: n }, (_, i) => `<div class="form-grid mt">
+          <label class="field"><span class="field-label">Name #${i + 1}</span><input class="input" data-p="${i}" data-k="name" autocomplete="off" value="${esc((f.people[i] || {}).name || '')}"></label>
+          <label class="field"><span class="field-label">${p.kind === 'sc' ? 'OSCA' : 'PWD'} ID no.</span><input class="input" data-p="${i}" data-k="id_no" autocomplete="off" value="${esc((f.people[i] || {}).id_no || '')}"></label>
+        </div>`).join('')}`;
+    }
+    // Keep typed names in f; changing the number of people redraws the name rows
     m.el.addEventListener('input', (e) => {
       const el = e.target;
-      if (el.dataset.f) f[el.dataset.f] = el.value;
       if (el.dataset.p !== undefined) {
         const i = Number(el.dataset.p);
         f.people[i] = { name: '', id_no: '', ...f.people[i], [el.dataset.k]: el.value };
+      } else if (el.name === 'pax' || el.name === 'count') {
+        f[el.name] = el.value;
+        if (el.name === 'count') paintSc();
       }
     });
-    m.el.addEventListener('change', (e) => { if (e.target.dataset.f === 'count' || e.target.dataset.f === 'pax') paint(); });
-    paint();
+    numpad(m.el);
   }
 
   // ------------------------------------------------------------------ split: move lines to a new or another order
@@ -708,29 +967,36 @@
     const m = modal({
       title: 'Split order — choose the items to move',
       cls: 'dlg-split',
-      body: `<div class="row gap-sm mb"><button type="button" class="btn btn-sm" data-act="all">Select all</button><button type="button" class="btn btn-sm" data-act="clear">Clear</button></div>
+      body: `<div class="row gap-sm mb"><button type="button" class="btn" data-act="all">Select all</button><button type="button" class="btn" data-act="clear">Clear</button></div>
         <div class="split-lines"></div>
         <div class="form-grid mt">
           <label class="field"><span class="field-label">Move the selected items to</span><select class="input" name="target">
             <option value="">A new order (separate bill)</option>
             ${others.map((o) => `<option value="${o.id}">${esc(o.ticket_no)} · ${esc(orderTitle(o))} · ${peso(o.total)}</option>`).join('')}</select></label>
-          <label class="field new-only"><span class="field-label">Table of the new order</span><input class="input" name="table_label" maxlength="30" value="${esc(t.table_label || '')}" placeholder="No table"></label>
-          <label class="field new-only"><span class="field-label">Customer name (optional)</span><input class="input" name="customer_name"></label>
+          <div class="field new-only"><span class="field-label">Table of the new order</span>
+            <button type="button" class="btn btn-lg split-table" data-act="table">${t.table_label ? 'Table ' + esc(t.table_label) : 'No table'}</button></div>
+          <label class="field new-only"><span class="field-label">Customer name (optional)</span><input class="input" name="customer_name" autocomplete="off"></label>
         </div>`,
-      foot: '<span class="muted split-sum"></span><span class="grow"></span><button type="button" class="btn" data-x>Cancel</button><button type="submit" class="btn btn-primary btn-lg">Split</button>',
+      foot: '<span class="muted split-sum"></span><span class="grow"></span><button type="button" class="btn btn-lg" data-x>Cancel</button><button type="submit" class="btn btn-primary btn-lg">Split</button>',
       actions: {
         all: () => { lines.forEach((l) => { sel[l.id] = l.qty; }); paint(); },
         clear: () => { lines.forEach((l) => { sel[l.id] = 0; }); paint(); },
         less: (b) => { setQ(b.dataset.id, (sel[b.dataset.id] || 0) - 1); },
         more: (b) => { setQ(b.dataset.id, (sel[b.dataset.id] || 0) + 1); },
         whole: (b) => { setQ(b.dataset.id, Infinity); },
+        table: async (b) => {
+          const r = await tableDialog({ id: null, table_label: newTable || null });
+          if (!r) return;
+          newTable = r.label || '';
+          b.textContent = newTable ? 'Table ' + newTable : 'No table';
+        },
       },
       onSubmit: async (btn) => {
         const chosen = Object.entries(sel).filter(([, q]) => q > 0).map(([id, q]) => ({ id: Number(id), qty: q }));
         if (!chosen.length) { App.toast('Select the items to move', 'error'); return; }
         const target = m.$('[name=target]').value;
         const data = target ? { lines: chosen, target_id: Number(target) }
-          : { lines: chosen, table_label: m.$('[name=table_label]').value.trim(), customer_name: m.$('[name=customer_name]').value.trim() };
+          : { lines: chosen, table_label: newTable, customer_name: m.$('[name=customer_name]').value.trim() };
         const r = await run(() => Api.split(t.id, data), btn);
         if (!r) return;
         m.close();
@@ -740,6 +1006,7 @@
         loadOrders();
       },
     });
+    let newTable = t.table_label || '';
     function setQ(id, q) {
       const l = lines.find((x) => String(x.id) === String(id));
       sel[id] = Math.max(0, Math.min(l.qty, q));
@@ -774,13 +1041,33 @@
       body: `<p class="muted mt-0">All items of the chosen order move to this order; the other order is closed.</p>
         ${others.map((o) => `<div class="pick-row">
           <div><b>${esc(orderTitle(o))}</b> <span class="muted">· ${esc(o.ticket_no)}${o.table_label && o.customer_name ? ' · ' + esc(o.customer_name) : ''}</span>
-            <div class="muted small">${qtyStr(o.item_count)} item${Number(o.item_count) === 1 ? '' : 's'} · ${peso(o.total)} · ${elapsed(o.created_at)}</div></div>
-          <button type="button" class="btn btn-primary" data-act="merge" data-id="${o.id}">Merge</button></div>`).join('') || '<div class="empty">No other open orders.</div>'}`,
+            <div class="muted small">${plural(o.item_count, 'item')} · ${peso(o.total)} · ${elapsed(o.created_at)}</div></div>
+          <button type="button" class="btn btn-primary btn-lg" data-act="merge" data-id="${o.id}">Merge</button></div>`).join('') || '<div class="empty">No other open orders.</div>'}`,
       actions: {
         merge: async (b) => {
           const r = await run(() => Api.merge(t.id, Number(b.dataset.id)), b);
           if (r) { m.close(); setOrder(r); App.toast('Orders merged'); loadOrders(); }
         },
+      },
+    });
+  }
+
+  // ------------------------------------------------------------------ board card ⋯ menu
+  function cardMenu(id) {
+    const o = S.orders.find((x) => x.id === id);
+    if (!o) return;
+    const m = modal({
+      title: `${orderTitle(o)} · ${o.ticket_no}`,
+      cls: 'dlg-card',
+      body: `<div class="col gap-sm">
+          <button type="button" class="btn btn-xl" data-act="open">Open order</button>
+          <button type="button" class="btn btn-xl" data-act="reprint">⎙ Reprint order slip</button>
+          <button type="button" class="btn btn-xl" data-act="bill">⎙ Print bill</button>
+        </div>`,
+      actions: {
+        open: () => { m.close(); openOrderById(id); },
+        reprint: async (b) => { await reprintOrder(id, b); m.close(); },
+        bill: async (b) => { const t = await run(() => Api.show(id), b); if (t) { m.close(); Print.receipt(t, false); } },
       },
     });
   }
@@ -791,7 +1078,6 @@
     const label = (k) => (methods.find((x) => x.key === k) || {}).label || k;
     const pays = [];           // [{method, amount, reference, customer_id}]
     let method = 'cash';
-    let entry = '';
     let customers = null;      // loaded when "charge" is chosen
     const unsent = unsentLines(t);
     const total = t.total;
@@ -819,18 +1105,16 @@
             <div class="pay-list"></div>
           </div>
           <div>
-            <input class="input pay-entry" name="entry" inputmode="decimal" autocomplete="off">
+            ${numField('entry', '', 'money', 'autofocus')}
             <div class="quick-cash mt"></div>
             ${keypad(MONEY_KEYS, 'mt')}
-            <div class="row gap-sm mt"><button type="button" class="btn btn-lg grow" data-act="clear">Clear</button>
+            <div class="row gap-sm mt"><button type="button" class="btn btn-lg grow" data-key="C">Clear</button>
               <button type="button" class="btn btn-dark btn-lg grow pay-add" data-act="add"></button></div>
           </div>
         </div>`,
       foot: '<button type="button" class="btn btn-lg" data-x>Cancel</button><button type="submit" class="btn btn-success btn-lg pay-complete"></button>',
       actions: {
         method: (b) => { method = b.dataset.m; if (method === 'charge') loadCustomers(); paint(); },
-        key: (b) => { entry = keyInto(entry, b.dataset.k); paint(); },
-        clear: () => { entry = ''; paint(); },
         add: () => add(),
         quick: (b) => add(Number(b.dataset.v)),
         removePay: (b) => { pays.splice(Number(b.dataset.i), 1); paint(); },
@@ -838,9 +1122,9 @@
       onSubmit: (btn) => complete(btn),
     });
     const entryEl = m.$('[name=entry]');
-    entryEl.addEventListener('input', () => { entry = entryEl.value.replace(/[^\d.]/g, ''); paint(false); });
-    // Enter in the amount box adds the payment (Enter elsewhere completes)
-    entryEl.addEventListener('keydown', (e) => { if (e.key === 'Enter' && entry !== '') { e.preventDefault(); add(); } });
+    entryEl.classList.add('pay-entry');
+    const entry = () => entryEl.value;
+    const pad = numpad(m.el, () => paint());
 
     async function loadCustomers() {
       if (customers) return;
@@ -854,7 +1138,7 @@
     /** Add a payment line. Non-cash payments are capped at what is still due. */
     function add(amountArg) {
       const { nonCash, remaining } = sums();
-      let amount = r2(amountArg !== undefined ? amountArg : entry === '' ? remaining : entry);
+      let amount = r2(amountArg !== undefined ? amountArg : entry() === '' ? remaining : entry());
       if (!(amount > 0)) return false;
       if (method !== 'cash' && r2(nonCash + amount) > total) {
         amount = r2(total - nonCash);
@@ -863,7 +1147,8 @@
       const p = current(amount);
       if (!p) return false;
       pays.push(p);
-      entry = '';
+      entryEl.value = '';
+      pad.select(entryEl);
       m.$('[name=reference]').value = '';
       method = 'cash';
       paint();
@@ -879,10 +1164,10 @@
       let list = pays.slice();
       // Nothing added yet: pay the typed amount (or the full amount) with the selected method
       if (!list.length) {
-        const p = current(r2(entry === '' ? total : entry));
+        const p = current(r2(entry() === '' ? total : entry()));
         if (!p) return;
         list = [p];
-      } else if (entry !== '') {
+      } else if (entry() !== '') {
         if (!add()) return;
         list = pays.slice();
       }
@@ -892,7 +1177,7 @@
       afterPaid(paid, unsent);
     }
 
-    function paint(syncEntry = true) {
+    function paint() {
       const { paid, remaining, change } = sums();
       const rem = m.$('.pay-rem');
       rem.className = `stat pay-rem ${change > 0 ? 'stat-green' : remaining > 0 ? 'stat-amber' : ''}`;
@@ -901,7 +1186,6 @@
       m.el.querySelectorAll('[data-act=method]').forEach((b) => b.classList.toggle('sel', b.dataset.m === method));
       m.$('.pay-ref').classList.toggle('hidden', method === 'cash' || method === 'charge');
       m.$('.pay-cust').classList.toggle('hidden', method !== 'charge');
-      if (syncEntry) entryEl.value = entry;
       entryEl.placeholder = money(remaining || total);
       // Quick cash: exact amount + next round bills
       const due = remaining || total;
@@ -913,13 +1197,12 @@
           <span>${esc(label(p.method))}${p.reference ? ` <span class="muted small">#${esc(p.reference)}</span>` : ''}</span>
           <span class="row gap-sm"><b>${peso(p.amount)}</b><button type="button" class="icon-btn" data-act="removePay" data-i="${i}" aria-label="Remove">✕</button></span>
         </div>`).join('') : `<div class="muted small">Add one or more payments, or just press Complete to pay the full amount with ${esc(label(method))}.</div>`;
-      const ready = pays.length ? paid >= total || entry !== '' : true;
+      const ready = pays.length ? paid >= total || entry() !== '' : true;
       const btn = m.$('.pay-complete');
       btn.disabled = !ready;
       btn.textContent = `Complete payment${change > 0 ? ' · Change ' + peso(change) : ''}`;
     }
     paint();
-    if (finePointer) entryEl.focus();
   }
 
   /** Success screen after payment. Returns {printed} so the caller can record the automatic print. */
@@ -936,7 +1219,7 @@
         </div>`,
       foot: `<button type="button" class="btn btn-lg" data-act="print">⎙ ${autoPrint ? 'Print again' : 'Print receipt'}</button><span class="grow"></span>
         <button type="button" class="btn btn-lg" data-act="board">Orders</button>
-        <button type="submit" class="btn btn-primary btn-lg" autofocus>New order</button>`,
+        <button type="submit" class="btn btn-primary btn-lg">New order</button>`,
       actions: {
         print: async () => { const ok = await Print.receipt(t, job.printed); job.printed = job.printed || ok; },
         board: () => m.close(),
@@ -951,12 +1234,13 @@
   function receiptsDialog() {
     let selected = null;
     let timer = null;
+    let rows = [];
     const m = modal({
       title: 'Receipts',
       cls: 'wide dlg-receipts',
       body: `<div class="rcpt-grid">
           <div class="rcpt-left">
-            <input class="input" name="q" type="search" placeholder="Receipt / order no., customer, table (blank = current day)" autocomplete="off" autofocus>
+            <input class="input" name="q" type="search" placeholder="Receipt / order no., customer, table (blank = current day)" autocomplete="off" enterkeyhint="search">
             <div class="rcpt-list"><div class="empty"><span class="spinner dark"></span></div></div>
           </div>
           <div class="rcpt-right"><div class="empty">Select a receipt</div></div>
@@ -972,16 +1256,15 @@
         },
         voidReceipt: async (b) => {
           const r = await App.ask({
-            title: `Void receipt ${selected.receipt_no}?`, danger: true, okText: 'Void receipt', input: 'Reason', required: true, pin: needPin('pos.void_receipt'),
+            title: `Void receipt ${selected.receipt_no}?`, danger: true, okText: 'Void receipt', input: 'Reason', required: true,
             message: 'Stock returns to inventory, the sale is reversed in the books and any cash refund comes out of the drawer.',
           });
           if (!r) return;
-          const t = await run(() => Api.void(selected.id, r.value, r.pin), b);
+          const t = await withPin((pin) => Api.void(selected.id, r.value, pin), { ask: needPin('pos.void_receipt'), btn: b });
           if (t) { selected = t; App.toast('Receipt voided'); load(); paintPreview(); }
         },
       },
     });
-    let rows = [];
     async function load() {
       try { rows = await Api.receipts(m.$('[name=q]').value.trim()); paintList(); } catch (e) { showError(e); }
     }
@@ -999,6 +1282,7 @@
           ${can('pos.reprint') && t.receipt_no ? '<button type="button" class="btn btn-lg grow" data-act="reprint">⎙ Reprint</button>' : ''}
           ${t.status === 'paid' ? '<button type="button" class="btn btn-danger btn-lg grow" data-act="voidReceipt">Void receipt</button>' : ''}
         </div>`;
+      m.$('.rcpt-right').scrollIntoView({ block: 'nearest' });
     }
     m.$('[name=q]').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 300); });
     load();
@@ -1014,19 +1298,23 @@
         <div class="form-grid">
           <label class="field"><span class="field-label">Expense type *</span><select class="input" name="account_id"><option value="">Select…</option>
             ${accts.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></label>
-          <label class="field"><span class="field-label">Amount (₱) *</span><input class="input" name="amount" type="number" min="0" step="any" inputmode="decimal"></label>
-          <label class="field"><span class="field-label">Paid to</span><input class="input" name="payee" placeholder="e.g. Petron, palengke"></label>
-          <label class="field"><span class="field-label">Description</span><input class="input" name="description" placeholder="e.g. LPG refill, ice, tricycle fare"></label>
-          <label class="field"><span class="field-label">OR / receipt no.</span><input class="input" name="or_no"></label>
+          <label class="field"><span class="field-label">Amount (₱) *</span>${numField('amount', '', 'money', 'data-act="amount" placeholder="Tap to enter"')}</label>
+          <label class="field"><span class="field-label">Paid to</span><input class="input" name="payee" placeholder="e.g. Petron, palengke" autocomplete="off"></label>
+          <label class="field"><span class="field-label">Description</span><input class="input" name="description" placeholder="e.g. LPG refill, ice, tricycle fare" autocomplete="off"></label>
+          <label class="field"><span class="field-label">OR / receipt no.</span><input class="input" name="or_no" autocomplete="off"></label>
         </div>
         <div class="right mt"><button type="submit" class="btn btn-primary btn-lg">Record payout</button></div>
         <h3 class="mt-lg mb">Payouts today</h3>
         <div class="payout-list"><span class="spinner dark"></span></div>`,
       actions: {
+        amount: async (b) => {
+          const v = await askNumber({ title: 'Payout amount', prefix: '₱', okText: 'OK' });
+          if (v !== null) b.value = money(v).replace(/,/g, '');
+        },
         voidPayout: async (b) => {
-          const r = await App.ask({ title: `Void payout ${b.dataset.no}?`, input: 'Reason', required: true, pin: true, danger: true, okText: 'Void payout' });
+          const r = await App.ask({ title: `Void payout ${b.dataset.no}?`, input: 'Reason', required: true, danger: true, okText: 'Void payout' });
           if (!r) return;
-          if (await run(() => Api.voidPayout(Number(b.dataset.id), r.value, r.pin), b)) { App.toast('Payout voided'); load(); }
+          if (await withPin((pin) => Api.voidPayout(Number(b.dataset.id), r.value, pin), { btn: b })) { App.toast('Payout voided'); load(); }
         },
       },
       onSubmit: async (btn) => {
@@ -1048,7 +1336,7 @@
         m.$('.payout-list').innerHTML = list.length ? list.map((p) => `<div class="pick-row${p.status !== 'posted' ? ' muted-row' : ''}">
             <div><b>${esc(p.description || p.account_name)}</b> <span class="muted small">${esc(p.doc_no)} · ${esc(p.account_name || '')}${p.payee ? ' · ' + esc(p.payee) : ''} · ${esc(fmtTime(p.created_at))}</span></div>
             <div class="row gap-sm"><b>${peso(p.amount)}</b>
-              ${p.status === 'posted' ? `<button type="button" class="btn btn-sm" data-act="voidPayout" data-id="${p.id}" data-no="${esc(p.doc_no)}">Void</button>` : '<span class="badge badge-red">void</span>'}</div>
+              ${p.status === 'posted' ? `<button type="button" class="btn" data-act="voidPayout" data-id="${p.id}" data-no="${esc(p.doc_no)}">Void</button>` : '<span class="badge badge-red">void</span>'}</div>
           </div>`).join('') + `<div class="row between mt bold"><span>Total</span><span>${peso(total)}</span></div>` : '<div class="muted small">None yet.</div>';
       } catch (e) { showError(e); }
     }
@@ -1069,14 +1357,20 @@
   }
 
   // ------------------------------------------------------------------ cash counting (open day / end of day)
+  /** Denomination rows (tap a row, type the count on the keypad; "Next" moves down). */
   function denomCounter() {
-    return `<div class="denoms">${B.denominations.map((d) => `<div class="row denom">
-        <span class="denom-label">${denomLabel(d)}</span><span class="muted">×</span>
-        <input class="input" type="number" min="0" step="1" inputmode="numeric" data-denom="${d}" placeholder="0">
-        <span class="denom-amt mono">0.00</span></div>`).join('')}</div>
-      <div class="row between mt count-total"><span>Total counted</span><span class="count-sum">₱0.00</span></div>`;
+    return `<div class="cash-count">
+        <div>
+          <div class="denoms">${B.denominations.map((d) => `<div class="row denom">
+            <span class="denom-label">${denomLabel(d)}</span><span class="muted">×</span>
+            ${numField('d' + String(d).replace('.', '_'), '', 'int', `data-denom="${d}" placeholder="0"`)}
+            <span class="denom-amt mono">0.00</span></div>`).join('')}</div>
+          <div class="row between mt count-total"><span>Total counted</span><span class="count-sum">₱0.00</span></div>
+        </div>
+        ${keypad(INT_KEYS, 'count-keys', '<button type="button" class="btn btn-dark key-next" data-key="next">Next ↓</button>')}
+      </div>`;
   }
-  /** Read the denomination inputs: {counts: {"1000": 2, ...}, total}. */
+  /** Read the denomination fields: {counts: {"1000": 2, ...}, total}. */
   function readCounts(root) {
     const counts = {};
     let total = 0;
@@ -1096,14 +1390,14 @@
     let mode = 'count';
     const m = modal({
       title: 'Open business day — beginning cash',
-      cls: 'dlg-cash',
+      cls: 'wide dlg-cash',
       body: `<label class="field"><span class="field-label">Business date</span><input class="input" type="date" name="business_date" value="${esc(B.today)}">
           <span class="field-hint">Sales after midnight still count to this date until the day is closed.</span></label>
         <div class="tabs mt"><button type="button" class="tab active" data-act="mode" data-mode="count">Count by denomination</button>
           <button type="button" class="tab" data-act="mode" data-mode="amount">Enter total</button></div>
         <div class="mode-count">${denomCounter()}</div>
-        <label class="field mode-amount hidden"><span class="field-label">Beginning cash / change fund (₱)</span>
-          <input class="input input-xl" name="opening_cash" type="number" min="0" step="any" inputmode="decimal"></label>`,
+        <div class="mode-amount hidden"><div class="field-label mb-sm">Beginning cash / change fund (₱)</div>
+          <div class="cash-count"><div>${numField('opening_cash', '', 'money', 'placeholder="0.00"')}</div>${keypad(MONEY_KEYS, 'count-keys')}</div></div>`,
       foot: '<button type="button" class="btn btn-lg" data-x>Cancel</button><button type="submit" class="btn btn-success btn-lg open-btn">Open day</button>',
       actions: {
         mode: (b) => {
@@ -1111,6 +1405,7 @@
           m.el.querySelectorAll('[data-act=mode]').forEach((x) => x.classList.toggle('active', x === b));
           m.$('.mode-count').classList.toggle('hidden', mode !== 'count');
           m.$('.mode-amount').classList.toggle('hidden', mode !== 'amount');
+          pad.select(mode === 'count' ? m.$('[data-denom]') : m.$('[name=opening_cash]'));
           paint();
         },
       },
@@ -1130,7 +1425,7 @@
       const total = mode === 'count' ? readCounts(m.el).total : r2(m.$('[name=opening_cash]').value);
       m.$('.open-btn').textContent = `Open day with ${peso(total)}`;
     };
-    m.el.addEventListener('input', paint);
+    const pad = numpad(m.el, paint);
     paint();
   }
 
@@ -1139,12 +1434,12 @@
     const open = S.orders.length;
     const m = modal({
       title: 'End of day — cash count',
-      cls: 'dlg-cash',
+      cls: 'wide dlg-cash',
       body: `${open ? `<div class="alert alert-warn">There are still ${open} open order(s). Settle or cancel them before closing the day.</div>` : ''}
         <div class="alert alert-info small">Count all the cash in the drawer, including the beginning cash. The expected amount is shown only after you submit
           (blind count). Any shortage or overage is posted to the books automatically.</div>
         ${denomCounter()}
-        <label class="field mt"><span class="field-label">Remarks</span><input class="input" name="notes"></label>`,
+        <label class="field mt"><span class="field-label">Remarks</span><input class="input" name="notes" autocomplete="off"></label>`,
       foot: '<button type="button" class="btn btn-lg" data-x>Cancel</button><button type="submit" class="btn btn-danger btn-lg">Close day</button>',
       onSubmit: async (btn) => {
         const c = readCounts(m.el);
@@ -1162,7 +1457,7 @@
         zResultDialog(z);
       },
     });
-    m.el.addEventListener('input', () => readCounts(m.el));
+    numpad(m.el, () => readCounts(m.el));
   }
 
   function zResultDialog(z) {
@@ -1181,39 +1476,44 @@
     });
   }
 
-  // ------------------------------------------------------------------ printer status / connect
+  // ------------------------------------------------------------------ printer: status, reconnect, quick settings
   function printerDialog() {
     const m = modal({
       title: 'Printer',
       cls: 'dlg-printer',
       body: '<div class="printer-body"></div>',
-      foot: `<a class="btn" href="${esc(B.links.printerSetup)}" target="_blank" rel="noopener">Printer setup ↗</a><span class="grow"></span>
+      foot: `<a class="btn btn-lg" href="${esc(B.links.printerSetup)}" target="_blank" rel="noopener">Open printer setup ↗</a><span class="grow"></span>
         <button type="button" class="btn btn-lg" data-x>Close</button>`,
       actions: {
-        connect: async (b) => { await run(() => Printer.connect(), b); paint(); },
-        disconnect: async () => { await Printer.disconnect(); paint(); },
+        reconnect: (b) => run(() => Printer.reconnect(), b),
+        connect: (b) => run(() => Printer.connect(), b),
+        retry: (b) => run(() => Printer.retryQueue(), b),
+        clear: () => Printer.clearQueue(),
         test: () => printSafe('Test print', (o) => Printer.testPrint({ business: B.business, ...o })),
         toggle: (b) => { Printer.saveConfig({ [b.dataset.key]: b.checked }); },
       },
     });
-    function paint() {
+    function paint(s) {
+      if (!m.el.isConnected) return;
       const c = Printer.config();
-      const p = printerState();
-      const needsLink = c.method === 'bluetooth' || c.method === 'serial';
+      const p = printerState(s);
+      const linkable = c.method === 'bluetooth' || c.method === 'serial';
       m.$('.printer-body').innerHTML = `
-        <div class="printer-status ${p.cls}"><b>${esc(p.long)}</b><div class="muted small">${c.paper} mm paper · ${c.copies} cop${Number(c.copies) === 1 ? 'y' : 'ies'}</div></div>
-        <div class="row gap-sm wrap mt">
-          ${needsLink ? `<button type="button" class="btn btn-primary btn-lg" data-act="connect">${Printer.isConnected() ? 'Reconnect' : 'Connect printer'}</button>` : ''}
-          ${needsLink && Printer.isConnected() ? '<button type="button" class="btn btn-lg" data-act="disconnect">Disconnect</button>' : ''}
-          <button type="button" class="btn btn-lg" data-act="test">Test print</button>
+        <div class="printer-status ${p.cls}"><b>${esc(p.long)}</b>
+          <div class="small">${c.paper} mm paper${s.lastError && !s.connected ? ' · ' + esc(s.lastError) : ''}</div></div>
+        ${s.queue ? `<div class="alert alert-warn mt">${plural(s.queue, 'print job')} waiting for the printer.
+            <div class="row gap-sm mt"><button type="button" class="btn" data-act="retry">Print now</button><button type="button" class="btn" data-act="clear">Discard</button></div></div>` : ''}
+        <div class="printer-actions mt">
+          ${linkable ? `<button type="button" class="btn btn-primary btn-xl" data-act="reconnect" ${s.connected || s.connecting ? 'disabled' : ''}>↻ Reconnect</button>
+            <button type="button" class="btn btn-xl" data-act="connect">＋ Connect new printer</button>` : ''}
+          <button type="button" class="btn btn-xl" data-act="test">⎙ Test print</button>
         </div>
         <div class="col gap-sm mt">
           <label class="checkbox"><input type="checkbox" data-act="toggle" data-key="autoPrint" ${c.autoPrint ? 'checked' : ''}> Print the receipt automatically after payment</label>
           <label class="checkbox"><input type="checkbox" data-act="toggle" data-key="kitchenSlip" ${c.kitchenSlip ? 'checked' : ''}> Print a kitchen slip when sending orders</label>
-        </div>
-        <p class="muted small">Printing method, paper width, copies and cash drawer are set on the Printer setup page (saved on this device).</p>`;
+        </div>`;
     }
-    paint();
+    Printer.onStatus(paint);
   }
 
   // =====================================================================================================
@@ -1222,19 +1522,45 @@
   const printCtx = (extra) => ({ business: B.business, tax: B.tax, methods: B.payment_methods, ...extra });
   const Print = {
     receipt: (t, reprint) => printSafe(t.status === 'open' ? 'Bill' : 'Receipt', (o) => Printer.printReceipt(t, printCtx({ reprint: !!reprint, ...o }))),
-    kitchen: (t, lines) => printSafe('Kitchen slip', (o) => Printer.printKitchen(t, lines, o)),
+    kitchen: (t, lines) => printSafe('Kitchen slip', (o) => Printer.printKitchen(t, lines, printCtx(o))),
+    orderSlip: (t) => printSafe('Order slip', (o) => Printer.printOrderSlip(t, printCtx(o))),
     reading: (r, isZ) => printSafe(isZ ? 'Z-reading' : 'X-reading', (o) => Printer.printReading(r, printCtx(o), isZ)),
   };
 
-  /** Run a print job; on failure show the error and offer Retry / Print with browser. Resolves true when printed. */
+  /**
+   * Run a print job. Resolves true when printed.
+   * - Printer asleep / out of range: printer.js keeps the job (err.queued) and prints it on reconnect.
+   * - Other failures: offer Retry / Print with browser.
+   */
   async function printSafe(what, job) {
     try {
       await job({});
       return true;
     } catch (err) {
+      if (err.queued) return queuedDialog(what, err, job);
       App.toast(`${what}: ${err.message}`, 'error');
       return printFailedDialog(what, err, job);
     }
+  }
+
+  function queuedDialog(what, err, job) {
+    return new Promise((resolve) => {
+      let ok = false;
+      const m = modal({
+        title: `${what} saved`,
+        body: `<div class="alert alert-warn">The printer is not connected. The ${esc(what.toLowerCase())} is saved and will print by itself when the printer reconnects.</div>
+          <p class="muted small">Check that the printer is switched on, charged and near this tablet.</p>`,
+        foot: '<button type="button" class="btn btn-lg" data-act="browser">Print with browser instead</button><span class="grow"></span><button type="submit" class="btn btn-primary btn-lg">OK</button>',
+        onSubmit: () => m.close(),
+        onClose: () => resolve(ok),
+        actions: {
+          browser: async (b) => {
+            Printer.dropJob(err.jobId);
+            if (await run(async () => { await job({ method: 'browser' }); return true; }, b)) { ok = true; m.close(); }
+          },
+        },
+      });
+    });
   }
 
   function printFailedDialog(what, err, job) {
@@ -1250,8 +1576,12 @@
         onClose: () => resolve(ok),
         actions: {
           retry: async (b) => {
-            // This click lets the browser show its printer picker when the connection was lost
-            const r = await run(async () => { if (linkable && !Printer.isConnected()) await Printer.connect(); await job({}); return true; }, b);
+            // This click lets the browser show its printer picker when the printer was never chosen
+            const r = await run(async () => {
+              if (linkable && !Printer.isConnected()) { try { await Printer.reconnect(); } catch (e) { await Printer.connect(); } }
+              await job({});
+              return true;
+            }, b);
             if (r) { ok = true; m.close(); }
           },
           browser: async (b) => {
@@ -1263,14 +1593,14 @@
     });
   }
 
-  /** Printer chip text / colour for the top bar. */
-  function printerState() {
-    const c = Printer.config();
-    const connected = Printer.isConnected();
+  /** Printer chip text / colour for the top bar, from Printer.status(). */
+  function printerState(s = Printer.status()) {
     const names = { browser: 'Browser print', rawbt: 'RawBT app', bluetooth: 'Bluetooth', serial: 'USB / serial' };
-    if (c.method === 'browser' || c.method === 'rawbt') return { cls: 'ok', text: names[c.method], long: `${names[c.method]} — ready` };
-    if (connected) return { cls: 'ok', text: c.deviceName || names[c.method], long: `Connected: ${c.deviceName || names[c.method]}` };
-    return { cls: 'warn', text: 'Connect printer', long: `${names[c.method]} printer not connected` };
+    const name = names[s.method] || s.method;
+    if (s.method === 'browser' || s.method === 'rawbt') return { cls: 'ok', text: name, long: `${name} — ready`, queue: 0 };
+    if (s.connecting) return { cls: 'busy', text: 'Connecting…', long: `Connecting to ${s.deviceName || 'the printer'}…`, queue: s.queue };
+    if (s.connected) return { cls: 'ok', text: 'Connected', long: `Connected: ${s.deviceName || name}`, queue: s.queue };
+    return { cls: 'warn', text: 'Not connected', long: `${name} printer not connected${s.deviceName ? ' (' + s.deviceName + ')' : ''}`, queue: s.queue };
   }
 
   /** On-screen previews use the same layout as the printed slip (printer.js document model). */
@@ -1282,7 +1612,69 @@
   const previewReading = (r, isZ) => previewOf(Printer._internals.readingDoc(r, printCtx({}), isZ));
 
   // =====================================================================================================
-  // 8. Events & start-up
+  // 8. Screen & keyboard (Android tablets) + install as an app
+  // =====================================================================================================
+  /**
+   * Keep everything above the on-screen keyboard. The viewport meta has interactive-widget=resizes-content
+   * (the page shrinks when the keyboard opens); for older Chrome we also follow window.visualViewport and
+   * expose its size as CSS variables: --app-h (visible height) and --app-top (offset), used by .pos and dialogs.
+   * html.kb-open is set while the keyboard is up (the visible height dropped well below the full height).
+   */
+  function trackViewport() {
+    const vv = window.visualViewport;
+    const html = document.documentElement;
+    let fullH = 0;
+    let lastW = 0;
+    const update = () => {
+      const h = vv ? vv.height : window.innerHeight;
+      const w = vv ? vv.width : window.innerWidth;
+      if (w !== lastW) { fullH = 0; lastW = w; }            // rotated: measure the full height again
+      fullH = Math.max(fullH, h);
+      html.style.setProperty('--app-h', h + 'px');
+      html.style.setProperty('--app-top', (vv ? vv.offsetTop : 0) + 'px');
+      const open = h < fullH * 0.8;
+      if (html.classList.contains('kb-open') && !open) keyboardClosed();
+      html.classList.toggle('kb-open', open);
+      if (open) keepFocusedVisible();
+    };
+    if (vv) { vv.addEventListener('resize', update); vv.addEventListener('scroll', update); }
+    window.addEventListener('resize', update);
+    update();
+  }
+  /** Inputs that open the phone keyboard (not our keypad number fields). */
+  const isTyping = (el) => el.matches('input:not([readonly]):not([type=checkbox]):not([type=radio]):not([type=date]), textarea');
+  function keepFocusedVisible() {
+    const el = document.activeElement;
+    if (el && isTyping(el) && el.id !== 'pos-search') el.scrollIntoView({ block: 'nearest' });
+  }
+  /** The keyboard was closed with the Android back button: leave search mode too. */
+  function keyboardClosed() {
+    if (document.activeElement === search) search.blur();
+  }
+
+  /** Register the (pass-through) service worker so Chrome offers "Install app". Needs https or localhost. */
+  function setupInstall() {
+    if ('serviceWorker' in navigator && window.isSecureContext) {
+      navigator.serviceWorker.register(App.url('/sw.js')).catch(() => {});
+    }
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      S.installPrompt = e;
+      renderTop();
+    });
+    window.addEventListener('appinstalled', () => { S.installPrompt = null; renderTop(); App.toast('Installed — open “Mark5 POS” from the home screen'); });
+  }
+  async function installApp() {
+    const p = S.installPrompt;
+    if (!p) return;
+    p.prompt();
+    await p.userChoice;
+    S.installPrompt = null;
+    renderTop();
+  }
+
+  // =====================================================================================================
+  // 9. Events & start-up
   // =====================================================================================================
   /** Top bar, board, order panel and phone bar buttons (data-act). */
   const ACTIONS = {
@@ -1293,10 +1685,12 @@
     eod: async () => { await loadOrders(); endOfDayDialog(); },
     openday: openDayDialog,
     printer: printerDialog,
+    install: installApp,
     logout,
     new: (b) => newOrder(b.dataset.type),
     refresh: () => { loadOrders(); loadMenu(); },
     open: (b) => openOrderById(Number(b.dataset.id)),
+    cardMenu: (b) => cardMenu(Number(b.dataset.id)),
     details: detailsDialog,
     table: () => assignTable(false),
     line: (b) => S.queue.then(() => { const l = S.order && S.order.items.find((i) => i.id === Number(b.dataset.id)); if (l) lineDialog(l); }),
@@ -1304,24 +1698,35 @@
     discount: () => S.queue.then(discountDialog),
     split: splitDialog,
     merge: mergeDialog,
-    bill: () => S.queue.then(printBill),
+    bill: () => S.queue.then(() => { if (activeLines(S.order).length) Print.receipt(S.order, false); }),
+    reprintOrder: (b) => S.queue.then(() => reprintOrder(S.order.id, b)),
     cancel: cancelOrder,
     done: () => S.queue.then(closeOrder),
     pay: startPay,
     pane: (b) => { S.pane = b.dataset.pane; render(); },
   };
 
-  document.getElementById('pos').addEventListener('click', (e) => {
+  const pos = document.getElementById('pos');
+  pos.addEventListener('click', (e) => {
     const tile = e.target.closest('[data-item]');
     if (tile) { const item = S.menu.items.find((i) => i.id === Number(tile.dataset.item)); if (item) addItem(item); return; }
     const cat = e.target.closest('[data-cat]');
-    if (cat) { S.cat = cat.dataset.cat === 'all' ? 'all' : Number(cat.dataset.cat); $('#pos-search').value = ''; renderMenu(); return; }
+    if (cat) { S.cat = cat.dataset.cat === 'all' ? 'all' : Number(cat.dataset.cat); search.value = ''; renderMenu(); return; }
     const b = e.target.closest('[data-act]');
     if (b && !b.disabled && ACTIONS[b.dataset.act]) ACTIONS[b.dataset.act](b, e);
   });
+  // Order cards are not <button>s (they contain the ⋯ button): open them with Enter / Space too
+  pos.addEventListener('keydown', (e) => {
+    const card = e.target.closest('.order-card');
+    if (card && e.target === card && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openOrderById(Number(card.dataset.id)); }
+  });
 
-  // Search / barcode: Enter adds the first match (barcode scanners type the code and press Enter)
+  // ---- Menu search / barcode.
+  // While the search box has focus (keyboard up) the top bar and categories fold away so the results get the room.
+  // Tapping a tile adds it and keeps the results and the keyboard; Enter adds the first match (barcode scanners).
   const search = $('#pos-search');
+  search.addEventListener('focus', () => pos.classList.add('searching'));
+  search.addEventListener('blur', () => pos.classList.remove('searching'));
   search.addEventListener('input', renderMenu);
   search.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
@@ -1329,21 +1734,33 @@
     const first = visibleItems()[0];
     if (first) { addItem(first); search.value = ''; renderMenu(); } else if (search.value.trim()) App.toast('No item matches ' + search.value.trim(), 'error');
   });
-  $('#pos-search-clear').addEventListener('click', () => { search.value = ''; renderMenu(); search.focus(); });
-  // Typing anywhere on the order screen goes to the search box (keyboard / scanner without tapping first)
+  $('#pos-search-clear').addEventListener('mousedown', (e) => e.preventDefault());   // keep the keyboard open
+  $('#pos-search-clear').addEventListener('click', () => { search.value = ''; renderMenu(); });
+  $('#pos-search-done').addEventListener('click', () => search.blur());
+  // Tiles must not take the focus away from the search box (that would close the keyboard)
+  $('#tiles').addEventListener('mousedown', (e) => { if (document.activeElement === search) e.preventDefault(); });
+
+  // Typing on a physical keyboard anywhere on the order screen goes to the search box (scanner without tapping first)
   document.addEventListener('keydown', (e) => {
     if (S.view !== 'order' || document.querySelector('dialog[open]') || e.ctrlKey || e.metaKey || e.altKey || e.key.length !== 1) return;
     if (e.target.closest('input, textarea, select')) return;
     search.focus();
   });
+  // A text field in a dialog that gets the keyboard: scroll it into view once the keyboard is up
+  document.addEventListener('focusin', (e) => {
+    if (isTyping(e.target) && e.target.closest('dialog')) setTimeout(() => e.target.scrollIntoView({ block: 'nearest' }), 350);
+  });
 
-  // Printer status in the top bar
+  // Printer status in the top bar; keep the tablet awake while the POS is open (if chosen in Printer setup)
   Printer.onStatus(() => renderTop());
+  if (Printer.config().keepAwake) Printer.keepAwake(true);
 
   // Multiple terminals: refresh the board every 15 s (and when the tab comes back into view)
   setInterval(() => { if (!document.hidden) loadOrders(); }, 15000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) loadOrders(); });
 
+  trackViewport();
+  setupInstall();
   render();
   loadMenu();
   loadOrders();

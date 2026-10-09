@@ -78,10 +78,7 @@ class CashSessions
             "SELECT COUNT(*) cnt, COALESCE(SUM(i.line_total),0) amount FROM ticket_items i JOIN tickets t ON t.id = i.ticket_id
              WHERE t.cash_session_id = ? AND i.status = 'void'", [$sessionId]
         );
-        $discounts = DB::all(
-            "SELECT discount_type, COUNT(*) cnt, SUM(discount_amount) amount FROM tickets
-             WHERE cash_session_id = ? AND status = 'paid' AND discount_type <> 'none' GROUP BY discount_type", [$sessionId]
-        );
+        $discounts = self::discountSummary($sessionId);
         $payments = array_map(fn ($p) => $p + ['label' => self::PAYMENT_METHODS[$p['method']]['label'] ?? $p['method']], DB::all(
             "SELECT p.method, COUNT(*) cnt, SUM(p.amount) amount FROM payments p JOIN tickets t ON t.id = p.ticket_id
              WHERE t.cash_session_id = ? AND t.status = 'paid' GROUP BY p.method ORDER BY amount DESC", [$sessionId]
@@ -124,6 +121,36 @@ class CashSessions
             ],
             'grand_total' => ['beginning' => $grandBefore, 'ending' => r2($grandBefore + $sales['net'])],
         ];
+    }
+
+    /**
+     * Discounts given during the day, by discount name (whole-receipt and per-item discounts).
+     * Returns [['label', 'discount_type', 'cnt', 'amount'], ...].
+     */
+    private static function discountSummary(int $sessionId): array
+    {
+        $rows = array_merge(
+            DB::all(
+                "SELECT COALESCE(i.discount_name, i.discount_kind) label, i.discount_kind discount_type, COUNT(*) cnt, SUM(i.discount_amount) amount
+                 FROM ticket_items i JOIN tickets t ON t.id = i.ticket_id
+                 WHERE t.cash_session_id = ? AND t.status = 'paid' AND i.status = 'active' AND i.discount_kind IS NOT NULL AND t.discount_type NOT IN ('sc','pwd')
+                 GROUP BY label, i.discount_kind", [$sessionId]
+            ),
+            DB::all(
+                "SELECT COALESCE(t.discount_name, t.discount_type) label, t.discount_type, COUNT(*) cnt,
+                        SUM(t.discount_amount - (SELECT COALESCE(SUM(i.discount_amount),0) FROM ticket_items i WHERE i.ticket_id = t.id AND i.status = 'active')) amount
+                 FROM tickets t WHERE t.cash_session_id = ? AND t.status = 'paid' AND t.discount_type <> 'none'
+                 GROUP BY label, t.discount_type", [$sessionId]
+            )
+        );
+        $out = [];
+        foreach ($rows as $r) {
+            $key = $r['label'];
+            $out[$key] ??= ['label' => $r['label'], 'discount_type' => $r['discount_type'], 'cnt' => 0, 'amount' => 0.0];
+            $out[$key]['cnt'] += (int) $r['cnt'];
+            $out[$key]['amount'] = r2($out[$key]['amount'] + (float) $r['amount']);
+        }
+        return array_values(array_filter($out, fn ($r) => $r['amount'] > 0));
     }
 
     /**

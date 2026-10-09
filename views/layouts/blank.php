@@ -3,7 +3,9 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, interactive-widget=resizes-content">
+  <link rel="manifest" href="<?= url('/manifest.webmanifest') ?>">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="csrf-token" content="<?= e(csrf_token()) ?>">
   <meta name="base-url" content="<?= e(url('/')) ?>">
   <meta name="theme-color" content="#111827">

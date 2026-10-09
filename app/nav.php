@@ -39,6 +39,7 @@ return [
         ['/admin/users', 'Users', '⚇', ['admin.users']],
         ['/admin/roles', 'Roles & Permissions', '⚿', ['admin.roles']],
         ['/admin/settings', 'Settings', '⚙', ['admin.settings']],
+        ['/admin/discounts', 'Discounts', '%', ['admin.settings']],
         ['/printer', 'Printer Setup', '⎙', ['pos.access', 'admin.settings']],
         ['/admin/backup', 'Backup & Restore', '⛁', ['admin.backup']],
         ['/admin/audit', 'Audit Trail', '⌕', ['admin.audit']],

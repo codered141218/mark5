@@ -26,9 +26,12 @@ $boot['links'] = [
 
     <!-- Order screen: menu on the left, order panel on the right -->
     <section class="pos-left menu-pane" id="menu-pane">
-      <div class="row gap-sm">
-        <input class="input pos-search" id="pos-search" type="search" placeholder="Search item or scan barcode…" autocomplete="off">
-        <button class="btn pos-search-clear hidden" type="button" id="pos-search-clear">Clear</button>
+      <div class="search-row">
+        <div class="search-box">
+          <input class="input pos-search" id="pos-search" type="text" placeholder="Search item or scan barcode…" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="go">
+          <button class="search-clear hidden" type="button" id="pos-search-clear" aria-label="Clear search">✕</button>
+        </div>
+        <button class="btn btn-primary search-done" type="button" id="pos-search-done">Done</button>
       </div>
       <div class="cat-bar" id="cat-bar"></div>
       <div class="tiles" id="tiles"></div>

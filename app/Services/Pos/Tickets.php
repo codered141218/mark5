@@ -5,6 +5,7 @@ use App\Core\Auth;
 use App\Core\DB;
 use App\Core\HttpException;
 use App\Services\Audit;
+use App\Services\Discounts;
 use App\Services\Inventory;
 use App\Services\Ledger;
 use App\Services\Sequence;
@@ -35,11 +36,11 @@ class Tickets
     /** Cast DECIMAL strings to numbers so the POS JavaScript gets real numbers. */
     private static function numeric(array $t): array
     {
-        $money = ['subtotal', 'discount_rate', 'discount_amount', 'vatable_sales', 'vat_amount', 'vat_exempt_sales', 'service_charge', 'total', 'paid_total', 'change_amount', 'cogs'];
+        $money = ['subtotal', 'discount_rate', 'discount_amount', 'sc_discount', 'promo_discount', 'vatable_sales', 'vat_amount', 'vat_exempt_sales', 'service_charge', 'total', 'paid_total', 'change_amount', 'cogs'];
         foreach ($money as $k) $t[$k] = (float) $t[$k];
         foreach (['id', 'pax', 'sc_count', 'cash_session_id'] as $k) $t[$k] = $t[$k] === null ? null : (int) $t[$k];
         foreach ($t['items'] as &$i) {
-            foreach (['qty', 'price', 'line_total'] as $k) $i[$k] = (float) $i[$k];
+            foreach (['qty', 'price', 'line_total', 'discount_value', 'discount_amount'] as $k) $i[$k] = (float) $i[$k];
             $i['id'] = (int) $i['id']; $i['item_id'] = (int) $i['item_id']; $i['kitchen_sent'] = (int) $i['kitchen_sent'];
         }
         foreach ($t['payments'] as &$p) {
@@ -71,8 +72,14 @@ class Tickets
         $t = DB::one('SELECT * FROM tickets WHERE id = ?', [$id]);
         $lines = DB::all('SELECT * FROM ticket_items WHERE ticket_id = ?', [$id]);
         $totals = Totals::compute($t, $lines);
+        $lineDiscounts = $totals['line_discounts'];
+        unset($totals['line_discounts']);
         DB::update('tickets', $id, $totals);
-        return $totals;
+        foreach ($lines as $l) {
+            $amount = $l['status'] === 'active' ? ($lineDiscounts[(int) $l['id']] ?? 0.0) : 0.0;
+            if (r2($l['discount_amount']) != $amount) DB::update('ticket_items', (int) $l['id'], ['discount_amount' => $amount]);
+        }
+        return $totals + ['line_discounts' => $lineDiscounts];
     }
 
     public static function create(array $data): array
@@ -138,7 +145,7 @@ class Tickets
         $notes = trim((string) $notes) ?: null;
         // Same item, same price and notes, not yet sent to the kitchen -> increase quantity instead of a new line
         $existing = DB::one(
-            "SELECT * FROM ticket_items WHERE ticket_id = ? AND item_id = ? AND status = 'active' AND kitchen_sent = 0 AND price = ? AND COALESCE(notes,'') = ?",
+            "SELECT * FROM ticket_items WHERE ticket_id = ? AND item_id = ? AND status = 'active' AND kitchen_sent = 0 AND price = ? AND COALESCE(notes,'') = ? AND discount_kind IS NULL",
             [$id, $itemId, $unitPrice, $notes ?? '']
         );
         if ($existing) {
@@ -215,37 +222,113 @@ class Tickets
     }
 
     /**
-     * Apply a discount. $d = ['discount_type' => none|sc|pwd|percent|amount, 'discount_rate', 'sc_count', 'pax',
-     * 'sc_details' => [['name' => .., 'id_no' => ..]]]. Needs pos.discount or a manager PIN.
+     * Discount on the whole receipt. $d = ['discount_id' => preset id (+ 'value' for open presets)]
+     * or the plain form ['discount_type' => none|sc|pwd|percent|amount, 'discount_rate' => n].
+     * SC/PWD also needs 'sc_count', 'pax' and 'sc_details' => [['name' => .., 'id_no' => ..], ...].
+     * Presets marked "requires approval" need pos.discount or a manager PIN.
      */
     public static function discount(int $id, array $d, ?string $pin = null): array
     {
         $t = self::getOpen($id);
-        $type = $d['discount_type'] ?? 'none';
-        if (!in_array($type, ['none', 'sc', 'pwd', 'percent', 'amount'], true)) throw HttpException::bad('Invalid discount type');
-        if ($type !== 'none') Auth::authorize('pos.discount', $pin);
-        $upd = ['discount_type' => $type, 'discount_rate' => 0, 'sc_count' => 0, 'sc_details' => null];
-        if ($type === 'sc' || $type === 'pwd') {
-            $people = array_values(array_filter($d['sc_details'] ?? [], fn ($p) => is_array($p) && (trim($p['name'] ?? '') !== '' || trim($p['id_no'] ?? '') !== '')));
+        $disc = Discounts::resolve($d, 'order');
+        $hasItemSc = (bool) array_filter($t['items'], fn ($i) => $i['status'] === 'active' && in_array($i['discount_kind'], ['sc', 'pwd'], true));
+        if (!$disc) {
+            $upd = ['discount_type' => 'none', 'discount_id' => null, 'discount_name' => null, 'discount_rate' => 0];
+            if (!$hasItemSc) $upd += ['sc_count' => 0, 'sc_details' => null];
+            DB::update('tickets', $id, $upd);
+            self::recalc($id);
+            Audit::log('discount', 'ticket', $id, ['type' => 'none']);
+            return self::get($id);
+        }
+        if ($disc['requires_approval']) Auth::authorize('pos.discount', $pin);
+        $upd = ['discount_type' => $disc['kind'], 'discount_id' => $disc['id'], 'discount_name' => $disc['name'], 'discount_rate' => 0];
+        if ($disc['kind'] === 'sc' || $disc['kind'] === 'pwd') {
+            if (array_filter($t['items'], fn ($i) => $i['status'] === 'active' && $i['discount_kind'])) {
+                throw HttpException::bad('Remove the item discounts first: a Senior Citizen / PWD discount on the whole receipt cannot be combined with other discounts.');
+            }
+            $people = self::people($d['sc_details'] ?? []);
             $cnt = max((int) ($d['sc_count'] ?? count($people)), 1);
             if (count($people) < $cnt) throw HttpException::bad('Enter the name and ID number of each Senior Citizen / PWD');
-            foreach ($people as $p) {
-                if (trim($p['name'] ?? '') === '' || trim($p['id_no'] ?? '') === '') throw HttpException::bad('Name and ID number are required for each Senior Citizen / PWD');
-            }
             $upd['sc_count'] = $cnt;
-            $upd['sc_details'] = json_encode(array_map(fn ($p) => ['name' => trim($p['name']), 'id_no' => trim($p['id_no'])], array_slice($people, 0, $cnt)), JSON_UNESCAPED_UNICODE);
+            $upd['sc_details'] = json_encode(array_slice($people, 0, $cnt), JSON_UNESCAPED_UNICODE);
             $pax = (int) ($d['pax'] ?? 0) > 0 ? (int) $d['pax'] : (int) $t['pax'];
             $upd['pax'] = max($pax, $cnt);
-        } elseif ($type === 'percent' || $type === 'amount') {
-            $rate = (float) ($d['discount_rate'] ?? 0);
+        } else {
+            if (!$hasItemSc) $upd += ['sc_count' => 0, 'sc_details' => null];   // keep names captured for SC/PWD items
+            $rate = (float) $disc['value'];
             if (!($rate > 0)) throw HttpException::bad('Enter the discount value');
-            if ($type === 'percent' && $rate > 100) throw HttpException::bad('Discount cannot exceed 100%');
+            if ($disc['kind'] === 'percent' && $rate > 100) throw HttpException::bad('Discount cannot exceed 100%');
             $upd['discount_rate'] = $rate;
         }
         DB::update('tickets', $id, $upd);
         self::recalc($id);
-        Audit::log('discount', 'ticket', $id, ['type' => $type, 'rate' => $upd['discount_rate'], 'sc_count' => $upd['sc_count']]);
+        Audit::log('discount', 'ticket', $id, ['name' => $disc['name'], 'type' => $disc['kind'], 'rate' => $upd['discount_rate'], 'sc_count' => $upd['sc_count'] ?? null]);
         return self::get($id);
+    }
+
+    /**
+     * Discount on a single order line. $d like discount() (preset id or kind/value); kind 'none' removes it.
+     * For SC/PWD on an item, pass 'sc_person' => ['name' => .., 'id_no' => ..] unless the order already has one.
+     */
+    public static function discountLine(int $id, int $lineId, array $d, ?string $pin = null): array
+    {
+        $t = self::getOpen($id);
+        $l = self::line($id, $lineId);
+        $disc = Discounts::resolve($d, 'item');
+        if (!$disc) {
+            DB::update('ticket_items', $lineId, ['discount_id' => null, 'discount_name' => null, 'discount_kind' => null, 'discount_value' => 0, 'discount_amount' => 0]);
+            self::syncScPeople($id);
+            self::recalc($id);
+            Audit::log('discount_item', 'ticket', $id, ['line' => $l['name'], 'type' => 'none']);
+            return self::get($id);
+        }
+        if (in_array($t['discount_type'], ['sc', 'pwd'], true)) {
+            throw HttpException::bad('This receipt already has a Senior Citizen / PWD discount on the whole receipt. Remove it first to discount single items.');
+        }
+        if ($disc['requires_approval']) Auth::authorize('pos.discount', $pin);
+        $value = (float) $disc['value'];
+        if ($disc['kind'] === 'sc' || $disc['kind'] === 'pwd') {
+            $people = self::people($t['sc_details']);
+            $new = self::people(isset($d['sc_person']) ? [$d['sc_person']] : []);
+            foreach ($new as $p) {
+                if (!in_array($p['id_no'], array_column($people, 'id_no'), true)) $people[] = $p;
+            }
+            if (!$people) throw HttpException::bad('Enter the name and ID number of the Senior Citizen / PWD');
+            DB::update('tickets', $id, ['sc_details' => json_encode($people, JSON_UNESCAPED_UNICODE), 'sc_count' => count($people), 'pax' => max((int) $t['pax'], count($people))]);
+            $value = 0;
+        } else {
+            if (!($value > 0)) throw HttpException::bad('Enter the discount value');
+            if ($disc['kind'] === 'percent' && $value > 100) throw HttpException::bad('Discount cannot exceed 100%');
+        }
+        DB::update('ticket_items', $lineId, ['discount_id' => $disc['id'], 'discount_name' => $disc['name'], 'discount_kind' => $disc['kind'], 'discount_value' => $value]);
+        self::recalc($id);
+        Audit::log('discount_item', 'ticket', $id, ['line' => $l['name'], 'name' => $disc['name'], 'type' => $disc['kind'], 'value' => $value]);
+        return self::get($id);
+    }
+
+    /** Clean list of [name, id_no] pairs; both are required. */
+    private static function people($list): array
+    {
+        if (is_string($list)) $list = json_decode($list, true) ?: [];
+        $out = [];
+        foreach ((array) $list as $p) {
+            if (!is_array($p)) continue;
+            $name = trim((string) ($p['name'] ?? ''));
+            $idNo = trim((string) ($p['id_no'] ?? ''));
+            if ($name === '' && $idNo === '') continue;
+            if ($name === '' || $idNo === '') throw HttpException::bad('Name and ID number are required for each Senior Citizen / PWD');
+            $out[] = ['name' => $name, 'id_no' => $idNo];
+        }
+        return $out;
+    }
+
+    /** When the last SC/PWD item discount is removed, forget the names (unless the whole receipt is SC/PWD). */
+    private static function syncScPeople(int $id): void
+    {
+        $t = DB::one('SELECT discount_type FROM tickets WHERE id = ?', [$id]);
+        if (in_array($t['discount_type'], ['sc', 'pwd'], true)) return;
+        $tagged = DB::value("SELECT COUNT(*) FROM ticket_items WHERE ticket_id = ? AND status = 'active' AND discount_kind IN ('sc','pwd')", [$id]);
+        if (!$tagged) DB::update('tickets', $id, ['sc_details' => null, 'sc_count' => 0]);
     }
 
     /**
@@ -278,12 +361,20 @@ class Tickets
                     DB::run('UPDATE ticket_items SET ticket_id = ? WHERE id = ?', [$targetId, $l['id']]);
                 } else {
                     $rest = (float) $l['qty'] - $q;
-                    DB::update('ticket_items', (int) $l['id'], ['qty' => $rest, 'line_total' => r2($rest * (float) $l['price'])]);
+                    $isAmount = $l['discount_kind'] === 'amount';
+                    $movedValue = $isAmount ? r2((float) $l['discount_value'] * $q / (float) $l['qty']) : (float) $l['discount_value'];
+                    DB::update('ticket_items', (int) $l['id'], ['qty' => $rest, 'line_total' => r2($rest * (float) $l['price']),
+                        'discount_value' => $isAmount ? r2((float) $l['discount_value'] - $movedValue) : (float) $l['discount_value']]);
                     $copy = $l;
                     unset($copy['id']);
-                    DB::insert('ticket_items', array_merge($copy, ['ticket_id' => $targetId, 'qty' => $q, 'line_total' => r2($q * (float) $l['price'])]));
+                    DB::insert('ticket_items', array_merge($copy, ['ticket_id' => $targetId, 'qty' => $q, 'line_total' => r2($q * (float) $l['price']), 'discount_value' => $movedValue]));
                 }
             }
+            if (DB::value("SELECT COUNT(*) FROM ticket_items WHERE ticket_id = ? AND discount_kind IN ('sc','pwd')", [$targetId])) {
+                $names = $t['sc_details'] ? json_encode($t['sc_details'], JSON_UNESCAPED_UNICODE) : null;
+                DB::update('tickets', $targetId, ['sc_details' => $names, 'sc_count' => count($t['sc_details'])]);
+            }
+            self::syncScPeople($t['id']);
             self::recalc($t['id']);
             self::recalc($targetId);
             return $targetId;
@@ -366,13 +457,13 @@ class Tickets
             $cogs = Inventory::consume($active, 'SALE', $ref);
 
             // General ledger
-            $discountNet = Totals::discountNetOfVat($t, $totals['discount_amount']);
+            $discountNet = Totals::discountNetOfVat($totals);
             $sales = r2($total - $totals['vat_amount'] - $totals['service_charge'] + $discountNet);
             $lines = [];
             foreach ($applied as $key => $amt) {
                 $lines[] = ['key' => $key, 'debit' => $amt, 'party_type' => $key === 'ar' ? 'customer' : null, 'party_id' => $key === 'ar' ? $charge['customer_id'] : null];
             }
-            $lines[] = ['key' => 'sales_discounts', 'debit' => $discountNet, 'memo' => $t['discount_type'] !== 'none' ? strtoupper($t['discount_type']) : null];
+            $lines[] = ['key' => 'sales_discounts', 'debit' => $discountNet, 'memo' => $totals['discount_amount'] > 0 ? ($t['discount_name'] ?: 'Item discounts') : null];
             $lines[] = ['key' => 'sales', 'credit' => $sales];
             $lines[] = ['key' => 'output_vat', 'credit' => $totals['vat_amount']];
             $lines[] = ['key' => 'service_charge', 'credit' => $totals['service_charge']];
