@@ -43,29 +43,25 @@ Allow Apache through the Windows firewall when asked.
 
 ---
 
-## Bluetooth receipt printers (portable 58 mm printers on Android tablets)
+## Printers (portable Bluetooth printers on Android tablets, USB on a PC)
 
-Open **POS → Printer** (or *Administration → Printer Setup*) on **each tablet** — printer settings are saved per device.
+Open **POS → Printer** (or *Administration → Printer Setup*) on **each tablet** — printers are saved per device.
+Printing always goes straight to the thermal printer; the browser print window is never used.
+
+A device can have **several printers**, each printing receipts and / or the **order slips of chosen prep stations**
+(*Administration → Prep Stations*: Kitchen, Grill …; tag categories or single items). When the cashier presses **Done**,
+the new items are grouped per station and each group prints as its own slip on that station's printer
+(with one printer, all slips come out of it). Reprint lets the cashier pick all stations or just one.
 
 | Method | Use it when | Notes |
 |---|---|---|
-| **Bluetooth (BLE)** | Chrome on an Android tablet (or Windows/Mac) with a BLE thermal printer | Prints directly from the POS. Needs a secure address — see below. |
-| **RawBT app** | Android tablet with **any** Bluetooth thermal printer (also classic-Bluetooth-only models) | Install *RawBT* from Google Play, pair the printer in Android Bluetooth settings, choose RawBT in Printer setup. Works over plain http. |
-| **Serial / COM port** | Windows PC with a USB printer or a Bluetooth printer paired as a COM port | Chrome / Edge, secure address needed. |
-| **Browser print** | Printer installed in Windows/macOS, or as a fallback | Normal print dialog. |
+| **Bluetooth** | Chrome / Edge on an Android tablet (or Windows/Mac) with a BLE thermal printer (GOOJPRT PT-210, Xprinter …) | Needs a secure address (https, e.g. the online test site). |
+| **RawBT app** | Android tablet with a classic-Bluetooth-only printer | Install *RawBT*, pair the printer in Android settings. One RawBT printer per tablet. |
+| **USB / serial** | Windows PC: USB printer, or a Bluetooth printer paired in Windows (COM port) | Chrome / Edge, secure address needed. |
 
-**Making Bluetooth work over the LAN (http://192.168.x.x)** — browsers only allow Bluetooth on secure pages. On the tablet:
-1. Open Chrome and go to `chrome://flags/#unsafely-treat-insecure-origin-as-secure`
-2. Type the server address, e.g. `http://192.168.1.10` (include the port if you use one), set it to **Enabled**, tap **Relaunch**.
-3. Open the POS → Printer → Bluetooth → **Connect printer**. (Alternatively host the system with https, or use RawBT.)
-
-Portable-printer features: remembers the printer and **reconnects automatically** when it wakes up; receipts printed
-while it was asleep are **queued and printed on reconnect**; adjustable Bluetooth packet size / delay (choose a smaller
-packet size if long receipts come out cut or garbled); paper feed after printing (portable printers have no cutter);
-keeps the tablet screen awake while the POS is open; self-test page and a diagnostic log.
-
-Other options: paper width 58 mm (32 characters) / 80 mm (48 characters), auto-print receipt after payment, kitchen
-order slip on *Send* (with copies), reprint order slip, open the cash drawer, print ₱ as "P" or "PHP".
+Portable-printer features: remembers each printer and **reconnects automatically**; prints made while a printer was
+asleep are **queued and printed on reconnect**; adjustable Bluetooth packet size / delay; paper feed; keeps the screen on;
+test and self-test pages; diagnostic log.
 
 ---
 
@@ -74,9 +70,11 @@ order slip on *Send* (with copies), reprint order slip, open the cash drawer, pr
 **Front of house — POS (`/pos`)**
 - Open the day with a beginning cash count; **End of Day** with a blind cash count by denomination → Z-reading
   (expected vs. actual cash, over/short posted to the books, OR range, VAT breakdown, accumulated grand total). X-reading anytime.
-- Take the order first, **then assign a table** (free text: "5", "12A", "Patio 2" — no fixed table setup). Change table any time.
-- Item tiles by category, search / barcode, kitchen notes, *Send* prints a kitchen slip.
-- Split orders (whole or partial quantities), merge orders, take-out & delivery.
+- Take the order first, **then assign a table** (free text: "5", "12A", "Patio 2" — no fixed table setup). Dine-in orders
+  need a table before **Done** / payment (*Settings → POS*). **Done** prints the order slips per prep station.
+- Item tiles by category (order set under *Inventory → Arrange menu*, or A–Z / by price), search / barcode, kitchen notes.
+- Split orders, **move selected items to another table's order**, merge orders (all or picked items), take-out & delivery.
+- Menu prices VAT-inclusive, or **VAT-exclusive** with VAT added on top (*Settings → Tax*).
 - Split payments: cash, card, GCash, Maya, bank transfer, GrabFood, foodpanda, charge to a customer account (A/R).
 - **Configurable discounts** (*Administration → Discounts*): per item or on the whole receipt — Senior Citizen / PWD
   (VAT-exempt + 20%, tag the senior's own items or the qualified share of the bill, with names & ID numbers), employee,
@@ -92,6 +90,10 @@ order slip on *Send* (with copies), reprint order slip, open the cash drawer, pr
   (1 sack = 50 kg, 1 kg = 1000 g); reorder points; moving-average costing; menu costing with food cost %;
   delivery / stock-in (cash, bank, petty cash or on credit → payable), stock issuance, spoilage & wastage,
   inventory count sessions (actual vs. system, variance posted); stock card and inventory reports.
+- **GL Account Setup**: choose the account of every automatic posting (inventory, COGS, sales, A/R, GCash …), plus
+  Sales / COGS / Inventory accounts per category.
+- Every list: **Sort by** dropdown (A→Z, Z→A, low→high …), click a header to sort, **tick rows for bulk delete** (items,
+  categories, discounts, units, stations).
 - **Finance**: chart of accounts, journal entries, trial balance, income statement, balance sheet, general ledger,
   accounts payable & receivable with aging, banks (money in/out/transfers, card settlement charges), petty cash.
 - **Cash advances**: request → approve (posts to the GL) → repayments (salary deduction, cash, bank).

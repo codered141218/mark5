@@ -212,6 +212,7 @@ $business = [
   .method-option input { margin-top: 3px; width: 20px; height: 20px; accent-color: var(--brand); flex-shrink: 0; }
   .method-option > span { display: flex; flex-direction: column; gap: 3px; }
   .checkbox { min-height: 32px; }
+  .ps-card .checkbox { display: flex; }
   .checkbox input { width: 20px; height: 20px; }
   .cap-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
   .cap-list li { display: flex; gap: 10px; align-items: center; }
