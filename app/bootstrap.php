@@ -25,6 +25,7 @@ if (getenv('MARK5_DB_NAME')) $GLOBALS['__config']['db']['database'] = getenv('MA
 date_default_timezone_set(config('app.timezone', 'Asia/Manila'));
 ini_set('display_errors', config('app.debug') ? '1' : '0');
 ini_set('log_errors', '1');
+if (!is_dir(BASE_PATH . '/storage/logs')) @mkdir(BASE_PATH . '/storage/logs', 0775, true);
 ini_set('error_log', BASE_PATH . '/storage/logs/php-error.log');
 
 App\Core\DB::configure(config('db'));

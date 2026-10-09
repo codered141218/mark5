@@ -9,7 +9,18 @@ class Installer
     public static function createDatabase(string $name): void
     {
         if (!preg_match('/^\w+$/', $name)) throw new \InvalidArgumentException('Database name may only contain letters, numbers and _');
-        DB::server()->exec("CREATE DATABASE IF NOT EXISTS `$name` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+        try {
+            DB::server()->exec("CREATE DATABASE IF NOT EXISTS `$name` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+        } catch (\PDOException $e) {
+            // Shared hosting (InfinityFree, cPanel ...) does not let apps create databases: the database must be
+            // created in the hosting control panel. That is fine as long as we can connect to it.
+            DB::reconnect();
+            try {
+                DB::pdo();
+            } catch (\PDOException $inner) {
+                throw new \RuntimeException("Could not create or open the database \"$name\". On shared hosting, create it first in your hosting control panel, then enter its exact name here. (" . $e->getMessage() . ')');
+            }
+        }
         DB::reconnect();
     }
 

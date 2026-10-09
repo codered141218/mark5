@@ -40,8 +40,14 @@ class InstallController
             Installer::install($req->input('sample') === '1', $adminPassword, $pin);
         } catch (\PDOException $e) {
             throw HttpException::bad('Could not connect to MySQL: ' . $e->getMessage());
+        } catch (\RuntimeException $e) {
+            throw HttpException::bad($e->getMessage());
         }
-        Installer::writeConfig($db);
+        try {
+            Installer::writeConfig($db);
+        } catch (\RuntimeException $e) {
+            throw HttpException::bad($e->getMessage());
+        }
         flash('success', 'Installation complete. Log in as admin with the password you chose.');
         return redirect('/login');
     }

@@ -1,0 +1,73 @@
+# Runs the tests on every push, then uploads the changed files to your web host over FTP.
+# One-time setup (see DEPLOY.md): add the repository secrets FTP_SERVER, FTP_USERNAME, FTP_PASSWORD
+# (and optionally FTP_SERVER_DIR, default /htdocs/). Without them the tests still run and the upload is skipped.
+name: Test and deploy
+
+on:
+  push:
+    branches: [main, claude/stoic-babbage-9bom4p]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'            # the oldest PHP version the app supports
+          extensions: pdo_mysql, zip, mbstring, gd
+
+      - name: Start MySQL 8
+        run: sudo systemctl start mysql.service
+
+      - name: Test configuration
+        run: |
+          cat > config/config.php <<'PHP'
+          <?php
+          return [
+              'db' => ['host' => '127.0.0.1', 'port' => 3306, 'database' => 'mark5', 'username' => 'root', 'password' => 'root'],
+              'app' => ['timezone' => 'Asia/Manila', 'debug' => true, 'base_path' => ''],
+          ];
+          PHP
+
+      - name: PHP syntax check
+        run: find app views public database tests -name '*.php' -print0 | xargs -0 -n1 php -l > /dev/null
+
+      - name: Tests (MySQL 8)
+        run: php tests/run.php
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      FTP_SERVER: ${{ secrets.FTP_SERVER }}
+    steps:
+      - name: Hosting not configured yet
+        if: env.FTP_SERVER == ''
+        run: echo "::notice::Tests passed. Add the FTP_SERVER, FTP_USERNAME and FTP_PASSWORD secrets to deploy automatically (see DEPLOY.md)."
+
+      - uses: actions/checkout@v4
+        if: env.FTP_SERVER != ''
+
+      # Uploads only files that changed since the last deploy. Files the app creates on the server
+      # (config/config.php, backups, logs) are never touched.
+      - name: Upload to the web host
+        if: env.FTP_SERVER != ''
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          server-dir: ${{ secrets.FTP_SERVER_DIR || '/htdocs/' }}
+          exclude: |
+            **/.git*
+            **/.git*/**
+            .github/**
+            tests/**
+            config/config.php

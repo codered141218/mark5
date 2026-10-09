@@ -1,4 +1,3 @@
-Options -Indexes
 # Send every request that is not a real file to index.php (Apache / XAMPP)
 RewriteEngine On
 RewriteCond %{REQUEST_FILENAME} !-f

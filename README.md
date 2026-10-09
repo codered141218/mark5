@@ -25,7 +25,11 @@ Every sale, delivery, spoilage, petty cash payout and cash advance is posted to 
 Point the web server's document root to the `public/` folder (Apache uses `public/.htaccess`; for nginx route all
 requests to `public/index.php`). Then open the site and follow the installer.
 
-### Option C — command line (developers)
+### Option C — free online test server that updates itself
+See **[DEPLOY.md](DEPLOY.md)**: a free PHP + MySQL host (InfinityFree) plus a GitHub Actions workflow that tests every push
+and uploads it automatically. Gives you an https address you can open from any tablet.
+
+### Option D — command line (developers)
 ```bash
 cp config/config.example.php config/config.php     # edit the MySQL settings
 php database/install.php                           # creates the database, tables, admin/admin123, PIN 1234 + sample menu

@@ -37,6 +37,8 @@ class DB
             ]);
             // Keep MySQL's NOW()/CURDATE() in the same timezone as PHP.
             self::$pdo->exec("SET time_zone = '" . (new \DateTime())->format('P') . "'");
+            // MySQL 8 enables ONLY_FULL_GROUP_BY by default; the reports rely on MariaDB / MySQL 5.x grouping rules.
+            self::$pdo->exec("SET SESSION sql_mode = REPLACE(@@SESSION.sql_mode, 'ONLY_FULL_GROUP_BY', '')");
         }
         return self::$pdo;
     }
