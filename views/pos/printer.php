@@ -30,6 +30,14 @@ $business = [
   Stations are set under <a href="<?= url('/admin/stations') ?>">Administration → Prep Stations</a>.
 </div>
 
+<div class="alert alert-warn small">
+  <b>Bluetooth and changing pages:</b> Chrome drops a Bluetooth printer when you leave the page, so after setting it up here,
+  open the POS and tap <b>Connect printer</b> once — the list shows only your printer, tap it. The POS keeps the printer connected
+  for the whole shift as long as you stay on the POS screen.
+  <span class="muted">Optional, for automatic reconnecting: in Chrome open <code>chrome://flags/#enable-web-bluetooth-new-permissions-backend</code>,
+  set it to <b>Enabled</b> and relaunch.</span>
+</div>
+
 <div class="ps-printers" id="ps-printers"></div>
 <div class="row gap-sm mb-lg">
   <button class="btn btn-primary btn-lg" type="button" id="ps-add">＋ Add a printer</button>

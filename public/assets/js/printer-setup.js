@@ -137,7 +137,7 @@
     const act = b.dataset.act;
     busy(b, async () => {
       if (act === 'connect') { await Printer.connect(id); App.toast('Printer connected'); }
-      if (act === 'reconnect') { await Printer.reconnect(id); App.toast('Printer connected'); }
+      if (act === 'reconnect') { await Printer.reconnect(id, { pick: true }); App.toast('Printer connected'); }
       if (act === 'disconnect') await Printer.disconnect(id);
       if (act === 'forget') {
         if (await App.ask({ title: 'Forget this device?', message: 'You will have to choose it again with “Connect”.', okText: 'Forget', danger: true })) await Printer.forget(id);

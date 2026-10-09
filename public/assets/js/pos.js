@@ -468,8 +468,15 @@
     }).join('');
     const off = S.session ? '' : 'disabled';
     const closedMsg = can('pos.open_day') ? 'Press “Open Day” and enter the beginning cash to start selling.' : 'Ask a cashier or manager to open the day.';
+    const ps = Printer.status();
+    const down = ps.printers.filter((x) => x.linkable && !x.connected);
     $('#board').innerHTML = `
       ${S.session ? '' : `<div class="alert alert-warn">The business day is not open. ${closedMsg}</div>`}
+      ${down.length ? `<div class="alert alert-warn printer-banner"><span class="grow">⎙ ${down.map((x) => `<b>${esc(x.name)}</b>`).join(', ')}
+          ${down.length === 1 ? 'is' : 'are'} not connected. Switch the printer on, then tap Connect — the browser shows the printer, tap it once.</span>
+          ${down.map((x) => `<button type="button" class="btn btn-primary btn-lg" data-act="printerConnect" data-id="${x.id}" ${x.connecting ? 'disabled' : ''}>Connect ${down.length > 1 ? esc(x.name) : 'printer'}</button>`).join('')}</div>`
+        : !ps.configured ? `<div class="alert alert-warn printer-banner"><span class="grow">⎙ No printer is set up on this tablet yet.</span>
+          <a class="btn btn-lg" href="${esc(B.links.printerSetup)}">Printer setup</a></div>` : ''}
       <div class="board-actions">
         <button class="btn btn-primary btn-xl" type="button" data-act="new" data-type="dine_in" ${off}>+ New order</button>
         <button class="btn btn-xl" type="button" data-act="new" data-type="takeout" ${off}>+ Take-out</button>
@@ -1566,7 +1573,7 @@
       foot: `<a class="btn btn-lg" href="${esc(B.links.printerSetup)}">Printer setup</a><span class="grow"></span>
         <button type="button" class="btn btn-lg" data-x>Close</button>`,
       actions: {
-        reconnect: (b) => run(() => Printer.reconnect(b.dataset.id), b),
+        reconnect: (b) => run(() => Printer.reconnect(b.dataset.id, { pick: true }), b),
         connect: (b) => run(() => Printer.connect(b.dataset.id), b),
         retry: (b) => run(() => Printer.retryQueue(b.dataset.id), b),
         clear: (b) => Printer.clearQueue(b.dataset.id),
@@ -1588,7 +1595,8 @@
                 <button type="button" class="btn btn-sm btn-ghost" data-act="clear" data-id="${p.id}">Discard</button></div>` : ''}
             </div>
             <div class="row gap-sm">
-              ${p.linkable && !p.connected ? `<button type="button" class="btn btn-primary" data-act="${p.deviceName ? 'reconnect' : 'connect'}" data-id="${p.id}" ${p.connecting ? 'disabled' : ''}>${p.deviceName ? '↻ Reconnect' : 'Connect'}</button>` : ''}
+              ${p.linkable && !p.connected ? `<button type="button" class="btn btn-primary" data-act="${p.deviceName ? 'reconnect' : 'connect'}" data-id="${p.id}" ${p.connecting ? 'disabled' : ''}>Connect printer</button>` : ''}
+              ${p.linkable && p.deviceName ? `<button type="button" class="btn btn-ghost" data-act="connect" data-id="${p.id}">Choose another</button>` : ''}
               <button type="button" class="btn" data-act="test" data-id="${p.id}">⎙ Test</button>
             </div>
           </div>`;
@@ -1658,7 +1666,7 @@
         retry: async (b) => {
           // This click lets the browser show its printer picker when the printer was never chosen
           const r = await run(async () => {
-            if (linkable && !Printer.isConnected(p.id)) { try { await Printer.reconnect(p.id); } catch (e) { await Printer.connect(p.id); } }
+            if (linkable && !Printer.isConnected(p.id)) await Printer.reconnect(p.id, { pick: true });
             return job({ only: p.id });
           }, b);
           if (!r) return;
@@ -1770,6 +1778,7 @@
     eod: async () => { await loadOrders(); endOfDayDialog(); },
     openday: openDayDialog,
     printer: printerDialog,
+    printerConnect: (b) => run(async () => { await Printer.reconnect(b.dataset.id, { pick: true }); App.toast('Printer connected'); }, b),
     install: installApp,
     logout,
     new: (b) => newOrder(b.dataset.type),
@@ -1836,7 +1845,7 @@
   });
 
   // Printer status in the top bar; keep the tablet awake while the POS is open (if chosen in Printer setup)
-  Printer.onStatus(() => renderTop());
+  Printer.onStatus(() => { renderTop(); if (S.view === 'board') renderBoard(); });
   if (Printer.config().keepAwake) Printer.keepAwake(true);
 
   // Multiple terminals: refresh the board every 15 s (and when the tab comes back into view)

@@ -381,8 +381,11 @@
     }, delay);
   }
 
-  /** Choose and connect the printer. Must be called from a button click (the browser shows its device picker). */
-  async function connect(id) {
+  /**
+   * Choose and connect the printer. Must be called from a button click (the browser shows its device picker).
+   * same = true: the picker lists only the printer chosen before (one tap to reconnect it on another page).
+   */
+  async function connect(id, { same = false } = {}) {
     const p = printer(id);
     if (!p) throw new Error('Printer not found');
     if (p.method === 'bluetooth') {
@@ -391,7 +394,9 @@
           ? 'Web Bluetooth is not supported in this browser. Use Chrome or Edge on Android / Windows / Mac, or choose RawBT or USB / serial.'
           : 'Bluetooth needs a secure address (https:// or localhost). Use RawBT, or allow this address in chrome://flags (see Printer setup).');
       }
-      const options = p.bleFilter === 'all'
+      const options = same && p.deviceName
+        ? { filters: [{ name: p.deviceName }], optionalServices: BLE_SERVICES }
+        : p.bleFilter === 'all'
         ? { acceptAllDevices: true, optionalServices: BLE_SERVICES }
         : { filters: [...BLE_SERVICES.map((s) => ({ services: [s] })), ...NAME_PREFIXES.map((n) => ({ namePrefix: n }))], optionalServices: BLE_SERVICES };
       let device;
@@ -433,9 +438,13 @@
     retryQueue(id);
   }
 
-  /** Reconnect to the printer chosen earlier — no picker. Works while this page stays open, or after a reload
-   *  when the browser remembers the permission (navigator.bluetooth.getDevices / navigator.serial.getPorts). */
-  async function reconnect(id) {
+  /**
+   * Reconnect to the printer chosen earlier. Without a picker this works while the page stays open, or after a page
+   * change / reload when the browser remembers the device (navigator.bluetooth.getDevices — Chrome needs the flag
+   * chrome://flags/#enable-web-bluetooth-new-permissions-backend — and navigator.serial.getPorts).
+   * pick = true (from a button tap): otherwise show the browser's list with only that printer in it — one more tap.
+   */
+  async function reconnect(id, { pick = false } = {}) {
     const p = printer(id);
     if (!p) throw new Error('Printer not found');
     const c = conn(id);
@@ -445,14 +454,16 @@
         const devices = await navigator.bluetooth.getDevices();
         device = devices.find((d) => d.id === p.deviceId) || devices.find((d) => p.deviceName && d.name === p.deviceName);
       }
-      if (!device) throw fail(p, 'Tap “Connect” to choose the printer again.');
+      if (!device && pick) return connect(id, { same: true });
+      if (!device) throw fail(p, 'Not connected. Tap “Connect printer” and choose it in the list.');
       await bleAttach(id, device);
     } else if (p.method === 'serial') {
       const ports = navigator.serial && navigator.serial.getPorts ? await navigator.serial.getPorts() : [];
       const same = (port) => JSON.stringify(port.getInfo ? port.getInfo() : {}) === JSON.stringify(p.portInfo || {});
       const taken = new Set(Object.entries(conns).filter(([k]) => k !== id).map(([, x]) => x.serial.port).filter(Boolean));
       const port = c.serial.port || ports.find((x) => same(x) && !taken.has(x)) || (ports.filter((x) => !taken.has(x)).length === 1 ? ports.find((x) => !taken.has(x)) : null);
-      if (!port) throw fail(p, 'Tap “Connect” to choose the printer’s port again.');
+      if (!port && pick) return connect(id);
+      if (!port) throw fail(p, 'Not connected. Tap “Connect printer” and choose its port.');
       await openSerial(id, port);
     }
     emit();

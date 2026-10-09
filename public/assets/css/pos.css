@@ -297,3 +297,4 @@ html.kb-open .pos-dlg .modal-body { padding-top: 10px; padding-bottom: 10px; }
 .printer-row.warn { background: var(--amber-soft); color: #78350f; }
 .printer-row .btn { min-height: 42px; }
 .ticket-actions .btn.pay { grid-column: 1 / -1; }
+.printer-banner { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
