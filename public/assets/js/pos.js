@@ -461,6 +461,7 @@
       can('pos.open_day') && !s ? '<button class="btn btn-success" type="button" data-act="openday">Open Day</button>' : '',
       `<button class="btn btn-ghost printer-chip ${p.cls}" type="button" data-act="printer" title="Printer">⎙ ${esc(p.text)}${p.queue ? ` <span class="count">${p.queue}</span>` : ''}</button>`,
       S.installPrompt ? '<button class="btn btn-ghost install-btn" type="button" data-act="install">⬇ Install app</button>' : '',
+      canFullscreen() ? `<button class="btn btn-ghost" type="button" data-act="fullscreen" title="Full screen">${isFullscreen() ? '⤡ Exit full screen' : '⤢ Full screen'}</button>` : '',
       B.links.backOffice ? `<a class="btn btn-ghost" href="${esc(B.links.backOffice)}">Back office</a>` : '',
       `<span class="chip user-chip">${esc(B.user.name)}</span>`,
       '<button class="btn btn-ghost" type="button" data-act="logout">Log out</button>',
@@ -1538,22 +1539,36 @@
     paint();
   }
 
-  /** End of day: blind cash count -> Z-reading with expected / counted / short-over. */
-  function endOfDayDialog() {
+  /**
+   * End of day: count the drawer by denomination -> Z-reading. The expected cash (beginning cash + cash sales
+   * - payouts - refunds) is shown next to the count, and the difference updates with every bill entered, so the
+   * cashier sees a short / over before closing. (Settings → POS → "Blind cash count" hides it.)
+   */
+  function endOfDayDialog(x) {
     const open = S.orders.length;
+    const expected = x ? r2(x.cash.expected) : null;
+    const blind = !!OPT.blind_count || expected === null;
     const m = modal({
       title: 'End of day — cash count',
       cls: 'wide dlg-cash',
       body: `${open ? `<div class="alert alert-warn">There are still ${open} open order(s). Settle or cancel them before closing the day.</div>` : ''}
-        <div class="alert alert-info small">Count all the cash in the drawer, including the beginning cash. The expected amount is shown only after you submit
-          (blind count). Any shortage or overage is posted to the books automatically.</div>
+        ${blind ? `<div class="alert alert-info small">Count all the cash in the drawer, including the beginning cash. The expected amount is shown only after
+          you submit (blind count). Any shortage or overage is posted to the books automatically.</div>`
+          : `<div class="eod-check">
+              <div><span>Expected cash</span><b>${peso(expected)}</b>
+                <small>Beginning ${money(x.cash.opening)} + cash sales ${money(x.cash.cash_sales)} − payouts ${money(x.cash.payouts)}${x.cash.refunds > 0 ? ' − refunds ' + money(x.cash.refunds) : ''}</small></div>
+              <div><span>Counted so far</span><b class="eod-counted">₱0.00</b><small>tap a bill, type how many</small></div>
+              <div class="eod-diff short"><span class="eod-diff-label">Still to count</span><b class="eod-diff-amt">${peso(expected)}</b><small class="eod-diff-hint">short until it reaches the expected cash</small></div>
+            </div>`}
         ${denomCounter()}
         <label class="field mt"><span class="field-label">Remarks</span><input class="input" name="notes" autocomplete="off"></label>`,
       foot: '<button type="button" class="btn btn-lg" data-x>Cancel</button><button type="submit" class="btn btn-danger btn-lg">Close day</button>',
       onSubmit: async (btn) => {
         const c = readCounts(m.el);
+        const diff = blind ? 0 : r2(c.total - expected);
+        const verdict = blind ? '' : diff === 0 ? ' The drawer is balanced.' : diff < 0 ? ` That is SHORT by ${peso(-diff)}.` : ` That is OVER by ${peso(diff)}.`;
         const ok = await App.ask({ title: 'Close the business day?', okText: 'Close day', danger: true,
-          message: `Counted cash: ${peso(c.total)}. After closing, no more sales can be recorded for this day and the Z-reading is generated.` });
+          message: `Counted cash: ${peso(c.total)}.${verdict} After closing, no more sales can be recorded for this day and the Z-reading is generated.` });
         if (!ok) return;
         const z = await run(() => Api.closeDay({ denominations: c.counts, notes: m.$('[name=notes]').value.trim() }), btn);
         if (!z) return;
@@ -1566,7 +1581,21 @@
         zResultDialog(z);
       },
     });
-    numpad(m.el, () => readCounts(m.el));
+    const paintDiff = () => {
+      const c = readCounts(m.el);
+      if (blind) return;
+      const diff = r2(c.total - expected);
+      m.$('.eod-counted').textContent = peso(c.total);
+      const box = m.$('.eod-diff');
+      box.classList.toggle('short', diff < 0);
+      box.classList.toggle('over', diff > 0);
+      box.classList.toggle('ok', diff === 0);
+      m.$('.eod-diff-label').textContent = diff < 0 ? 'Short / still to count' : diff > 0 ? 'Over' : 'Balanced';
+      m.$('.eod-diff-amt').textContent = diff === 0 ? '✓ ' + peso(0) : peso(Math.abs(diff));
+      m.$('.eod-diff-hint').textContent = diff < 0 ? 'the count is below the expected cash' : diff > 0 ? 'more cash than expected' : 'count matches the expected cash';
+    };
+    numpad(m.el, paintDiff);
+    paintDiff();
   }
 
   function zResultDialog(z) {
@@ -1766,6 +1795,35 @@
     if (document.activeElement === search) search.blur();
   }
 
+  // ---- full screen (hides the browser bars and Android's status bar; remembered on this tablet)
+  const FS_KEY = 'mark5_pos_fullscreen';
+  const canFullscreen = () => !!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen);
+  const isFullscreen = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+  async function toggleFullscreen() {
+    try {
+      if (isFullscreen()) {
+        await (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+        try { localStorage.setItem(FS_KEY, '0'); } catch (e) { /* ignore */ }
+      } else {
+        const el = document.documentElement;
+        await (el.requestFullscreen ? el.requestFullscreen({ navigationUI: 'hide' }) : el.webkitRequestFullscreen());
+        try { localStorage.setItem(FS_KEY, '1'); } catch (e) { /* ignore */ }
+      }
+    } catch (e) { App.toast('Full screen is not available in this browser', 'error'); }
+  }
+  function setupFullscreen() {
+    ['fullscreenchange', 'webkitfullscreenchange'].forEach((ev) => document.addEventListener(ev, () => renderTop()));
+    // Browsers only allow full screen after a tap: if it was on last time, the first tap turns it back on
+    let wanted = false;
+    try { wanted = localStorage.getItem(FS_KEY) === '1'; } catch (e) { /* ignore */ }
+    if (wanted && canFullscreen()) {
+      document.addEventListener('pointerdown', function again(e) {
+        document.removeEventListener('pointerdown', again, true);
+        if (!isFullscreen() && !e.target.closest('[data-act=fullscreen]')) toggleFullscreen();
+      }, true);
+    }
+  }
+
   /** Register the (pass-through) service worker so Chrome offers "Install app". Needs https or localhost. */
   function setupInstall() {
     if ('serviceWorker' in navigator && window.isSecureContext) {
@@ -1796,11 +1854,12 @@
     receipts: receiptsDialog,
     payout: payoutDialog,
     xread: xReadDialog,
-    eod: async () => { await loadOrders(); endOfDayDialog(); },
+    eod: async (b) => { await loadOrders(); const x = await run(() => Api.xreading(), b); if (x) endOfDayDialog(x); },
     openday: openDayDialog,
     printer: printerDialog,
     printerConnect: (b) => run(async () => { await Printer.reconnect(b.dataset.id, { pick: true }); App.toast('Printer connected'); }, b),
     install: installApp,
+    fullscreen: toggleFullscreen,
     logout,
     new: (b) => newOrder(b.dataset.type),
     refresh: () => { loadOrders(); loadMenu(); },
@@ -1875,6 +1934,7 @@
 
   trackViewport();
   setupInstall();
+  setupFullscreen();
   render();
   loadMenu();
   loadOrders();

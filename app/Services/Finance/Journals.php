@@ -27,6 +27,7 @@ class Journals
         'ar_receipt' => 'Customer collection',
         'cash_advance' => 'Cash advance release',
         'ca_repayment' => 'Cash advance repayment',
+        'disbursement' => 'Payment / expense',
     ];
 
     public static function list(string $from, string $to, ?string $source = null, ?string $q = null): array

@@ -28,19 +28,39 @@ class Seeder
                 ]);
             }
 
-            $uoms = [['Piece', 'pc'], ['Kilogram', 'kg'], ['Gram', 'g'], ['Liter', 'L'], ['Milliliter', 'ml'], ['Pack', 'pack'],
-                ['Bottle', 'btl'], ['Can', 'can'], ['Case', 'case'], ['Sack', 'sack'], ['Tray', 'tray'], ['Box', 'box'],
-                ['Gallon', 'gal'], ['Serving', 'srv'], ['Dozen', 'doz']];
-            foreach ($uoms as [$name, $abbr]) {
-                if (!DB::value('SELECT id FROM uoms WHERE abbr = ?', [$abbr])) DB::insert('uoms', ['name' => $name, 'abbr' => $abbr]);
-            }
-            foreach ([['kg', 'g', 1000], ['L', 'ml', 1000], ['gal', 'L', 3.785], ['doz', 'pc', 12]] as [$f, $t, $factor]) {
-                $from = self::uom($f); $to = self::uom($t);
-                if (!DB::value('SELECT id FROM uom_conversions WHERE from_uom_id = ? AND to_uom_id = ?', [$from, $to])) {
-                    DB::insert('uom_conversions', ['from_uom_id' => $from, 'to_uom_id' => $to, 'factor' => $factor]);
-                }
-            }
+            self::units();
         });
+    }
+
+    /** Standard units of measure (pc, kg, g, L, ml, pack …) and their conversions (1 kg = 1000 g …). Safe to run again. */
+    public static function units(): void
+    {
+        $uoms = [['Piece', 'pc'], ['Kilogram', 'kg'], ['Gram', 'g'], ['Liter', 'L'], ['Milliliter', 'ml'], ['Pack', 'pack'],
+            ['Bottle', 'btl'], ['Can', 'can'], ['Case', 'case'], ['Sack', 'sack'], ['Tray', 'tray'], ['Box', 'box'],
+            ['Gallon', 'gal'], ['Serving', 'srv'], ['Dozen', 'doz']];
+        foreach ($uoms as [$name, $abbr]) {
+            if (!DB::value('SELECT id FROM uoms WHERE abbr = ?', [$abbr])) DB::insert('uoms', ['name' => $name, 'abbr' => $abbr]);
+        }
+        foreach ([['kg', 'g', 1000], ['L', 'ml', 1000], ['gal', 'L', 3.785], ['doz', 'pc', 12]] as [$f, $t, $factor]) {
+            $from = self::uom($f); $to = self::uom($t);
+            if (!DB::value('SELECT id FROM uom_conversions WHERE from_uom_id = ? AND to_uom_id = ?', [$from, $to])) {
+                DB::insert('uom_conversions', ['from_uom_id' => $from, 'to_uom_id' => $to, 'factor' => $factor]);
+            }
+        }
+    }
+
+    /** The standard roles (Manager, Cashier, Waiter …) that do not exist yet. Returns how many were added. */
+    public static function roles(): int
+    {
+        $n = 0;
+        foreach (Permissions::defaultRoles() as $r) {
+            if (!DB::value('SELECT id FROM roles WHERE name = ?', [$r['name']])) {
+                DB::insert('roles', ['name' => $r['name'], 'description' => $r['description'],
+                    'permissions' => json_encode($r['permissions']), 'is_system' => $r['is_system'] ?? 0]);
+                $n++;
+            }
+        }
+        return $n;
     }
 
     private static function uom(string $abbr): int

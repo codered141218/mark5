@@ -19,7 +19,7 @@ class Reset
 {
     /** Tables emptied completely (children before parents does not matter: foreign key checks are off). */
     private const WIPE = [
-        'payments', 'ticket_items', 'tickets', 'cash_sessions', 'petty_cash_txns',
+        'payments', 'ticket_items', 'tickets', 'cash_sessions', 'petty_cash_txns', 'disbursements',
         'count_lines', 'count_sessions', 'inv_doc_lines', 'inv_docs', 'stock_movements',
         'item_components', 'item_uoms', 'items', 'categories', 'prep_stations', 'uom_conversions', 'uoms', 'discounts',
         'ca_repayments', 'cash_advances', 'ar_receipts', 'ar_invoices', 'ap_payments', 'ap_bills',

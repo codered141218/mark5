@@ -19,7 +19,8 @@ class Settings
         'vat_registered' => '1',
         'prices_include_vat' => '1',        // 1 = menu prices are VAT-inclusive; 0 = VAT is added on top at the POS
         'require_table_dine_in' => '1',     // a dine-in order needs a table before "Done" / payment
-        'pos_menu_sort' => 'custom',        // order of POS tiles: custom | name | name_desc | price | price_desc
+        'pos_menu_sort' => 'custom',
+        'blind_count' => '0',               // 1 = hide the expected cash while counting at end of day        // order of POS tiles: custom | name | name_desc | price | price_desc
         'vat_rate' => '12',
         'sc_discount_rate' => '20',
         'service_charge_rate' => '0',

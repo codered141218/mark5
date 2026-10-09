@@ -9,7 +9,10 @@ use App\Services\Items;
     <p class="muted">Ingredients, menu items with recipes, retail goods and services.</p>
   </div>
   <div class="page-actions">
-    <?php if (can('inventory.manage')): ?><a class="btn btn-primary" href="<?= url('/inventory/items/new') ?>">+ New item</a><?php endif; ?>
+    <?php if (can('inventory.manage')): ?>
+      <a class="btn" href="<?= url('/inventory/items/import') ?>">⬆ Import from Excel</a>
+      <a class="btn btn-primary" href="<?= url('/inventory/items/new') ?>">+ New item</a>
+    <?php endif; ?>
   </div>
 </div>
 

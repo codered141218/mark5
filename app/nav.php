@@ -23,6 +23,8 @@ return [
         ['/inventory/uom', 'Units & Conversions', '⚖', ['inventory.manage']],
     ],
     'Cash & Finance' => [
+        ['/finance/cash-position', 'Cash & Bank Position', '◈', ['finance.view', 'finance.banks', 'pettycash.view']],
+        ['/finance/payments', 'Payments & Expenses', '⇪', ['finance.view', 'finance.journal', 'finance.banks', 'pettycash.manage']],
         ['/petty-cash', 'Petty Cash', '₱', ['pettycash.view', 'pettycash.manage']],
         ['/finance/banks', 'Banks', '▣', ['finance.banks']],
         ['/finance/payables', 'Accounts Payable', '↗', ['finance.ap']],

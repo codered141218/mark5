@@ -307,3 +307,14 @@ html.kb-open .pos-dlg .modal-body { padding-top: 10px; padding-bottom: 10px; }
   0%, 35% { background: #fde68a; box-shadow: inset 4px 0 0 var(--brand); }
   100% { background: transparent; box-shadow: inset 0 0 0 transparent; }
 }
+
+/* End of day: expected vs counted while counting */
+.eod-check { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+.eod-check > div { border: 1px solid var(--border); border-radius: 14px; padding: 10px 14px; background: var(--surface-2); display: flex; flex-direction: column; gap: 2px; }
+.eod-check span { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 600; }
+.eod-check b { font-size: 22px; font-variant-numeric: tabular-nums; }
+.eod-check small { font-size: 11.5px; color: var(--muted); }
+.eod-diff.short { background: var(--red-soft); border-color: rgba(220, 38, 38, .25); } .eod-diff.short b { color: var(--red); }
+.eod-diff.over { background: var(--amber-soft); border-color: rgba(217, 119, 6, .25); } .eod-diff.over b { color: var(--amber); }
+.eod-diff.ok { background: var(--green-soft); border-color: rgba(5, 150, 105, .25); } .eod-diff.ok b { color: var(--green); }
+@media (max-width: 700px) { .eod-check { grid-template-columns: 1fr; } }

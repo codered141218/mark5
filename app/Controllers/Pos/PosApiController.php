@@ -37,7 +37,8 @@ class PosApiController
             'denominations' => CashSessions::DENOMINATIONS,
             'discounts' => Discounts::all(true),
             'stations' => array_map(fn ($st) => ['id' => $st['id'], 'name' => $st['name']], \App\Services\Stations::all(true)),
-            'options' => ['require_table' => Settings::get('require_table_dine_in', '1') === '1', 'prices_include_vat' => Settings::pricesIncludeVat()],
+            'options' => ['require_table' => Settings::get('require_table_dine_in', '1') === '1', 'prices_include_vat' => Settings::pricesIncludeVat(),
+                'blind_count' => Settings::get('blind_count', '0') === '1'],
             'business' => [
                 'name' => $s['business_name'], 'address' => $s['business_address'], 'tin' => $s['business_tin'], 'phone' => $s['business_phone'],
                 'receipt_title' => $s['receipt_title'], 'receipt_footer' => $s['receipt_footer'],

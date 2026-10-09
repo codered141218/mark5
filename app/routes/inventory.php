@@ -15,6 +15,9 @@ $router->post('/inventory/categories/{id}/delete', [CategoryController::class, '
 // Items & recipes ('new' must come before '{id}')
 $router->get('/inventory/items', [ItemController::class, 'index'], ['inventory.view', 'inventory.manage']);
 $router->get('/inventory/items/new', [ItemController::class, 'create'], 'inventory.manage');
+$router->get('/inventory/items/import', [App\Controllers\Inventory\ItemImportController::class, 'form'], 'inventory.manage');
+$router->post('/inventory/items/import', [App\Controllers\Inventory\ItemImportController::class, 'preview'], 'inventory.manage');
+$router->post('/inventory/items/import/confirm', [App\Controllers\Inventory\ItemImportController::class, 'confirm'], 'inventory.manage');
 $router->post('/inventory/items', [ItemController::class, 'store'], 'inventory.manage');
 $router->post('/inventory/items/bulk', [ItemController::class, 'bulk'], 'inventory.manage');
 $router->get('/inventory/items/{id}', [ItemController::class, 'show'], ['inventory.view', 'inventory.manage']);

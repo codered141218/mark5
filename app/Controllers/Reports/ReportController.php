@@ -42,6 +42,7 @@ class ReportController
         return view('reports/eod', [
             'title' => ($z ? 'Z' : 'X') . '-Reading · ' . fmt_date($report['session']['business_date'] ?? null),
             'r' => $report, 'z' => $z, 'settings' => $settings, 'vatRegistered' => ($settings['vat_registered'] ?? '1') === '1',
+            'detail' => SalesReports::dayDetail((int) $id),
         ]);
     }
 

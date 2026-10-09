@@ -32,7 +32,7 @@ class AccountController
         if ($x = Table::export($req, 'chart-of-accounts', 'Chart of Accounts', $type ? Accounts::TYPES[$type] : 'All accounts', $columns, $rows)) return $x;
 
         return view('finance/accounts/index', ['title' => 'Chart of Accounts', 'rows' => $rows, 'columns' => $columns, 'type' => $type,
-            'counts' => $counts, 'total' => count($all)]);
+            'counts' => $counts, 'total' => count($all), 'nextCodes' => Accounts::nextCodes()]);
     }
 
     public function save(Request $req): Response
@@ -40,7 +40,7 @@ class AccountController
         $id = (int) $req->input('id');
         if ($id) Accounts::update($id, $req->all());
         else Accounts::create($req->all());
-        flash('success', $id ? 'Account saved.' : 'Account created.');
+        flash('success', $id ? 'Account saved.' : 'Account created' . (trim((string) $req->input('code')) === '' ? ' with the next free code.' : '.'));
         return back();
     }
 

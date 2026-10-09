@@ -383,3 +383,4 @@ dialog.modal:not([open]) { display: none; }
 .arrange-row .icon-btn { width: 30px; height: 30px; }
 .arrange-list .empty { padding: 16px; }
 .danger-zone { border-color: var(--red, #dc2626); }
+.table tr.import-error td { background: var(--red-soft); }

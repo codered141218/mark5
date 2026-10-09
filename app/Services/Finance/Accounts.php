@@ -50,8 +50,39 @@ class Accounts
         return $out;
     }
 
+    /** Code ranges per type (expenses: 5xxx cost of sales, 6xxx operating). */
+    public const RANGES = ['asset' => [1000, 1999], 'liability' => [2000, 2999], 'equity' => [3000, 3999], 'income' => [4000, 4999], 'expense' => [6000, 6999]];
+
+    /**
+     * Next free account code for a type: 10 after the highest code in its range (1000s assets, 2000s liabilities,
+     * 3000s equity, 4000s income, 5000s cost of sales / 6000s expenses), or the first free one if the range is full.
+     */
+    public static function nextCode(string $type, ?string $subtype = null): string
+    {
+        [$lo, $hi] = $type === 'expense' && $subtype === 'cogs' ? [5000, 5999] : (self::RANGES[$type] ?? [9000, 9999]);
+        $codes = array_map('intval', array_filter(array_column(
+            DB::all('SELECT code FROM accounts WHERE code REGEXP ? ', ['^[0-9]+$']), 'code'), fn ($c) => (int) $c >= $lo && (int) $c <= $hi));
+        $used = array_flip($codes);
+        $next = $codes ? (int) (floor(max($codes) / 10) * 10 + 10) : $lo;
+        if ($next <= $hi && !isset($used[$next])) return (string) $next;
+        for ($c = $lo; $c <= $hi; $c++) if (!isset($used[$c])) return (string) $c;
+        throw HttpException::bad('No free account code left in the ' . strtolower(self::TYPES[$type] ?? $type) . ' range — enter a code yourself');
+    }
+
+    /** Next code for every type, for the "new account" form. */
+    public static function nextCodes(): array
+    {
+        $out = [];
+        foreach (array_keys(self::TYPES) as $t) { try { $out[$t] = self::nextCode($t); } catch (HttpException $e) { $out[$t] = ''; } }
+        try { $out['expense:cogs'] = self::nextCode('expense', 'cogs'); } catch (HttpException $e) { $out['expense:cogs'] = ''; }
+        return $out;
+    }
+
     public static function create(array $d): int
     {
+        if (trim((string) ($d['code'] ?? '')) === '' && isset(self::TYPES[$d['type'] ?? ''])) {
+            $d['code'] = self::nextCode($d['type'], trim((string) ($d['subtype'] ?? '')) ?: null);   // automatic code
+        }
         $row = self::validate($d);
         if (DB::value('SELECT id FROM accounts WHERE code = ?', [$row['code']])) throw HttpException::bad('Account code already exists');
         $id = DB::insert('accounts', $row + ['active' => 1, 'is_system' => 0]);

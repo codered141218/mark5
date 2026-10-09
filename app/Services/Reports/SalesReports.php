@@ -199,6 +199,42 @@ class SalesReports
     }
 
     /**
+     * Details of one business day for the back-office end-of-day page: the cash count by denomination (opening and
+     * closing), every drawer payout, voided receipts / cancelled orders / voided items and cash refunds, one row each.
+     */
+    public static function dayDetail(int $sessionId): array
+    {
+        $s = DB::one('SELECT * FROM cash_sessions WHERE id = ?', [$sessionId]);
+        if (!$s) throw HttpException::notFound('Business day');
+        $den = json_decode((string) $s['denominations'], true) ?: [];
+        $rows = function ($counts) {
+            $out = [];
+            foreach (\App\Services\Pos\CashSessions::DENOMINATIONS as $d) {
+                $q = (float) ($counts[(string) $d] ?? $counts[number_format($d, 2, '.', '')] ?? $counts[rtrim(rtrim(number_format($d, 2, '.', ''), '0'), '.')] ?? 0);
+                $out[] = ['denomination' => $d, 'qty' => $q, 'amount' => r2($d * $q)];
+            }
+            return $out;
+        };
+        return [
+            'opening' => !empty($den['opening']) ? $rows($den['opening']) : null,
+            'closing' => !empty($den['closing']) ? $rows($den['closing']) : null,
+            'payouts' => DB::all(
+                "SELECT p.*, a.code AS account_code, a.name AS account_name, u.full_name AS created_by_name FROM petty_cash_txns p
+                 LEFT JOIN accounts a ON a.id = p.account_id LEFT JOIN users u ON u.id = p.created_by
+                 WHERE p.cash_session_id = ? AND p.source = 'drawer' ORDER BY p.id", [$sessionId]),
+            'voids' => DB::all(
+                "SELECT t.id, t.ticket_no, t.receipt_no, t.table_label, t.total, t.void_reason, t.voided_at, vu.full_name AS voided_by_name,
+                        CASE WHEN t.receipt_no IS NULL THEN 'Cancelled order' ELSE 'Voided receipt' END AS kind
+                 FROM tickets t LEFT JOIN users vu ON vu.id = t.voided_by
+                 WHERE t.status = 'void' AND (t.cash_session_id = ? OR t.void_session_id = ?) ORDER BY t.voided_at", [$sessionId, $sessionId]),
+            'item_voids' => DB::all(
+                "SELECT i.name, i.qty, i.line_total, i.void_reason, i.voided_at, t.ticket_no, t.table_label, vu.full_name AS voided_by_name
+                 FROM ticket_items i JOIN tickets t ON t.id = i.ticket_id LEFT JOIN users vu ON vu.id = i.voided_by
+                 WHERE t.cash_session_id = ? AND i.status = 'void' ORDER BY i.voided_at", [$sessionId]),
+        ];
+    }
+
+    /**
      * X/Z reading of one business day. Uses the POS module's live computation when available,
      * otherwise the Z-reading snapshot stored when the day was closed.
      */

@@ -10,6 +10,9 @@ $on = fn (string $k) => ($s[$k] ?? '') === '1' ? 'checked' : '';
   </div>
 </div>
 
+<form method="post" action="<?= url('/setup/restart') ?>" class="mb row gap-sm"><?= csrf_field() ?>
+  <span class="muted small">Setting up a new branch or starting over?</span><button class="btn btn-sm" type="submit">✦ Run the setup wizard again</button></form>
+
 <div class="tabs">
   <?php foreach ($tabs as $key => $t): ?>
     <a class="tab <?= $key === $tab ? 'active' : '' ?>" href="<?= url('/admin/settings', ['tab' => $key]) ?>"><?= e($t['label']) ?></a>
@@ -76,6 +79,11 @@ $on = fn (string $k) => ($s[$k] ?? '') === '1' ? 'checked' : '';
       <label class="checkbox"><input type="checkbox" name="require_table_dine_in" value="1" <?= $on('require_table_dine_in') ?>> <b>Dine-in orders need a table number</b></label>
       <p class="muted small" style="margin:4px 0 0 24px">The cashier cannot press <b>Done</b> or take payment on a dine-in order until a table is assigned.
         Take-out and delivery orders don't need a table.</p>
+    </div>
+    <div>
+      <label class="checkbox"><input type="checkbox" name="blind_count" value="1" <?= $on('blind_count') ?>> <b>Blind cash count at end of day</b></label>
+      <p class="muted small" style="margin:4px 0 0 24px">Hide the expected cash while the cashier counts the drawer. When off, the expected cash and the
+        short / over are shown live while the bills are entered.</p>
     </div>
     <div class="form-grid">
       <label class="field"><span class="field-label">Order of the menu tiles</span>

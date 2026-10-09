@@ -72,3 +72,9 @@ $router->post('/employees', [EmployeeController::class, 'save'], 'employees.mana
 // GL account determination (which account every automatic posting uses)
 $router->get('/finance/gl-setup', [App\Controllers\Finance\GlSetupController::class, 'index'], ['finance.accounts']);
 $router->post('/finance/gl-setup', [App\Controllers\Finance\GlSetupController::class, 'save'], 'finance.accounts');
+
+// Payments & expenses (back office) and the cash & bank position
+$router->get('/finance/payments', [App\Controllers\Finance\DisbursementController::class, 'index'], ['finance.view', 'finance.journal', 'finance.banks', 'pettycash.manage']);
+$router->post('/finance/payments', [App\Controllers\Finance\DisbursementController::class, 'store'], ['finance.journal', 'finance.banks', 'pettycash.manage']);
+$router->post('/finance/payments/{id}/void', [App\Controllers\Finance\DisbursementController::class, 'void'], ['finance.journal', 'finance.banks', 'pettycash.manage']);
+$router->get('/finance/cash-position', [App\Controllers\Finance\DisbursementController::class, 'position'], ['finance.view', 'finance.banks', 'pettycash.view']);

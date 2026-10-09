@@ -61,3 +61,10 @@ $router->get('/admin/stations', [App\Controllers\Admin\StationController::class,
 $router->post('/admin/stations', [App\Controllers\Admin\StationController::class, 'save'], ['admin.settings', 'inventory.manage']);
 $router->post('/admin/stations/bulk', [App\Controllers\Admin\StationController::class, 'bulk'], ['admin.settings', 'inventory.manage']);
 $router->post('/admin/stations/{id}/delete', [App\Controllers\Admin\StationController::class, 'delete'], ['admin.settings', 'inventory.manage']);
+
+// First-time setup wizard
+$router->get('/setup', [App\Controllers\Admin\SetupController::class, 'show'], 'admin.settings');
+$router->post('/setup/later', [App\Controllers\Admin\SetupController::class, 'later'], 'admin.settings');
+$router->post('/setup/restart', [App\Controllers\Admin\SetupController::class, 'restart'], 'admin.settings');
+$router->post('/setup/fresh', [App\Controllers\Admin\SetupController::class, 'fresh'], ['admin.settings', 'admin.backup']);
+$router->post('/setup/{step}', [App\Controllers\Admin\SetupController::class, 'save'], 'admin.settings');

@@ -73,6 +73,10 @@ $business = App\Services\Settings::get('business_name', 'Mark5');
   <div class="sidebar-backdrop" data-toggle-sidebar></div>
   <main class="main">
     <div class="content">
+      <?php if (can('admin.settings') && App\Services\Admin\SetupWizard::pending() && !str_starts_with($path, '/setup')): ?>
+        <div class="alert alert-info setup-banner"><span class="grow">Your system is not set up yet — the setup wizard takes a few minutes.</span>
+          <a class="btn btn-primary btn-sm" href="<?= url('/setup') ?>">Start setup wizard</a></div>
+      <?php endif; ?>
       <?php if ($m = flash('success')): ?><div class="alert alert-success" data-autohide><?= e($m) ?></div><?php endif; ?>
       <?php if ($m = flash('error')): ?><div class="alert alert-error"><?= e($m) ?></div><?php endif; ?>
       <?= $content ?>

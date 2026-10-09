@@ -34,6 +34,8 @@ class AuthController
     /** Start page: dashboard, or the first page the user may open. */
     public function home(Request $req)
     {
+        // First use: administrators go through the setup wizard first
+        if (Auth::can('admin.settings') && \App\Services\Admin\SetupWizard::pending()) return redirect('/setup');
         if (Auth::can('dashboard.view')) return (new DashboardController())->index($req);
         foreach (require BASE_PATH . '/app/nav.php' as $items) {
             foreach ($items as [$href, , , $perms]) if ($href !== '/' && Auth::can(...$perms)) return redirect($href);

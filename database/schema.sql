@@ -595,6 +595,29 @@ CREATE TABLE IF NOT EXISTS payments (
 -- ===================================================================== petty cash
 -- expense: money paid out; replenish: money put into the petty cash fund.
 -- source: fund = petty cash box, drawer = POS cash drawer (reduces expected cash at end of day)
+-- Payments & expenses recorded in the back office (Cash & Finance → Payments & Expenses)
+CREATE TABLE IF NOT EXISTS disbursements (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  doc_no VARCHAR(32) NULL,
+  txn_date DATE NOT NULL,
+  pay_from ENUM('cash','petty_cash','bank') NOT NULL,
+  bank_account_id INT UNSIGNED NULL,
+  payee VARCHAR(120) NULL,
+  supplier_id INT UNSIGNED NULL,
+  account_id INT UNSIGNED NOT NULL,          -- what it was for (expense, asset, loan, owner's drawings ...)
+  amount DECIMAL(14,2) NOT NULL,             -- total paid
+  vat_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+  reference VARCHAR(60) NULL,                -- OR / invoice / check no.
+  description VARCHAR(255) NULL,
+  status ENUM('posted','void') NOT NULL DEFAULT 'posted',
+  void_reason VARCHAR(255) NULL,
+  journal_entry_id INT UNSIGNED NULL,
+  bank_txn_id INT UNSIGNED NULL,
+  created_by INT UNSIGNED NULL,
+  created_at DATETIME NULL,
+  KEY ix_disb_date (txn_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS petty_cash_txns (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   doc_no VARCHAR(32) NULL,

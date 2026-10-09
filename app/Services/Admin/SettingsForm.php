@@ -14,10 +14,10 @@ class SettingsForm
     public const TABS = [
         'business' => ['label' => 'Business & receipt', 'keys' => ['business_name', 'business_address', 'business_tin', 'business_phone', 'receipt_title', 'receipt_footer', 'receipt_prefix']],
         'tax' => ['label' => 'Tax & charges', 'keys' => ['vat_registered', 'prices_include_vat', 'vat_rate', 'sc_discount_rate', 'service_charge_rate', 'service_charge_dine_in_only', 'require_payment_ref']],
-        'pos' => ['label' => 'POS', 'keys' => ['require_table_dine_in', 'pos_menu_sort']],
+        'pos' => ['label' => 'POS', 'keys' => ['require_table_dine_in', 'pos_menu_sort', 'blind_count']],
         'backup' => ['label' => 'Backups', 'keys' => ['auto_backup', 'backup_retention']],
     ];
-    public const BOOLEANS = ['vat_registered', 'service_charge_dine_in_only', 'require_payment_ref', 'auto_backup', 'require_table_dine_in'];
+    public const BOOLEANS = ['vat_registered', 'service_charge_dine_in_only', 'require_payment_ref', 'auto_backup', 'require_table_dine_in', 'blind_count'];
     public const MENU_SORTS = ['custom' => 'My arrangement (Inventory → Arrange menu)', 'name' => 'Name A → Z', 'name_desc' => 'Name Z → A',
         'price' => 'Price low → high', 'price_desc' => 'Price high → low'];
     private const RATES = ['vat_rate' => 'VAT rate', 'sc_discount_rate' => 'Senior Citizen / PWD discount', 'service_charge_rate' => 'Service charge'];
