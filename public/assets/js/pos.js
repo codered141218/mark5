@@ -84,6 +84,10 @@
     pane: 'menu',                   // phones only: 'menu' | 'order'
     cat: 'all',                     // selected category id or 'all'
     queue: Promise.resolve(),       // order changes run one after another (fast taps never get lost)
+    flash: null,                    // {id, itemId, at}: the order line last highlighted (revealLine)
+    adds: [],                       // item taps shown on the order panel but not saved yet: {n, target, item, qty, sending}
+    addSeq: 0,
+    flushing: false,                // flushAdds() is queued / running
     installPrompt: null,            // Chrome's "install app" event, when available
   };
 
@@ -262,20 +266,95 @@
     loadOrders();
   }
 
+  /**
+   * Add an item: it shows on the order panel at once and is saved in the background. Fast taps are collected and
+   * sent together (3 taps on Adobo while the first one is saving = one request for 2 more), in tap order.
+   */
   function addItem(item) {
     if (!S.session) { App.toast('Open the business day first', 'error'); return; }
     if (item.item_type === 'retail' && item.stock_qty <= 0) App.toast(`${item.name}: out of stock in the system`, 'info');
-    mutate((t) => Api.addItem(t.id, item.id)).then((t) => {
-      // the line the tap went to: a new line, or the existing not-yet-printed line whose quantity went up
-      const lines = activeLines(t).filter((l) => l.item_id === item.id && !l.kitchen_sent && !l.discount_kind);
-      const line = lines.sort((a, b) => b.id - a.id)[0];
-      if (line) revealLine(line.id);
-    }).catch(showError);
+    const target = S.order;
+    const last = S.adds[S.adds.length - 1];
+    let add;
+    if (last && last.target === target && last.item.id === item.id && !last.sending) { add = last; add.qty += 1; } else {
+      add = { n: ++S.addSeq, target, item, qty: 1 };
+      S.adds.push(add);
+    }
+    renderOrder();
+    revealLine(pendingLineId(viewOrder(S.order), item.id));
+    if (S.flash) S.flash.itemId = item.id;
+    if (!S.flushing) {
+      S.flushing = true;
+      S.queue = S.queue.then(flushAdds).catch(() => {});
+    }
+  }
+
+  /** Send the collected taps to the server, one after another, until none are left. */
+  async function flushAdds() {
+    try {
+      while (S.adds.length) {
+        const a = S.adds[0];
+        a.sending = true;
+        try {
+          const t = await Api.addItem((await ensureOrder(a.target)).id, a.item.id, a.qty);
+          S.adds.shift();
+          setOrder(t);
+        } catch (e) {
+          // nothing more can be saved on that order (e.g. it was paid / the day was closed on another terminal)
+          S.adds = S.adds.filter((x) => x.target !== a.target);
+          showError(e);
+          renderOrder();
+        }
+      }
+    } finally { S.flushing = false; }
+  }
+
+  /** Taps not saved yet on the order t (a draft keeps its taps when the server creates it). */
+  const addsFor = (t) => (t ? S.adds.filter((a) => a.target === t || (t.id && (a.target.created || a.target).id === t.id)) : []);
+
+  /** The order as the cashier should see it: the server ticket plus the taps still being saved. */
+  function viewOrder(t) {
+    const adds = addsFor(t);
+    if (!adds.length) return t;
+    const v = { ...t, items: t.items.map((l) => ({ ...l })), saving: true };
+    let delta = 0;
+    for (const a of adds) {
+      const price = Number(a.item.price);
+      // the same line the server will add to: same item and price, no notes, slip not printed, no line discount
+      const l = v.items.find((x) => x.status === 'active' && x.item_id === a.item.id && !x.kitchen_sent && !x.discount_kind && !x.notes && Number(x.price) === price);
+      if (l) { l.qty = Number(l.qty) + a.qty; l.line_total = r2(l.qty * price); l.saving = true; } else {
+        v.items.push({ id: 'p' + a.n, item_id: a.item.id, name: a.item.name, qty: a.qty, price, line_total: r2(a.qty * price),
+          status: 'active', kitchen_sent: 0, discount_kind: null, notes: null, station_id: a.item.station_id ?? null, saving: true });
+      }
+      delta += a.qty * price;
+    }
+    // totals: exact for a plain order; with discounts / service charge they are an estimate until the server answers
+    v.subtotal = r2(v.subtotal + delta);
+    const plain = (t.discount_type || 'none') === 'none' && !t.sc_count && !(t.service_charge > 0) && !(t.promo_discount > 0) && !(t.sc_discount > 0);
+    v.estimate = !plain;
+    const rate = B.tax.vatRegistered ? B.tax.vatRate : 0;
+    if (Number(t.vat_inclusive) === 0) {
+      v.vat_amount = r2(v.vat_amount + delta * rate);
+      v.vatable_sales = r2((v.vatable_sales || 0) + delta);
+      v.total = r2(v.total + delta * (1 + rate));
+    } else {
+      v.vat_amount = r2(v.vat_amount + delta - delta / (1 + rate));
+      v.vatable_sales = r2((v.vatable_sales || 0) + delta / (1 + rate));
+      v.total = r2(v.total + delta);
+    }
+    return v;
+  }
+
+  /** id of the line a tap on itemId shows on (the newest unprinted line of that item). */
+  function pendingLineId(v, itemId) {
+    const lines = activeLines(v).filter((l) => l.item_id === itemId && !l.kitchen_sent && !l.discount_kind);
+    return lines.length ? lines[lines.length - 1].id : null;
   }
 
   /** Scroll the order panel so a line is in view and flash it (after adding an item or changing a quantity). */
   function revealLine(id) {
-    S.flashLine = id;
+    if (id === null || id === undefined) return;
+    S.flash = { id, at: Date.now() };
     const el = document.querySelector(`#order-pane .tline[data-id="${id}"]`);
     if (!el) return;
     el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -539,15 +618,19 @@
   }
 
   function renderOrder() {
-    const t = S.order;
-    if (S.view !== 'order' || !t) return;
+    if (S.view !== 'order' || !S.order) return;
+    const t = viewOrder(S.order);
     const oldList = document.querySelector('#order-pane .ticket-lines');
     const keepScroll = oldList && S.renderedOrderId === t.id ? oldList.scrollTop : null;
     S.renderedOrderId = t.id;
     const active = activeLines(t);
     const unsent = unsentLines(t).length;
+    // a line still flashing keeps flashing when the panel is redrawn (the saved line replaces the one shown on the tap)
+    const fl = S.flash && Date.now() - S.flash.at < 1600 ? S.flash : null;
+    const flashId = fl && (fl.itemId ? pendingLineId(t, fl.itemId) : fl.id);
+    const flashCss = fl ? ` flash" style="animation-delay:-${Date.now() - fl.at}ms` : '';
     const lines = t.items.map((l) => `
-      <div class="tline${l.status === 'void' ? ' voided' : ''}" data-id="${l.id}" ${l.status === 'active' ? 'data-act="line"' : ''}>
+      <div class="tline${l.status === 'void' ? ' voided' : ''}${l.saving ? ' saving' : ''}${l.id === flashId ? flashCss : ''}" data-id="${l.id}" data-line-item="${l.item_id}" ${l.status === 'active' ? 'data-act="line"' : ''}>
         <span class="tline-qty">${qtyStr(l.qty)}</span>
         <div>
           <div class="tline-name">${esc(l.name)}${l.kitchen_sent ? '<span class="sent-dot" title="Order slip printed"></span>' : ''}</div>
@@ -575,7 +658,7 @@
         <div class="muted small">${esc(sub)}</div>
       </div>
       <div class="ticket-lines">${lines || '<div class="empty">Tap items on the menu to add them.</div>'}</div>
-      <div class="ticket-totals">
+      <div class="ticket-totals${t.saving ? ' saving' : ''}${t.estimate ? ' estimate' : ''}">
         <div class="row"><span>Subtotal</span><span>${money(t.subtotal)}</span></div>
         ${t.sc_discount > 0 ? `<div class="row text-green"><span>${esc(scLabel)}</span><span>−${money(t.sc_discount)}</span></div>` : ''}
         ${t.promo_discount > 0 ? `<div class="row text-green"><span>${esc(promoLabel)}</span><span>−${money(t.promo_discount)}</span></div>` : ''}
@@ -602,7 +685,7 @@
 
   /** Phones: "Menu | Order · N items · ₱total" switcher. */
   function renderBottom() {
-    const t = S.order;
+    const t = S.order && viewOrder(S.order);
     if (!t) { $('#pos-bottom').innerHTML = ''; return; }
     const n = itemCount(t);
     $('#pos-bottom').innerHTML = `
@@ -1867,7 +1950,13 @@
     cardMenu: (b) => cardMenu(Number(b.dataset.id)),
     details: detailsDialog,
     table: () => assignTable(false),
-    line: (b) => S.queue.then(() => { const l = S.order && S.order.items.find((i) => i.id === Number(b.dataset.id)); if (l) lineDialog(l); }),
+    line: (b) => S.queue.then(() => {
+      if (!S.order) return;
+      // a line tapped while it was still being saved: open the line it was saved as
+      const id = String(b.dataset.id).startsWith('p') ? pendingLineId(S.order, Number(b.dataset.lineItem)) : Number(b.dataset.id);
+      const l = S.order.items.find((i) => i.id === id);
+      if (l) lineDialog(l);
+    }),
     discount: () => S.queue.then(discountDialog),
     split: () => splitDialog(),
     merge: () => mergeDialog(),

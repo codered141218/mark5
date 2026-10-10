@@ -318,3 +318,8 @@ html.kb-open .pos-dlg .modal-body { padding-top: 10px; padding-bottom: 10px; }
 .eod-diff.over { background: var(--amber-soft); border-color: rgba(217, 119, 6, .25); } .eod-diff.over b { color: var(--amber); }
 .eod-diff.ok { background: var(--green-soft); border-color: rgba(5, 150, 105, .25); } .eod-diff.ok b { color: var(--green); }
 @media (max-width: 700px) { .eod-check { grid-template-columns: 1fr; } }
+
+/* Item taps show at once; while they are being saved the line and totals get a soft "saving" look */
+.tline.saving .tline-qty { box-shadow: inset 0 0 0 1px var(--brand); }
+.tline.saving .tline-amt { opacity: .7; }
+.ticket-totals.estimate .grand span:last-child { opacity: .6; }
