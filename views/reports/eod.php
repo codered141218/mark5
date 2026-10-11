@@ -28,7 +28,8 @@ $denTable = function (?array $rows, string $title) {
 };
 ?>
 <div class="stats mb">
-  <div class="stat"><div class="stat-label">Beginning cash</div><div class="stat-value"><?= peso($c['opening']) ?></div></div>
+  <div class="stat"><div class="stat-label">Beginning cash</div><div class="stat-value"><?= peso($c['opening']) ?></div>
+    <?php if (($c['opening_source'] ?? 'cash') === 'petty_cash'): ?><div class="stat-sub">From the petty cash fund<?= ($c['returned_to_fund'] ?? 0) > 0 ? ' · returned at close' : '' ?></div><?php endif; ?></div>
   <div class="stat"><div class="stat-label">Cash sales</div><div class="stat-value"><?= peso($c['cash_sales']) ?></div></div>
   <div class="stat"><div class="stat-label">Payouts</div><div class="stat-value"><?= peso($c['payouts']) ?></div><div class="stat-sub"><?= count(array_filter($detail['payouts'], fn ($p) => $p['status'] === 'posted')) ?> voucher(s)</div></div>
   <div class="stat"><div class="stat-label">Expected cash</div><div class="stat-value"><?= peso($c['expected']) ?></div></div>

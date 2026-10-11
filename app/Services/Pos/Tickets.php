@@ -65,11 +65,19 @@ class Tickets
     /** Open orders for the POS board. */
     public static function openList(): array
     {
-        return array_map(fn ($r) => ['total' => (float) $r['total'], 'pax' => (int) $r['pax'], 'item_count' => (float) $r['item_count'], 'id' => (int) $r['id']] + $r, DB::all(
+        // unsent / unsent_qty: lines (and their quantity) whose order slip was never printed; sent: lines already printed
+        return array_map(fn ($r) => ['total' => (float) $r['total'], 'pax' => (int) $r['pax'], 'item_count' => (float) $r['item_count'], 'id' => (int) $r['id'],
+            'unsent' => (int) $r['unsent'], 'unsent_qty' => (float) $r['unsent_qty'], 'sent' => (int) $r['sent']] + $r, DB::all(
             "SELECT t.id, t.ticket_no, t.table_label, t.order_type, t.customer_name, t.pax, t.total, t.created_at, u.full_name AS created_by_name,
-                    (SELECT COALESCE(SUM(i.qty),0) FROM ticket_items i WHERE i.ticket_id = t.id AND i.status = 'active') AS item_count,
-                    (SELECT COUNT(*) FROM ticket_items i WHERE i.ticket_id = t.id AND i.status = 'active' AND i.kitchen_sent = 0) AS unsent
-             FROM tickets t LEFT JOIN users u ON u.id = t.created_by WHERE t.status = 'open' ORDER BY t.id"
+                    x.item_count, x.unsent, x.unsent_qty, x.sent
+             FROM tickets t LEFT JOIN users u ON u.id = t.created_by
+             JOIN (SELECT t2.id, COALESCE(SUM(i.qty), 0) AS item_count,
+                          COUNT(CASE WHEN i.kitchen_sent = 0 THEN 1 END) AS unsent,
+                          COALESCE(SUM(CASE WHEN i.kitchen_sent = 0 THEN i.qty END), 0) AS unsent_qty,
+                          COUNT(CASE WHEN i.kitchen_sent = 1 THEN 1 END) AS sent
+                   FROM tickets t2 LEFT JOIN ticket_items i ON i.ticket_id = t2.id AND i.status = 'active'
+                   WHERE t2.status = 'open' GROUP BY t2.id) x ON x.id = t.id
+             ORDER BY t.id"
         ));
     }
 

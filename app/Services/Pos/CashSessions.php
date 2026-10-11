@@ -5,6 +5,7 @@ use App\Core\Auth;
 use App\Core\DB;
 use App\Core\HttpException;
 use App\Services\Audit;
+use App\Services\Finance\PettyCash;
 use App\Services\Ledger;
 
 /**
@@ -39,17 +40,38 @@ class CashSessions
         return $s;
     }
 
-    public static function open(float $openingCash, ?string $businessDate = null, ?array $denominations = null, ?string $notes = null): array
+    /** Where the beginning cash can come from. */
+    public const OPENING_SOURCES = ['cash' => 'Cash on hand / safe', 'petty_cash' => 'Petty cash fund'];
+
+    /**
+     * Open the business day. $source 'petty_cash' takes the beginning cash out of the petty cash fund
+     * (posted Dr Cash on Hand / Cr Petty Cash Fund); it goes back to the fund when the day is closed.
+     */
+    public static function open(float $openingCash, ?string $businessDate = null, ?array $denominations = null, ?string $notes = null, string $source = 'cash'): array
     {
-        return DB::transaction(function () use ($openingCash, $businessDate, $denominations, $notes) {
+        return DB::transaction(function () use ($openingCash, $businessDate, $denominations, $notes, $source) {
             if (DB::one("SELECT id FROM cash_sessions WHERE status = 'open' FOR UPDATE")) throw HttpException::bad('A business day is already open');
             if ($openingCash < 0) throw HttpException::bad('Beginning cash cannot be negative');
+            if (!array_key_exists($source, self::OPENING_SOURCES)) $source = 'cash';
+            $openingCash = r2($openingCash);
+            if ($source === 'petty_cash' && $openingCash > 0) {
+                if (!Ledger::accountOrNull('petty_cash')) throw HttpException::bad('No Petty Cash Fund account is set up (Accounting → GL account setup).');
+                $fund = PettyCash::fundBalance();
+                if ($openingCash > $fund + 0.004) {
+                    throw HttpException::bad('The petty cash fund has only ' . peso($fund) . '. Replenish the fund in the back office (Petty Cash) or take the beginning cash from cash on hand.');
+                }
+            }
+            $date = is_date($businessDate) ? $businessDate : today();
             $id = DB::insert('cash_sessions', [
-                'business_date' => is_date($businessDate) ? $businessDate : today(), 'status' => 'open',
-                'opened_by' => Auth::id(), 'opened_at' => now(), 'opening_cash' => r2($openingCash),
+                'business_date' => $date, 'status' => 'open',
+                'opened_by' => Auth::id(), 'opened_at' => now(), 'opening_cash' => $openingCash,
+                'opening_source' => $openingCash > 0 ? $source : 'cash',
                 'denominations' => $denominations ? json_encode(['opening' => $denominations]) : null, 'notes' => $notes,
             ]);
-            Audit::log('open_day', 'cash_session', $id, ['opening' => $openingCash]);
+            if ($source === 'petty_cash' && $openingCash > 0) {
+                DB::update('cash_sessions', $id, ['opening_txn_id' => PettyCash::drawerTransfer('change_fund', $openingCash, $id, $date)]);
+            }
+            Audit::log('open_day', 'cash_session', $id, ['opening' => $openingCash, 'source' => $source]);
             return DB::one('SELECT * FROM cash_sessions WHERE id = ?', [$id]);
         });
     }
@@ -115,7 +137,8 @@ class CashSessions
             'categories' => $categories,
             'payouts' => $payouts,
             'cash' => [
-                'opening' => r2($s['opening_cash']), 'cash_sales' => $cashSales, 'payouts' => $payoutTotal, 'refunds' => $refunds,
+                'opening' => r2($s['opening_cash']), 'opening_source' => $s['opening_source'] ?? 'cash',
+                'returned_to_fund' => !empty($s['return_txn_id']) ? r2($s['opening_cash']) : 0.0, 'cash_sales' => $cashSales, 'payouts' => $payoutTotal, 'refunds' => $refunds,
                 'expected' => $s['status'] === 'closed' ? r2($s['expected_cash']) : $expected,
                 'counted' => $s['counted_cash'] === null ? null : r2($s['counted_cash']),
                 'variance' => $s['variance'] === null ? null : r2($s['variance']),
@@ -158,7 +181,7 @@ class CashSessions
      * End of day. $denominations = [denomination => count]; if empty, $countedCash is used.
      * Posts cash short/over to the GL and stores the Z-reading snapshot.
      */
-    public static function close(array $denominations = [], ?float $countedCash = null, ?string $notes = null): array
+    public static function close(array $denominations = [], ?float $countedCash = null, ?string $notes = null, bool $returnFund = true): array
     {
         $s = self::requireOpen();
         $open = (int) DB::value("SELECT COUNT(*) FROM tickets WHERE cash_session_id = ? AND status = 'open'", [$s['id']]);
@@ -168,7 +191,7 @@ class CashSessions
         if (!$denominations && $countedCash !== null) $counted = $countedCash;
         $counted = r2($counted);
 
-        DB::transaction(function () use ($s, $counted, $denominations, $notes) {
+        DB::transaction(function () use ($s, $counted, $denominations, $notes, $returnFund) {
             $expected = self::report((int) $s['id'])['cash']['expected'];
             $variance = r2($counted - $expected);
             $jeId = null;
@@ -178,12 +201,18 @@ class CashSessions
                     ['key' => 'cash_short_over', 'debit' => max(-$variance, 0), 'credit' => max($variance, 0)],
                 ], 'pos_eod', (int) $s['id']);
             }
+            // beginning cash taken from the petty cash fund goes back to the fund (unless it stays in the drawer / safe)
+            $returnId = null;
+            if ($returnFund && ($s['opening_source'] ?? 'cash') === 'petty_cash' && (float) $s['opening_cash'] > 0) {
+                $returnId = PettyCash::drawerTransfer('fund_return', (float) $s['opening_cash'], (int) $s['id'], $s['business_date']);
+            }
             $den = json_decode($s['denominations'] ?? '', true) ?: [];
             $den['closing'] = $denominations;
             DB::update('cash_sessions', (int) $s['id'], [
                 'status' => 'closed', 'closed_by' => Auth::id(), 'closed_at' => now(), 'expected_cash' => $expected,
                 'counted_cash' => $counted, 'variance' => $variance, 'denominations' => json_encode($den),
                 'notes' => trim(($s['notes'] ?? '') . ($notes ? ' | ' . $notes : ''), ' |') ?: null, 'journal_entry_id' => $jeId,
+                'return_txn_id' => $returnId,
             ]);
             DB::update('cash_sessions', (int) $s['id'], ['z_data' => json_encode(self::report((int) $s['id']))]);
             Audit::log('close_day', 'cash_session', (int) $s['id'], ['expected' => $expected, 'counted' => $counted, 'variance' => $variance]);

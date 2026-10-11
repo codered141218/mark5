@@ -77,6 +77,13 @@ class Migrations
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
                 if (Settings::get('setup_done') === null) Settings::set('setup_done', '0');
             },
+            // 4: beginning cash of the POS drawer taken from the petty cash fund (and returned at close)
+            4 => function () {
+                DB::pdo()->exec("ALTER TABLE petty_cash_txns MODIFY txn_type ENUM('expense','replenish','change_fund','fund_return') NOT NULL");
+                self::addColumn('cash_sessions', 'opening_source', "VARCHAR(20) NOT NULL DEFAULT 'cash' AFTER opening_cash");
+                self::addColumn('cash_sessions', 'opening_txn_id', 'INT UNSIGNED NULL AFTER opening_source');
+                self::addColumn('cash_sessions', 'return_txn_id', 'INT UNSIGNED NULL AFTER opening_txn_id');
+            },
         ];
     }
 

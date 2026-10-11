@@ -491,6 +491,9 @@ CREATE TABLE IF NOT EXISTS cash_sessions (
   opened_by INT UNSIGNED NULL,
   opened_at DATETIME NULL,
   opening_cash DECIMAL(14,2) NOT NULL DEFAULT 0,
+  opening_source VARCHAR(20) NOT NULL DEFAULT 'cash',   -- 'cash' (cash on hand / safe) or 'petty_cash' (taken from the petty cash fund)
+  opening_txn_id INT UNSIGNED NULL,                     -- petty_cash_txns row of the beginning cash taken from the fund
+  return_txn_id INT UNSIGNED NULL,                      -- petty_cash_txns row of the beginning cash returned to the fund at close
   closed_by INT UNSIGNED NULL,
   closed_at DATETIME NULL,
   expected_cash DECIMAL(14,2) NULL,
@@ -622,7 +625,7 @@ CREATE TABLE IF NOT EXISTS petty_cash_txns (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   doc_no VARCHAR(32) NULL,
   txn_date DATE NOT NULL,
-  txn_type ENUM('expense','replenish') NOT NULL,
+  txn_type ENUM('expense','replenish','change_fund','fund_return') NOT NULL,   -- change_fund / fund_return: POS beginning cash taken from / returned to the fund
   source ENUM('fund','drawer') NOT NULL DEFAULT 'fund',
   amount DECIMAL(14,2) NOT NULL,
   account_id INT UNSIGNED NULL,

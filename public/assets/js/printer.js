@@ -789,7 +789,7 @@
     doc.lr('Cancelled orders', String(r.cancelled));
     doc.hr();
     doc.text('CASH DRAWER', { bold: true });
-    doc.lr('Beginning cash', money(r.cash.opening));
+    doc.lr(r.cash.opening_source === 'petty_cash' ? 'Beginning cash (petty cash)' : 'Beginning cash', money(r.cash.opening));
     doc.lr('Cash sales', money(r.cash.cash_sales));
     doc.lr('Less: Payouts', money(r.cash.payouts));
     if (r.cash.refunds > 0) doc.lr('Less: Refunds', money(r.cash.refunds));
@@ -797,6 +797,7 @@
     if (isZ) {
       doc.lr('ACTUAL CASH COUNT', money(r.cash.counted), { bold: true });
       doc.lr(r.cash.variance < 0 ? 'SHORT' : r.cash.variance > 0 ? 'OVER' : 'VARIANCE', money(r.cash.variance), { bold: true });
+      if (r.cash.returned_to_fund > 0) doc.lr('Returned to petty cash', money(r.cash.returned_to_fund));
     }
     doc.hr();
     doc.text('SALES BY CATEGORY', { bold: true });

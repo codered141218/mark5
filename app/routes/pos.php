@@ -30,6 +30,7 @@ $router->get('/api/pos/receipts', [Api::class, 'receipts'], 'pos.access');
 $router->get('/api/pos/customers', [Api::class, 'customers'], 'pos.settle');
 
 $router->post('/api/pos/day/open', [Api::class, 'openDay'], 'pos.open_day');
+$router->get('/api/pos/day/info', [Api::class, 'dayInfo'], 'pos.open_day');
 $router->get('/api/pos/day/xreading', [Api::class, 'xreading'], ['pos.xreading', 'pos.close_day']);
 $router->post('/api/pos/day/close', [Api::class, 'closeDay'], 'pos.close_day');
 

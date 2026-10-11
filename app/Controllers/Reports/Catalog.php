@@ -300,8 +300,8 @@ class Catalog
                 'columns' => [self::date(), self::text('doc_no', 'PCV no.'), self::text('type', 'Type'), self::text('source', 'Source'),
                     self::text('payee', 'Payee'), self::text('description', 'Description'), self::text('account', 'Account'), self::text('or_no', 'OR no.'),
                     self::money('amount', 'Amount', false) + [
-                        'value' => fn ($r) => ($r['type'] === 'replenish' ? 1 : -1) * (float) $r['amount'],
-                        'html' => fn ($r) => '<span class="' . ($r['status'] === 'void' ? 'muted' : '') . '">' . ($r['type'] === 'replenish' ? '+' : '−') . money($r['amount']) . '</span>',
+                        'value' => fn ($r) => (in_array($r['type'], ['replenish', 'fund_return'], true) ? 1 : -1) * (float) $r['amount'],
+                        'html' => fn ($r) => '<span class="' . ($r['status'] === 'void' ? 'muted' : '') . '">' . (in_array($r['type'], ['replenish', 'fund_return'], true) ? '+' : '−') . money($r['amount']) . '</span>',
                     ],
                     self::status(), self::text('recorded_by', 'Recorded by')],
                 'by_account' => [self::text('account', 'Account'), self::int('cnt', 'Count'), self::money('amount', 'Amount')],

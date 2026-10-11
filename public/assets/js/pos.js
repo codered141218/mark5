@@ -84,6 +84,7 @@
     pane: 'menu',                   // phones only: 'menu' | 'order'
     cat: 'all',                     // selected category id or 'all'
     queue: Promise.resolve(),       // order changes run one after another (fast taps never get lost)
+    boardFilter: (() => { try { return localStorage.getItem('mark5_board_filter') || 'all'; } catch (e) { return 'all'; } })(),
     flash: null,                    // {id, itemId, at}: the order line last highlighted (revealLine)
     adds: [],                       // item taps shown on the order panel but not saved yet: {n, target, item, qty, sending}
     addSeq: 0,
@@ -149,7 +150,8 @@
     reprintOrder: (id, stations) => post(`/orders/${id}/reprint-order`, { stations }),
     receipts: (q) => get('/receipts' + (q ? '?q=' + encodeURIComponent(q) : '')),
     customers: () => get('/customers'),
-    openDay: (data) => post('/day/open', data),
+    openDay: (data) => post('/day/open', data),                    // {business_date, opening_cash, denominations, source: cash|petty_cash}
+    dayInfo: () => get('/day/info'),                                // {petty_cash: fund balance | null}
     xreading: () => get('/day/xreading'),
     closeDay: (data) => post('/day/close', data),
     payouts: () => get('/payouts'),
@@ -548,20 +550,42 @@
     $('#pos-top').innerHTML = top.join('');
   }
 
+  /** Print state of an order on the board: 'new' (no order slip printed yet), 'added' (items added after the slip), 'printed', 'empty'. */
+  function slipState(o) {
+    if (!Number(o.unsent) && !Number(o.sent)) return 'empty';
+    if (!Number(o.unsent)) return 'printed';
+    return Number(o.sent) ? 'added' : 'new';
+  }
+  const BOARD_FILTERS = { all: 'All', unprinted: 'Not printed', printed: 'Printed' };
+
   function renderBoard() {
     const total = S.orders.reduce((sum, o) => sum + o.total, 0);
-    const cards = S.orders.map((o) => {
+    const unprinted = S.orders.filter((o) => ['new', 'added'].includes(slipState(o)));
+    const counts = { all: S.orders.length, unprinted: unprinted.length, printed: S.orders.filter((o) => slipState(o) === 'printed').length };
+    if (!BOARD_FILTERS[S.boardFilter] || (S.boardFilter !== 'all' && !counts[S.boardFilter])) S.boardFilter = 'all';
+    const shown = S.orders.filter((o) => S.boardFilter === 'all' || (S.boardFilter === 'unprinted' ? unprinted.includes(o) : slipState(o) === 'printed'));
+    const cards = shown.map((o) => {
       const sub = [o.table_label && o.customer_name ? o.customer_name : '', TYPE[o.order_type], o.ticket_no].filter(Boolean).join(' · ');
       const mins = minutesSince(o.created_at);
-      return `<div class="order-card t-${o.order_type}" role="button" tabindex="0" data-act="open" data-id="${o.id}">
+      const st = slipState(o);
+      const qty = Number(o.unsent_qty) || Number(o.unsent);
+      const badge = st === 'new' ? `<span class="oc-badge new">● NEW · not printed</span>`
+        : st === 'added' ? `<span class="oc-badge added">+ ${plural(qty, 'item')} not printed</span>`
+        : st === 'printed' ? `<span class="oc-badge printed">✓ Printed</span>`
+        : `<span class="oc-badge empty">No items</span>`;
+      return `<div class="order-card t-${o.order_type} slip-${st}" role="button" tabindex="0" data-act="open" data-id="${o.id}">
+          ${badge}
           <span class="oc-head"><span class="oc-title">${esc(orderTitle(o))}</span>
             <span class="oc-time${mins > 60 ? ' late' : mins > 30 ? ' slow' : ''}">${elapsed(o.created_at)}</span>
             <button type="button" class="oc-more" data-act="cardMenu" data-id="${o.id}" aria-label="More">⋯</button></span>
           <span class="oc-sub">${esc(sub)}</span>
           <span class="oc-foot"><span>${plural(o.item_count, 'item')}${o.pax > 1 ? ` · ${o.pax} pax` : ''}</span><b>${peso(o.total)}</b></span>
-          ${Number(o.unsent) ? `<span class="oc-unsent">● ${o.unsent} new — slip not printed yet</span>` : ''}
         </div>`;
     }).join('');
+    const filters = S.orders.length && counts.unprinted ? `<div class="board-filter" role="tablist">
+        ${Object.entries(BOARD_FILTERS).map(([k, label]) => `<button type="button" class="bf-chip${S.boardFilter === k ? ' on' : ''}${k === 'unprinted' ? ' warn' : ''}"
+          data-act="boardFilter" data-filter="${k}" ${counts[k] || k === 'all' ? '' : 'disabled'}>${label} <span class="count">${counts[k]}</span></button>`).join('')}
+      </div>` : '';
     const off = S.session ? '' : 'disabled';
     const closedMsg = can('pos.open_day') ? 'Press “Open Day” and enter the beginning cash to start selling.' : 'Ask a cashier or manager to open the day.';
     const ps = Printer.status();
@@ -578,9 +602,10 @@
         <button class="btn btn-xl" type="button" data-act="new" data-type="takeout" ${off}>+ Take-out</button>
         <button class="btn btn-xl" type="button" data-act="new" data-type="delivery" ${off}>+ Delivery</button>
         <span class="grow"></span>
-        <span class="muted board-sum">${S.orders.length} open · ${peso(total)}</span>
+        <span class="muted board-sum">${S.orders.length} open · ${peso(total)}${counts.unprinted ? ` · <b class="text-unprinted">${counts.unprinted} not printed</b>` : ''}</span>
         <button class="btn btn-lg" type="button" data-act="refresh" title="Refresh">↻</button>
       </div>
+      ${filters}
       <div class="board-grid">${cards || '<div class="empty board-empty">No open orders. Tap “+ New order” to start.</div>'}</div>`;
   }
 
@@ -1579,13 +1604,25 @@
     return { counts, total };
   }
 
-  function openDayDialog() {
+  async function openDayDialog() {
     let mode = 'count';
+    // where the beginning cash comes from: the petty cash fund (when there is money in it) or cash on hand / the safe
+    const info = await Api.dayInfo().catch(() => ({ petty_cash: null }));
+    const fund = info.petty_cash;
+    let source = fund !== null && fund > 0 ? 'petty_cash' : 'cash';
     const m = modal({
       title: 'Open business day — beginning cash',
       cls: 'wide dlg-cash',
       body: `<label class="field"><span class="field-label">Business date</span><input class="input" type="date" name="business_date" value="${esc(B.today)}">
           <span class="field-hint">Sales after midnight still count to this date until the day is closed.</span></label>
+        ${fund === null ? '' : `<div class="field mt"><span class="field-label">Beginning cash comes from</span>
+          <div class="seg open-source">
+            <button type="button" class="seg-btn${source === 'petty_cash' ? ' on' : ''}" data-act="source" data-source="petty_cash">
+              <b>Petty cash fund</b><small>${peso(fund)} available</small></button>
+            <button type="button" class="seg-btn${source === 'cash' ? ' on' : ''}" data-act="source" data-source="cash">
+              <b>Cash on hand / safe</b><small>not from petty cash</small></button>
+          </div>
+          <span class="field-hint source-hint"></span></div>`}
         <div class="tabs mt"><button type="button" class="tab active" data-act="mode" data-mode="count">Count by denomination</button>
           <button type="button" class="tab" data-act="mode" data-mode="amount">Enter total</button></div>
         <div class="mode-count">${denomCounter()}</div>
@@ -1593,6 +1630,11 @@
           <div class="cash-count"><div>${numField('opening_cash', '', 'money', 'placeholder="0.00"')}</div>${keypad(MONEY_KEYS, 'count-keys')}</div></div>`,
       foot: '<button type="button" class="btn btn-lg" data-x>Cancel</button><button type="submit" class="btn btn-success btn-lg open-btn">Open day</button>',
       actions: {
+        source: (b) => {
+          source = b.dataset.source;
+          m.el.querySelectorAll('[data-act=source]').forEach((x) => x.classList.toggle('on', x === b));
+          paint();
+        },
         mode: (b) => {
           mode = b.dataset.mode;
           m.el.querySelectorAll('[data-act=mode]').forEach((x) => x.classList.toggle('active', x === b));
@@ -1605,18 +1647,26 @@
       onSubmit: async (btn) => {
         const c = readCounts(m.el);
         const data = { business_date: m.$('[name=business_date]').value, opening_cash: mode === 'count' ? c.total : r2(m.$('[name=opening_cash]').value),
-          denominations: mode === 'count' ? c.counts : null };
+          denominations: mode === 'count' ? c.counts : null, source };
         const s = await run(() => Api.openDay(data), btn);
         if (!s) return;
         m.close();
         S.session = s;
-        App.toast('Business day opened');
+        App.toast(s.opening_source === 'petty_cash' ? `Business day opened · ${peso(s.opening_cash)} taken from petty cash` : 'Business day opened');
         render();
       },
     });
     const paint = () => {
       const total = mode === 'count' ? readCounts(m.el).total : r2(m.$('[name=opening_cash]').value);
       m.$('.open-btn').textContent = `Open day with ${peso(total)}`;
+      const hint = m.$('.source-hint');
+      if (hint) {
+        const short = source === 'petty_cash' && total > fund;
+        hint.classList.toggle('text-red', short);
+        hint.textContent = source === 'cash' ? 'The petty cash fund is not touched.'
+          : short ? `The petty cash fund has only ${peso(fund)} — replenish it in the back office or choose cash on hand.`
+          : `${peso(total)} is taken out of the petty cash fund now and goes back to it when the day is closed.`;
+      }
     };
     const pad = numpad(m.el, paint);
     paint();
@@ -1629,6 +1679,8 @@
    */
   function endOfDayDialog(x) {
     const open = S.orders.length;
+    const sess = (x && x.session) || S.session || {};
+    const fromFund = sess.opening_source === 'petty_cash' && Number(sess.opening_cash) > 0;
     const expected = x ? r2(x.cash.expected) : null;
     const blind = !!OPT.blind_count || expected === null;
     const m = modal({
@@ -1644,16 +1696,20 @@
               <div class="eod-diff short"><span class="eod-diff-label">Still to count</span><b class="eod-diff-amt">${peso(expected)}</b><small class="eod-diff-hint">short until it reaches the expected cash</small></div>
             </div>`}
         ${denomCounter()}
+        ${fromFund ? `<label class="checkbox return-fund mt"><input type="checkbox" name="return_fund" checked>
+          <span>Return the beginning cash <b>${peso(sess.opening_cash)}</b> to the petty cash fund
+          <small class="muted">(it was taken from petty cash when the day was opened — untick if it stays in the drawer for tomorrow)</small></span></label>` : ''}
         <label class="field mt"><span class="field-label">Remarks</span><input class="input" name="notes" autocomplete="off"></label>`,
       foot: '<button type="button" class="btn btn-lg" data-x>Cancel</button><button type="submit" class="btn btn-danger btn-lg">Close day</button>',
       onSubmit: async (btn) => {
         const c = readCounts(m.el);
         const diff = blind ? 0 : r2(c.total - expected);
         const verdict = blind ? '' : diff === 0 ? ' The drawer is balanced.' : diff < 0 ? ` That is SHORT by ${peso(-diff)}.` : ` That is OVER by ${peso(diff)}.`;
+        const returnFund = fromFund && m.$('[name=return_fund]').checked;
         const ok = await App.ask({ title: 'Close the business day?', okText: 'Close day', danger: true,
-          message: `Counted cash: ${peso(c.total)}.${verdict} After closing, no more sales can be recorded for this day and the Z-reading is generated.` });
+          message: `Counted cash: ${peso(c.total)}.${verdict}${returnFund ? ` ${peso(sess.opening_cash)} goes back to the petty cash fund.` : ''} After closing, no more sales can be recorded for this day and the Z-reading is generated.` });
         if (!ok) return;
-        const z = await run(() => Api.closeDay({ denominations: c.counts, notes: m.$('[name=notes]').value.trim() }), btn);
+        const z = await run(() => Api.closeDay({ denominations: c.counts, notes: m.$('[name=notes]').value.trim(), return_fund: returnFund }), btn);
         if (!z) return;
         m.close();
         S.session = null;
@@ -1966,6 +2022,11 @@
     done: doneOrder,
     pay: startPay,
     pane: (b) => { S.pane = b.dataset.pane; render(); },
+    boardFilter: (b) => {
+      S.boardFilter = b.dataset.filter;
+      try { localStorage.setItem('mark5_board_filter', S.boardFilter); } catch (e) { /* private mode */ }
+      renderBoard();
+    },
   };
 
   const pos = document.getElementById('pos');

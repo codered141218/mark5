@@ -1,8 +1,8 @@
-<?php /** Petty cash list. Variables: $from, $to, $rows, $columns, $stats, $fundBalance, $expenseAccounts, $banks */ use App\Core\Table; ?>
+<?php /** Petty cash list. Variables: $from, $to, $rows, $columns, $stats, $fundBalance, $atPos, $expenseAccounts, $banks */ use App\Core\Table; ?>
 <div class="page-header">
   <div>
     <h1>Petty Cash</h1>
-    <p class="muted">Small cash expenses paid from the petty cash box or the POS cash drawer. Every entry is posted to the general ledger automatically.</p>
+    <p class="muted">Small cash expenses paid from the petty cash box or the POS cash drawer, and the POS beginning cash taken from the fund. Every entry is posted to the general ledger automatically.</p>
   </div>
   <div class="page-actions">
     <?php if (can('pettycash.manage')): ?>
@@ -17,7 +17,11 @@
 <?= view('partials/daterange', ['from' => $from, 'to' => $to], null) ?>
 
 <div class="stats mb">
-  <?= view('finance/partials/stat', ['label' => 'Petty cash fund balance', 'value' => peso($fundBalance), 'sub' => 'Current balance (all dates)', 'tone' => $fundBalance < 0 ? 'red' : 'brand'], null) ?>
+  <?= view('finance/partials/stat', ['label' => 'Petty cash fund balance', 'value' => peso($fundBalance),
+      'sub' => $atPos > 0 ? 'In the box now · plus ' . peso($atPos) . ' at the POS as beginning cash' : 'Current balance (all dates)', 'tone' => $fundBalance < 0 ? 'red' : 'brand'], null) ?>
+  <?php if ($atPos > 0): ?>
+    <?= view('finance/partials/stat', ['label' => 'At the POS (beginning cash)', 'value' => peso($atPos), 'sub' => 'Taken when the day was opened · returns to the fund at close', 'tone' => 'amber'], null) ?>
+  <?php endif; ?>
   <?= view('finance/partials/stat', ['label' => 'Expenses from fund', 'value' => peso($stats['fund']), 'sub' => 'Paid from the petty cash box'], null) ?>
   <?= view('finance/partials/stat', ['label' => 'Replenishments', 'value' => peso($stats['replenish']), 'sub' => 'Added to the fund', 'tone' => 'green'], null) ?>
   <?= view('finance/partials/stat', ['label' => 'Drawer payouts', 'value' => peso($stats['drawer']), 'sub' => 'Paid from the POS cash drawer', 'tone' => 'amber'], null) ?>

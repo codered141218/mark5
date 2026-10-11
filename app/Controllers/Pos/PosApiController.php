@@ -7,6 +7,7 @@ use App\Core\Request;
 use App\Core\Response;
 use App\Services\Audit;
 use App\Services\Discounts;
+use App\Services\Ledger;
 use App\Services\Finance\PettyCash;
 use App\Services\Pos\CashSessions;
 use App\Services\Pos\Tickets;
@@ -174,7 +175,14 @@ class PosApiController
     // ------------------------------------------------------------------ business day
     public function openDay(Request $req): Response
     {
-        return json(CashSessions::open((float) $req->input('opening_cash', 0), $req->input('business_date'), $req->input('denominations') ?: null, $req->input('notes')));
+        return json(CashSessions::open((float) $req->input('opening_cash', 0), $req->input('business_date'), $req->input('denominations') ?: null, $req->input('notes'),
+            (string) $req->input('source', 'cash')));
+    }
+
+    /** For the Open Day dialog: the petty cash fund balance (null when there is no petty cash account). */
+    public function dayInfo(Request $req): Response
+    {
+        return json(['petty_cash' => Ledger::accountOrNull('petty_cash') ? PettyCash::fundBalance() : null]);
     }
 
     public function xreading(Request $req): Response
@@ -185,7 +193,8 @@ class PosApiController
     public function closeDay(Request $req): Response
     {
         $counted = $req->input('counted_cash');
-        return json(CashSessions::close((array) $req->input('denominations', []), $counted === null || $counted === '' ? null : (float) $counted, $req->input('notes')));
+        return json(CashSessions::close((array) $req->input('denominations', []), $counted === null || $counted === '' ? null : (float) $counted, $req->input('notes'),
+            !in_array($req->input('return_fund', '1'), [false, 0, '0', 'false'], true)));
     }
 
     // ------------------------------------------------------------------ drawer payouts (petty cash)

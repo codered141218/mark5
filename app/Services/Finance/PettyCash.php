@@ -17,6 +17,11 @@ class PettyCash
 {
     public const SOURCES = ['fund' => 'Petty cash box', 'drawer' => 'POS cash drawer'];
 
+    public const TYPES = [
+        'expense' => 'Expense', 'replenish' => 'Replenishment',
+        'change_fund' => 'Beginning cash to POS', 'fund_return' => 'Returned from POS',
+    ];
+
     /** Transactions in a date range. Cashiers who only have pos.petty_cash see their own entries. */
     public static function list(string $from, string $to): array
     {
@@ -49,6 +54,13 @@ class PettyCash
     {
         $id = Ledger::accountOrNull('petty_cash');
         return $id ? Ledger::balance($id) : 0.0;
+    }
+
+    /** Beginning cash of the open business day that was taken from the fund and is still in the POS drawer (0 if none). */
+    public static function atPos(): float
+    {
+        $s = DB::one("SELECT opening_cash FROM cash_sessions WHERE status = 'open' AND opening_source = 'petty_cash' AND opening_txn_id IS NOT NULL ORDER BY id DESC LIMIT 1");
+        return $s ? r2($s['opening_cash']) : 0.0;
     }
 
     /**
@@ -115,6 +127,30 @@ class PettyCash
     }
 
     /**
+     * Move the POS beginning cash between the petty cash fund and the cash drawer (opening / closing the business day).
+     * 'change_fund': Dr Cash on Hand / Cr Petty Cash Fund.  'fund_return': Dr Petty Cash Fund / Cr Cash on Hand.
+     * Called by CashSessions inside its transaction (the day's own permissions apply). Returns the new id.
+     */
+    public static function drawerTransfer(string $type, float $amount, int $sessionId, string $date): int
+    {
+        $amount = r2($amount);
+        $out = $type === 'change_fund';
+        $memo = $out ? "Beginning cash for the POS - business day $date" : "Beginning cash returned from the POS - business day $date";
+        $id = DB::insert('petty_cash_txns', [
+            'doc_no' => Sequence::next('PCV', 'PCV'), 'txn_date' => $date, 'txn_type' => $out ? 'change_fund' : 'fund_return', 'source' => 'fund',
+            'amount' => $amount, 'description' => $out ? 'Beginning cash / change fund for the POS' : 'Beginning cash returned at end of day',
+            'cash_session_id' => $sessionId, 'status' => 'posted', 'created_by' => Auth::id(), 'created_at' => now(),
+        ]);
+        $je = Ledger::post($date, $memo, [
+            ['key' => $out ? 'cash_on_hand' : 'petty_cash', 'debit' => $amount],
+            ['key' => $out ? 'petty_cash' : 'cash_on_hand', 'credit' => $amount],
+        ], 'petty_cash', $id);
+        DB::update('petty_cash_txns', $id, ['journal_entry_id' => $je]);
+        Audit::log('create', 'petty_cash', $id, ['type' => $type, 'amount' => $amount, 'cash_session' => $sessionId]);
+        return $id;
+    }
+
+    /**
      * Void a transaction (reverses its journal entry).
      * Without pettycash.manage, a cashier may void only their own drawer payout of the open business day;
      * anything else needs a manager PIN. Payouts of a closed business day can no longer be voided.
@@ -124,6 +160,9 @@ class PettyCash
         Auth::require('pettycash.manage', 'pos.petty_cash');
         $p = DB::one('SELECT * FROM petty_cash_txns WHERE id = ?', [$id]);
         if (!$p || $p['status'] !== 'posted') throw HttpException::bad('Transaction not found or already void');
+        if (in_array($p['txn_type'], ['change_fund', 'fund_return'], true)) {
+            throw HttpException::bad('This is the POS beginning cash of a business day. It follows the day itself and cannot be voided here.');
+        }
         if (!Auth::can('pettycash.manage')) {
             $open = DB::value("SELECT id FROM cash_sessions WHERE status = 'open' ORDER BY id DESC LIMIT 1");
             $ownOpenPayout = (int) $p['created_by'] === Auth::id() && $open && (int) $p['cash_session_id'] === (int) $open;
