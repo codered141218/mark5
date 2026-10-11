@@ -451,3 +451,53 @@ dialog.modal[open] { animation: dlg-in .22s var(--ease); }
 .brand-logo { flex-shrink: 0; }
 .brand > div:not(.brand-logo) { min-width: 0; flex: 1; }
 .brand-name { overflow-wrap: anywhere; line-height: 1.2; }
+
+/* ---------- payroll */
+.pay-steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.pay-step { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border);
+  color: var(--text); text-decoration: none; }
+a.pay-step:hover { border-color: var(--brand); }
+.pay-step b { width: 26px; height: 26px; flex-shrink: 0; border-radius: 99px; display: grid; place-items: center; background: var(--brand-soft); color: var(--brand); font-size: 13px; }
+.pay-step span { display: flex; flex-direction: column; font-weight: 600; font-size: 13px; }
+.pay-step small { font-weight: 400; color: var(--muted); font-size: 12px; margin-top: 2px; }
+@media (max-width: 1000px) { .pay-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.cutoff-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; }
+.form-section { font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); border-top: 1px solid var(--border); padding-top: 12px; margin-top: 4px; }
+.table tr.paid-row td { background: rgba(5, 150, 105, .04); }
+.payout-list { max-height: 300px; overflow: auto; border: 1px solid var(--border); border-radius: 10px; padding: 4px 10px; }
+.payout-row { display: flex; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); width: 100%; }
+.payout-row:last-child { border-bottom: 0; }
+.line-edit { display: inline-block; margin-left: 6px; position: relative; }
+.line-edit summary { list-style: none; cursor: pointer; color: var(--muted); font-size: 12px; padding: 0 4px; }
+.line-edit summary::-webkit-details-marker { display: none; }
+.line-edit-pop { position: absolute; right: 0; top: 22px; z-index: 5; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 10px; box-shadow: var(--shadow-lg); text-align: left; }
+.att-days tr.att-absent td { color: var(--red); }
+.att-days tr.att-rest td { color: var(--muted); }
+.att-card { padding: 0; }
+.att-scroll { overflow: auto; max-height: 72vh; }
+.att-grid { border-collapse: separate; border-spacing: 0; font-size: 11.5px; min-width: 100%; }
+.att-grid th, .att-grid td { padding: 4px 5px; border-bottom: 1px solid var(--border); text-align: center; white-space: nowrap; }
+.att-grid thead th { position: sticky; top: 0; background: var(--surface); z-index: 2; font-weight: 500; color: var(--muted); }
+.att-grid thead th b { color: var(--text); font-size: 13px; }
+.att-grid thead th.we { color: var(--brand); }
+.att-grid .att-name { position: sticky; left: 0; background: var(--surface); z-index: 1; text-align: left; min-width: 150px; font-weight: 600; }
+.att-grid thead .att-name { z-index: 3; }
+.att-c { min-width: 46px; cursor: pointer; line-height: 1.25; font-variant-numeric: tabular-nums; }
+.att-c span { display: block; }
+.att-c.ok { background: rgba(5, 150, 105, .08); }
+.att-c.late { background: rgba(217, 119, 6, .12); }
+.att-c.bad { background: rgba(220, 38, 38, .08); color: var(--red); }
+.att-c.rest { background: var(--gray-soft); color: var(--muted); }
+.att-c:hover { outline: 2px solid var(--brand); outline-offset: -2px; }
+.att-st { font-weight: 700; }
+.att-grid td.num { font-variant-numeric: tabular-nums; }
+.att-legend { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+.att-k { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-left: 8px; }
+.att-k.ok { background: rgba(5, 150, 105, .25); } .att-k.late { background: rgba(217, 119, 6, .35); } .att-k.bad { background: rgba(220, 38, 38, .25); } .att-k.rest { background: #d6dae2; }
+.my-slips { display: grid; gap: 10px; max-width: 640px; }
+.my-slip { display: flex; justify-content: space-between; gap: 12px; padding: 16px 18px; border-radius: 16px; background: var(--surface); border: 1px solid var(--border);
+  box-shadow: var(--shadow); color: var(--text); text-decoration: none; }
+.my-slip:hover { border-color: var(--brand); }
+.my-slip span { display: flex; flex-direction: column; font-weight: 700; }
+.my-slip small { font-weight: 400; color: var(--muted); font-size: 12px; margin-top: 2px; }
+.my-slip-net { text-align: right; font-size: 18px; }

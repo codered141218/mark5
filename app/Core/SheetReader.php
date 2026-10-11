@@ -2,7 +2,7 @@
 namespace App\Core;
 
 /**
- * Reads the first worksheet of an Excel .xlsx file, or a .csv file, into rows of cell values (strings).
+ * Reads the first worksheet of an Excel .xlsx / .xls file, or a .csv file, into rows of cell values (strings).
  * No libraries needed: an .xlsx is a zip of XML files (needs PHP's zip extension, as the Excel export does).
  *
  *   $rows = SheetReader::read('/tmp/upload.xlsx', 'items.xlsx');   // [['Name', 'Price'], ['Adobo', '185'], ...]
@@ -14,7 +14,7 @@ class SheetReader
         $ext = strtolower(pathinfo($originalName ?: $path, PATHINFO_EXTENSION));
         if ($ext === 'csv' || $ext === 'txt') return self::csv($path);
         if ($ext === 'xlsx') return self::xlsx($path);
-        if ($ext === 'xls') throw HttpException::bad('Old .xls files are not supported. In Excel choose File → Save As → "Excel Workbook (.xlsx)" or CSV, then upload again.');
+        if ($ext === 'xls') return self::trimEmpty(XlsReader::firstSheet($path));   // Excel 97-2003
         throw HttpException::bad('Upload an Excel file (.xlsx) or a CSV file');
     }
 

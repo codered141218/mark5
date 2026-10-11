@@ -35,7 +35,16 @@ CREATE TABLE IF NOT EXISTS employees (
   phone VARCHAR(40) NULL,
   date_hired DATE NULL,
   active TINYINT(1) NOT NULL DEFAULT 1,
-  notes TEXT NULL
+  notes TEXT NULL,
+  biometric_id VARCHAR(20) NULL,        -- user ID on the biometric (ZKTeco) device
+  pay_type VARCHAR(10) NOT NULL DEFAULT 'monthly',   -- monthly (half per cut-off, absences deducted) | daily (days worked x daily rate)
+  monthly_rate DECIMAL(14,2) NOT NULL DEFAULT 0,
+  daily_rate DECIMAL(14,2) NOT NULL DEFAULT 0,
+  sss DECIMAL(12,2) NOT NULL DEFAULT 0,               -- employee share deducted every pay-out
+  philhealth DECIMAL(12,2) NOT NULL DEFAULT 0,
+  pagibig DECIMAL(12,2) NOT NULL DEFAULT 0,
+  wtax DECIMAL(12,2) NOT NULL DEFAULT 0,
+  ca_deduction DECIMAL(12,2) NOT NULL DEFAULT 0       -- cash advance deducted per pay-out (0 = the whole balance)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS users (
@@ -643,4 +652,103 @@ CREATE TABLE IF NOT EXISTS petty_cash_txns (
   created_by INT UNSIGNED NULL,
   created_at DATETIME NULL,
   KEY ix_pc_date (txn_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS attendance_imports (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  file_name VARCHAR(190) NULL,
+  period_from DATE NULL,
+  period_to DATE NULL,
+  employees INT NOT NULL DEFAULT 0,
+  days INT NOT NULL DEFAULT 0,
+  created_by INT UNSIGNED NULL,
+  created_at DATETIME NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- One row per employee per day: first and last punch of the biometric device, or set by hand.
+-- day_type: auto = present when both punches exist, else absent; present / absent / rest (day off) / leave (paid) set by hand.
+CREATE TABLE IF NOT EXISTS attendance (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  employee_id INT UNSIGNED NOT NULL,
+  work_date DATE NOT NULL,
+  time_in TIME NULL,
+  time_out TIME NULL,
+  punches VARCHAR(255) NULL,
+  day_type VARCHAR(10) NOT NULL DEFAULT 'auto',
+  source VARCHAR(10) NOT NULL DEFAULT 'device',
+  note VARCHAR(255) NULL,
+  import_id INT UNSIGNED NULL,
+  updated_by INT UNSIGNED NULL,
+  updated_at DATETIME NULL,
+  UNIQUE KEY ux_att_emp_date (employee_id, work_date),
+  KEY ix_att_date (work_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS payroll_runs (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  run_no VARCHAR(32) NULL,
+  period_from DATE NOT NULL,
+  period_to DATE NOT NULL,
+  pay_date DATE NOT NULL,
+  status VARCHAR(10) NOT NULL DEFAULT 'draft',      -- draft | posted | paid | void
+  notes VARCHAR(255) NULL,
+  total_gross DECIMAL(14,2) NOT NULL DEFAULT 0,
+  total_deductions DECIMAL(14,2) NOT NULL DEFAULT 0,
+  total_net DECIMAL(14,2) NOT NULL DEFAULT 0,
+  journal_entry_id INT UNSIGNED NULL,
+  created_by INT UNSIGNED NULL,
+  created_at DATETIME NULL,
+  posted_by INT UNSIGNED NULL,
+  posted_at DATETIME NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS payslips (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  run_id INT UNSIGNED NOT NULL,
+  employee_id INT UNSIGNED NOT NULL,
+  emp_no VARCHAR(32) NULL,
+  full_name VARCHAR(120) NOT NULL,
+  position VARCHAR(80) NULL,
+  pay_type VARCHAR(10) NOT NULL DEFAULT 'monthly',
+  monthly_rate DECIMAL(14,2) NOT NULL DEFAULT 0,
+  daily_rate DECIMAL(14,4) NOT NULL DEFAULT 0,
+  hourly_rate DECIMAL(14,4) NOT NULL DEFAULT 0,
+  days_in_period INT NOT NULL DEFAULT 0,
+  days_present DECIMAL(6,2) NOT NULL DEFAULT 0,
+  days_absent DECIMAL(6,2) NOT NULL DEFAULT 0,
+  days_rest DECIMAL(6,2) NOT NULL DEFAULT 0,
+  days_leave DECIMAL(6,2) NOT NULL DEFAULT 0,
+  hours_worked DECIMAL(8,2) NOT NULL DEFAULT 0,
+  late_minutes INT NOT NULL DEFAULT 0,
+  undertime_hours DECIMAL(8,2) NOT NULL DEFAULT 0,
+  ot_hours DECIMAL(8,2) NOT NULL DEFAULT 0,
+  basic_pay DECIMAL(14,2) NOT NULL DEFAULT 0,
+  absence_deduction DECIMAL(14,2) NOT NULL DEFAULT 0,
+  undertime_deduction DECIMAL(14,2) NOT NULL DEFAULT 0,
+  ot_pay DECIMAL(14,2) NOT NULL DEFAULT 0,
+  bonus_total DECIMAL(14,2) NOT NULL DEFAULT 0,
+  gross_pay DECIMAL(14,2) NOT NULL DEFAULT 0,
+  deduction_total DECIMAL(14,2) NOT NULL DEFAULT 0,
+  net_pay DECIMAL(14,2) NOT NULL DEFAULT 0,
+  days_json MEDIUMTEXT NULL,                          -- the day-by-day attendance used for this payslip
+  paid_at DATETIME NULL,
+  paid_method VARCHAR(20) NULL,                       -- cash | petty_cash | bank
+  bank_account_id INT UNSIGNED NULL,
+  payout_je_id INT UNSIGNED NULL,
+  UNIQUE KEY ux_payslip (run_id, employee_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Bonuses / allowances (kind bonus) and deductions (kind deduction: cash_advance, sss, philhealth, pagibig, tax, other).
+CREATE TABLE IF NOT EXISTS payslip_lines (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  payslip_id INT UNSIGNED NOT NULL,
+  kind VARCHAR(10) NOT NULL,
+  type VARCHAR(20) NOT NULL,
+  description VARCHAR(190) NULL,
+  amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+  advance_id INT UNSIGNED NULL,
+  auto TINYINT(1) NOT NULL DEFAULT 0,                 -- added by the system (employee setup / cash advance), kept on recompute
+  repayment_id INT UNSIGNED NULL,
+  created_by INT UNSIGNED NULL,
+  KEY ix_psl (payslip_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

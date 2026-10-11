@@ -180,6 +180,9 @@ class CashAdvances
         Auth::require('ca.manage');
         $r = DB::one('SELECT * FROM ca_repayments WHERE id = ?', [$repaymentId]);
         if (!$r || $r['status'] !== 'posted') throw HttpException::bad('Repayment not found or already void');
+        if ($run = DB::value('SELECT r.run_no FROM payslip_lines l JOIN payslips s ON s.id = l.payslip_id JOIN payroll_runs r ON r.id = s.run_id WHERE l.repayment_id = ?', [$repaymentId])) {
+            throw HttpException::bad("This repayment is a salary deduction of payroll $run. Void that payroll instead.");
+        }
         DB::transaction(function () use ($r) {
             Ledger::reverse($r['journal_entry_id'] ? (int) $r['journal_entry_id'] : null, today());
             DB::update('ca_repayments', (int) $r['id'], ['status' => 'void']);

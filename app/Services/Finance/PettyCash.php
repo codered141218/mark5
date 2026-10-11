@@ -212,7 +212,7 @@ class PettyCash
         $p = DB::one('SELECT * FROM petty_cash_txns WHERE id = ?', [$id]);
         if (!$p || $p['status'] !== 'posted') throw HttpException::bad('Transaction not found or already void');
         if ($p['ref_type']) {
-            $what = ['inv_doc' => 'stock-in / delivery', 'disbursement' => 'payment voucher', 'cash_advance' => 'cash advance'][$p['ref_type']] ?? 'document';
+            $what = ['inv_doc' => 'stock-in / delivery', 'disbursement' => 'payment voucher', 'cash_advance' => 'cash advance', 'payroll' => 'salary payout of payroll'][$p['ref_type']] ?? 'document';
             throw HttpException::bad("This payout comes from the $what {$p['or_no']}. Void that document in the back office instead.");
         }
         if (in_array($p['txn_type'], ['change_fund', 'fund_return'], true)) {

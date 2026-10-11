@@ -52,6 +52,12 @@ class Permissions
             'ca.manage' => 'View all advances & record repayments',
             'employees.manage' => 'Manage employees',
         ],
+        'Payroll' => [
+            'payroll.view' => 'View payroll, attendance & all payslips',
+            'payroll.manage' => 'Import attendance, prepare payroll, add bonuses & deductions',
+            'payroll.post' => 'Approve (post) payroll, pay out salaries, void payroll',
+            'payroll.self' => 'View own payslips',
+        ],
         'Administration' => [
             'admin.users' => 'Manage users',
             'admin.roles' => 'Manage roles & permissions',
@@ -82,15 +88,15 @@ class Permissions
             ['name' => 'Manager', 'description' => 'Store manager: POS overrides, inventory, reports, approvals',
                 'permissions' => array_values(array_diff($all, ['admin.roles', 'admin.backup', 'finance.accounts']))],
             ['name' => 'Cashier', 'description' => 'Front of house cashier',
-                'permissions' => ['pos.access', 'pos.open_day', 'pos.close_day', 'pos.xreading', 'pos.settle', 'pos.reprint', 'pos.split_move', 'pos.petty_cash', 'ca.request']],
+                'permissions' => ['pos.access', 'pos.open_day', 'pos.close_day', 'pos.xreading', 'pos.settle', 'pos.reprint', 'pos.split_move', 'pos.petty_cash', 'ca.request', 'payroll.self']],
             ['name' => 'Waiter', 'description' => 'Takes orders only, cannot accept payment',
-                'permissions' => ['pos.access', 'pos.split_move', 'ca.request']],
+                'permissions' => ['pos.access', 'pos.split_move', 'ca.request', 'payroll.self']],
             ['name' => 'Inventory Clerk', 'description' => 'Stock room / commissary',
-                'permissions' => ['inventory.view', 'inventory.receive', 'inventory.issue', 'inventory.waste', 'inventory.count', 'reports.inventory', 'ca.request']],
+                'permissions' => ['inventory.view', 'inventory.receive', 'inventory.issue', 'inventory.waste', 'inventory.count', 'reports.inventory', 'ca.request', 'payroll.self']],
             ['name' => 'Accountant', 'description' => 'Bookkeeping & finance',
                 'permissions' => ['dashboard.view', 'reports.sales', 'reports.inventory', 'reports.finance', 'pettycash.view', 'pettycash.manage',
                     'finance.view', 'finance.accounts', 'finance.journal', 'finance.banks', 'finance.ap', 'finance.ar', 'partners.manage',
-                    'ca.request', 'ca.manage', 'inventory.view', 'inventory.post']],
+                    'ca.request', 'ca.manage', 'inventory.view', 'inventory.post', 'payroll.view', 'payroll.manage', 'payroll.post', 'payroll.self']],
         ];
     }
 }

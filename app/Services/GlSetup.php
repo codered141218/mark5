@@ -29,7 +29,12 @@ class GlSetup
         'ar' => ['Receivables & payables', 'Accounts receivable', 'Customer invoices and POS "charge to account"', ['asset']],
         'emp_advances' => ['Receivables & payables', 'Employee cash advances', 'Approved cash advances and repayments', ['asset']],
         'ap' => ['Receivables & payables', 'Accounts payable', 'Supplier bills and deliveries on credit', ['liability']],
-        'salaries_payable' => ['Receivables & payables', 'Salaries payable', 'Cash advances repaid by salary deduction', ['liability']],
+        'salaries_payable' => ['Receivables & payables', 'Salaries payable', 'Net pay of posted payroll until paid out; cash advances repaid by salary deduction', ['liability']],
+
+        'salaries' => ['Payroll', 'Salaries & wages', 'Gross pay (basic, overtime, bonuses) of posted payroll', ['expense']],
+        'statutory_payable' => ['Payroll', 'SSS / PhilHealth / Pag-IBIG payable', 'Employee contributions deducted in payroll', ['liability']],
+        'wtax_payable' => ['Payroll', 'Withholding tax payable', 'Tax withheld in payroll', ['liability']],
+        'payroll_other' => ['Payroll', 'Other payroll deductions', 'Other deductions (shortages, damages, uniforms …); default: reduces salaries & wages', ['expense', 'income', 'liability', 'asset']],
 
         'sales' => ['Sales & taxes', 'Sales', 'POS sales (unless the category has its own), customer invoices', ['income']],
         'sales_discounts' => ['Sales & taxes', 'Sales discounts', 'SC/PWD, employee and promo discounts', ['income', 'expense']],
@@ -50,6 +55,7 @@ class GlSetup
     /** Role a payment-method role falls back to when not set (pay.gcash -> ewallet_clearing). */
     public static function fallback(string $role): string
     {
+        if ($role === 'payroll_other') return 'salaries';
         if (str_starts_with($role, 'pay.')) {
             return CashSessions::PAYMENT_METHODS[substr($role, 4)]['account'] ?? 'ewallet_clearing';
         }

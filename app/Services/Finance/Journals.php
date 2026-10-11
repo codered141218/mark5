@@ -12,6 +12,8 @@ class Journals
     /** Human labels for journal_entries.source_type. */
     public const SOURCES = [
         'manual' => 'Manual entry',
+        'payroll' => 'Payroll',
+        'payroll_payout' => 'Salary payout',
         'pos_sale' => 'POS sale',
         'pos_eod' => 'POS end of day',
         'inv_receive' => 'Delivery / stock in',

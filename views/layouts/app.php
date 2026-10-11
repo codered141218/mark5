@@ -43,7 +43,10 @@ $business = App\Services\Settings::get('business_name', 'Mark5');
       <?php foreach ($nav as $group => $items):
           $visible = array_filter($items, fn ($i) => can(...$i[3]));
           if (!$visible) continue;
-          $isActive = fn ($href) => $href === '/' ? $path === '/' : ($path === $href || str_starts_with($path, $href . '/'));
+          $matches = fn ($href) => $href === '/' ? $path === '/' : ($path === $href || str_starts_with($path, $href . '/'));
+          // the most specific link wins (/payroll/attendance over /payroll)
+          $best = array_reduce(array_column($items, 0), fn ($b, $h) => $matches($h) && strlen($h) > strlen((string) $b) ? $h : $b);
+          $isActive = fn ($href) => $href === $best;
           $hasActive = (bool) array_filter($visible, fn ($i) => $isActive($i[0]));
           $links = '';
           foreach ($visible as [$href, $label, $icon]) {

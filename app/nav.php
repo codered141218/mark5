@@ -38,6 +38,9 @@ return [
     'People' => [
         ['/cash-advances', 'Cash Advances', '⚑', ['ca.request', 'ca.approve', 'ca.manage']],
         ['/employees', 'Employees', '☻', ['employees.manage']],
+        ['/payroll', 'Payroll', '₱', ['payroll.view', 'payroll.manage', 'payroll.post']],
+        ['/payroll/attendance', 'Attendance', '⏱', ['payroll.view', 'payroll.manage']],
+        ['/my/payslips', 'My Payslips', '✉', ['payroll.self']],
     ],
     'Administration' => [
         ['/admin/users', 'Users', '⚇', ['admin.users']],

@@ -22,6 +22,7 @@ class Reset
         'payments', 'ticket_items', 'tickets', 'cash_sessions', 'petty_cash_txns', 'disbursements',
         'count_lines', 'count_sessions', 'inv_doc_lines', 'inv_docs', 'stock_movements',
         'item_components', 'item_uoms', 'items', 'categories', 'prep_stations', 'uom_conversions', 'uoms', 'discounts',
+        'payslip_lines', 'payslips', 'payroll_runs', 'attendance', 'attendance_imports',
         'ca_repayments', 'cash_advances', 'ar_receipts', 'ar_invoices', 'ap_payments', 'ap_bills',
         'bank_txns', 'bank_accounts', 'journal_lines', 'journal_entries', 'accounts',
         'suppliers', 'customers', 'employees', 'sequences', 'login_attempts', 'audit_log',

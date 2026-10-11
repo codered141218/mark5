@@ -99,6 +99,34 @@ class Migrations
             7 => function () {
                 self::addColumn('ticket_items', 'sent_at', 'DATETIME NULL AFTER printed');
             },
+            // 8: payroll — employee pay setup, biometric attendance, payroll runs, payslips
+            8 => function () {
+                foreach ([
+                    ['biometric_id', 'VARCHAR(20) NULL'], ['pay_type', "VARCHAR(10) NOT NULL DEFAULT 'monthly'"],
+                    ['monthly_rate', 'DECIMAL(14,2) NOT NULL DEFAULT 0'], ['daily_rate', 'DECIMAL(14,2) NOT NULL DEFAULT 0'],
+                    ['sss', 'DECIMAL(12,2) NOT NULL DEFAULT 0'], ['philhealth', 'DECIMAL(12,2) NOT NULL DEFAULT 0'],
+                    ['pagibig', 'DECIMAL(12,2) NOT NULL DEFAULT 0'], ['wtax', 'DECIMAL(12,2) NOT NULL DEFAULT 0'],
+                    ['ca_deduction', 'DECIMAL(12,2) NOT NULL DEFAULT 0'],
+                ] as [$col, $def]) self::addColumn('employees', $col, $def);
+                $sql = file_get_contents(BASE_PATH . '/database/schema.sql');
+                foreach (['attendance_imports', 'attendance', 'payroll_runs', 'payslips', 'payslip_lines'] as $t) {
+                    if (preg_match('/CREATE TABLE IF NOT EXISTS ' . $t . ' \(.*?\) ENGINE=InnoDB[^;]*;/s', $sql, $m)) DB::pdo()->exec($m[0]);
+                }
+                // statutory and withholding tax payables get system keys so payroll can find them
+                foreach (['2210' => 'statutory_payable', '2220' => 'wtax_payable'] as $code => $key) {
+                    if (!DB::value('SELECT id FROM accounts WHERE system_key = ?', [$key])) {
+                        DB::run('UPDATE accounts SET system_key = ? WHERE code = ? AND system_key IS NULL', [$key, $code]);
+                    }
+                }
+                // permissions: everyone may see their own payslips; managers / accountants run payroll
+                foreach (DB::all('SELECT id, name, permissions FROM roles') as $r) {
+                    $p = json_decode($r['permissions'], true) ?: [];
+                    if (in_array('*', $p, true)) continue;
+                    $add = ['payroll.self'];
+                    if (in_array($r['name'], ['Manager', 'Accountant'], true)) $add = array_merge($add, ['payroll.view', 'payroll.manage', 'payroll.post']);
+                    DB::run('UPDATE roles SET permissions = ? WHERE id = ?', [json_encode(array_values(array_unique(array_merge($p, $add)))), $r['id']]);
+                }
+            },
         ];
     }
 

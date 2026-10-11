@@ -22,10 +22,16 @@ class EmployeeController
             ['key' => 'department', 'label' => 'Department'],
             ['key' => 'phone', 'label' => 'Phone'],
             ['key' => 'date_hired', 'label' => 'Date hired', 'type' => 'date'],
+            ['key' => 'monthly_rate', 'label' => 'Rate', 'value' => fn ($r) => $r['pay_type'] === 'daily' ? (float) $r['daily_rate'] : (float) $r['monthly_rate'],
+                'html' => fn ($r) => ((float) ($r['pay_type'] === 'daily' ? $r['daily_rate'] : $r['monthly_rate']))
+                    ? money($r['pay_type'] === 'daily' ? $r['daily_rate'] : $r['monthly_rate']) . ' <span class="muted small">/' . ($r['pay_type'] === 'daily' ? 'day' : 'month') . '</span>'
+                    : '<span class="muted small">—</span>'],
+            ['key' => 'biometric_id', 'label' => 'Device ID'],
             ['key' => 'ca_balance', 'label' => 'Cash advance bal.', 'type' => 'money', 'total' => true],
             ['key' => 'active', 'label' => 'Status', 'value' => fn ($r) => $r['active'] ? 'active' : 'inactive', 'html' => fn ($r) => badge($r['active'] ? 'active' : 'inactive')],
             ['key' => 'id', 'label' => '', 'export' => false, 'html' => fn ($r) => '<div class="actions"><button class="btn btn-sm" type="button" data-open="dlg-employee" data-title="Edit employee — ' . e($r['full_name']) . '" data-fill=\''
-                . e(json_encode(array_intersect_key($r, array_flip(['id', 'emp_no', 'full_name', 'position', 'department', 'phone', 'date_hired', 'notes', 'active'])))) . '\'>Edit</button></div>'],
+                . e(json_encode(array_intersect_key($r, array_flip(['id', 'emp_no', 'full_name', 'position', 'department', 'phone', 'date_hired', 'notes', 'active',
+                    'biometric_id', 'pay_type', 'monthly_rate', 'daily_rate', 'sss', 'philhealth', 'pagibig', 'wtax', 'ca_deduction'])))) . '\'>Edit</button></div>'],
         ];
         if ($x = Table::export($req, 'employees', 'Employees', $showAll ? 'Including inactive' : 'Active', $columns, $rows)) return $x;
         return view('people/employees', ['title' => 'Employees', 'rows' => $rows, 'columns' => $columns, 'showAll' => $showAll]);

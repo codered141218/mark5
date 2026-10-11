@@ -28,6 +28,15 @@ class Settings
         'require_payment_ref' => '0',
         'auto_backup' => '1',
         'backup_retention' => '30',
+        // payroll (People → Payroll → Settings); defaults follow the restaurant's payroll template
+        'payroll.shift_start' => '10:00',      // late = time in after this
+        'payroll.shift_hours' => '12',         // regular hours a day; less = undertime, more = overtime
+        'payroll.days_per_month' => '30',      // daily rate = monthly rate / this
+        'payroll.ot_rate' => '1',              // overtime pay = hourly rate x this
+        'payroll.ot_min_minutes' => '0',       // overtime below this many minutes a day is not paid
+        'payroll.grace_minutes' => '0',        // undertime up to this many minutes a day is not deducted
+        'payroll.paid_rest_days' => '0',       // day-offs per week that are not deducted as absent
+        'payroll.day_starts' => '05:00',       // punches before this belong to the previous day (closing after midnight)
     ];
 
     public static function all(): array

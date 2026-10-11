@@ -10,7 +10,9 @@ use App\Services\Sequence;
 /** Employee records (used for cash advances and for linking user accounts). */
 class Employees
 {
-    private const FIELDS = ['emp_no', 'full_name', 'position', 'department', 'phone', 'date_hired', 'notes'];
+    private const FIELDS = ['emp_no', 'full_name', 'position', 'department', 'phone', 'date_hired', 'notes', 'biometric_id'];
+    /** Pay setup (People → Employees → Pay): amounts per pay-out. */
+    private const MONEY = ['monthly_rate', 'daily_rate', 'sss', 'philhealth', 'pagibig', 'wtax', 'ca_deduction'];
 
     /** Employees with their outstanding cash advance balance. */
     public static function list(bool $includeInactive = false): array
@@ -36,6 +38,11 @@ class Employees
         required($d, 'full_name');
         $row = array_map(fn ($v) => is_string($v) ? (trim($v) ?: null) : $v, pick($d, self::FIELDS) + array_fill_keys(self::FIELDS, null));
         if ($row['date_hired'] && !is_date($row['date_hired'])) throw HttpException::bad('Enter a valid date hired');
+        foreach (self::MONEY as $f) if (array_key_exists($f, $d)) $row[$f] = max(0, r2(num($d[$f])));
+        if (array_key_exists('pay_type', $d)) $row['pay_type'] = $d['pay_type'] === 'daily' ? 'daily' : 'monthly';
+        if ($row['biometric_id'] && DB::value('SELECT id FROM employees WHERE biometric_id = ? AND id <> ?', [$row['biometric_id'], (int) ($d['id'] ?? 0)])) {
+            throw HttpException::bad('Another employee already has biometric ID ' . $row['biometric_id']);
+        }
         $id = (int) ($d['id'] ?? 0);
         if ($row['emp_no'] && DB::value('SELECT id FROM employees WHERE emp_no = ? AND id <> ?', [$row['emp_no'], $id])) {
             throw HttpException::bad('Employee number already exists');
