@@ -42,7 +42,7 @@ class Employees
         if (array_key_exists('pay_type', $d)) $row['pay_type'] = $d['pay_type'] === 'daily' ? 'daily' : 'monthly';
         // work schedule: blank = the payroll defaults
         if (array_key_exists('work_days', $d)) {
-            $wd = array_unique(str_split(preg_replace('/[^1-7]/', '', is_array($d['work_days']) ? implode('', $d['work_days']) : (string) $d['work_days'])));
+            $wd = array_unique(preg_split('//', preg_replace('/[^1-7]/', '', is_array($d['work_days']) ? implode('', $d['work_days']) : (string) $d['work_days']), -1, PREG_SPLIT_NO_EMPTY));
             sort($wd);
             if (array_key_exists('work_days_set', $d) && !$wd) throw HttpException::bad('Tick at least one working day');
             $row['work_days'] = $wd && count($wd) < 7 ? implode('', $wd) : null;

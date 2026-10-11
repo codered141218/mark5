@@ -172,7 +172,7 @@ class Payroll
     public static function schedule(array $e, ?array $cfg = null): array
     {
         $cfg = $cfg ?? self::settings();
-        $wd = array_values(array_unique(array_map('intval', str_split(preg_replace('/[^1-7]/', '', (string) ($e['work_days'] ?? ''))))));
+        $wd = array_values(array_unique(array_map('intval', preg_split('//', preg_replace('/[^1-7]/', '', (string) ($e['work_days'] ?? '')), -1, PREG_SPLIT_NO_EMPTY))));   // not str_split: [''] for '' before PHP 8.2
         sort($wd);
         if (!$wd) $wd = [1, 2, 3, 4, 5, 6, 7];
         $paid = isset($e['paid_rest_days']) && $e['paid_rest_days'] !== '' ? max(0, min(7, (int) $e['paid_rest_days'])) : $cfg['paid_rest_days'];
