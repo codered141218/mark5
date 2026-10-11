@@ -95,6 +95,10 @@ class Migrations
                 self::addColumn('petty_cash_txns', 'ref_type', 'VARCHAR(30) NULL AFTER cash_session_id');
                 self::addColumn('petty_cash_txns', 'ref_id', 'INT UNSIGNED NULL AFTER ref_type');
             },
+            // 7: when each order line was sent with Done (order-taking time on the dashboard)
+            7 => function () {
+                self::addColumn('ticket_items', 'sent_at', 'DATETIME NULL AFTER printed');
+            },
         ];
     }
 

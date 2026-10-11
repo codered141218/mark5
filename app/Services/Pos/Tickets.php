@@ -245,7 +245,7 @@ class Tickets
         $t = self::getOpen($id);
         self::requireTable($t);
         $pending = array_values(array_filter($t['items'], fn ($i) => $i['status'] === 'active' && !$i['kitchen_sent']));
-        DB::run("UPDATE ticket_items SET kitchen_sent = 1 WHERE ticket_id = ? AND status = 'active' AND kitchen_sent = 0", [$id]);
+        DB::run("UPDATE ticket_items SET kitchen_sent = 1, sent_at = ? WHERE ticket_id = ? AND status = 'active' AND kitchen_sent = 0", [now(), $id]);
         $t = self::get($id);
         // waiting: every line sent but not printed yet (just sent now, or sent earlier from a device without a printer)
         $waiting = array_values(array_filter($t['items'], fn ($i) => $i['status'] === 'active' && $i['kitchen_sent'] && !$i['printed']));
@@ -262,7 +262,7 @@ class Tickets
         if (!DB::value('SELECT id FROM tickets WHERE id = ?', [$id])) throw HttpException::notFound('Order');
         if ($ids) {
             $in = implode(',', array_fill(0, count($ids), '?'));
-            DB::run("UPDATE ticket_items SET printed = 1, kitchen_sent = 1 WHERE ticket_id = ? AND status = 'active' AND id IN ($in)", array_merge([$id], $ids));
+            DB::run("UPDATE ticket_items SET printed = 1, kitchen_sent = 1, sent_at = COALESCE(sent_at, ?) WHERE ticket_id = ? AND status = 'active' AND id IN ($in)", array_merge([now(), $id], $ids));
         }
         return self::get($id);
     }

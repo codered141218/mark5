@@ -405,12 +405,12 @@ dialog.modal[open] { animation: dlg-in .22s var(--ease); }
 .chart-table { padding: 0 0 4px; }
 .chart-table .table-wrap { max-height: 360px; overflow: auto; }
 .hbars { display: flex; flex-direction: column; gap: 6px; padding: 4px 4px 2px; }
-.hbar { display: grid; grid-template-columns: minmax(80px, 34%) 1fr auto; align-items: center; gap: 10px; font-size: 12.5px; padding: 2px 4px; border-radius: 6px; }
-.hbar:hover { background: var(--gray-soft); }
-.hbar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
-.hbar-track { height: 14px; display: block; }
-.hbar-fill { display: block; height: 100%; background: var(--chart-1); border-radius: 0 4px 4px 0; }
-.hbar-value { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text); min-width: 48px; text-align: right; }
+.hbars .hbar { display: grid; grid-template-columns: minmax(80px, 34%) 1fr auto; align-items: center; gap: 10px; font-size: 12.5px; padding: 2px 4px; border-radius: 6px; margin: 0; }
+.hbars .hbar:hover { background: var(--gray-soft); }
+.hbars .hbar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
+.hbars .hbar-track { height: 14px; display: block; border-radius: 0 4px 4px 0; }
+.hbars .hbar-fill { display: block; height: 100%; background: var(--chart-1, #ea580c); border-radius: 0 4px 4px 0; }
+.hbars .hbar-value { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text); min-width: 48px; text-align: right; }
 .kpis .kpi-delta { display: block; margin-top: 6px; font-size: 12px; font-weight: 600; }
 .kpis .kpi-delta.up { color: var(--green); } .kpis .kpi-delta.down { color: var(--red); }
 .kpis .stat-brand .kpi-delta, .kpis .stat-brand .kpi-delta .muted { color: rgba(255, 255, 255, .92); }
@@ -421,5 +421,12 @@ dialog.modal[open] { animation: dlg-in .22s var(--ease); }
   .kpis .kpi-delta .muted { display: none; }
   .chart-head h3 { width: 100%; }
   .chart-body { padding: 6px 6px 10px; }
-  .hbar { grid-template-columns: minmax(70px, 38%) 1fr auto; gap: 8px; }
+  .hbars .hbar { grid-template-columns: minmax(70px, 38%) 1fr auto; gap: 8px; }
 }
+
+/* ---------- dashboard: service time */
+.svc-card .card-head > div { display: flex; flex-direction: column; gap: 2px; }
+.svc-stats { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.svc-stats .stat { padding: 12px 14px; box-shadow: none; }
+.svc-stats .stat-value { font-size: 21px; }
+.svc-sub { margin: 4px 0 8px; font-size: 13px; }

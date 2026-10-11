@@ -237,3 +237,36 @@ test('payouts larger than the petty cash beginning cash: nothing goes back, no n
     eq(0, $z['cash']['returned_to_fund']);
     eq(null, DB::value('SELECT return_txn_id FROM cash_sessions WHERE id = ?', [$s['id']]));
 });
+
+test('dashboard service time: opened → paid in minutes, median, per type / hour / staff, buckets, order-taking time from Done', function () {
+    if (!CashSessions::current()) CashSessions::open(0);
+    $sid = (int) CashSessions::current()['id'];
+    $mk = function (string $type, string $start, int $minutes) use ($sid) {
+        return DB::insert('tickets', ['ticket_no' => 'SV' . mt_rand(), 'receipt_no' => 'SVR' . mt_rand(), 'cash_session_id' => $sid, 'business_date' => '2031-05-05',
+            'order_type' => $type, 'pax' => 2, 'status' => 'paid', 'subtotal' => 100, 'total' => 100, 'created_by' => 1,
+            'created_at' => "2031-05-05 $start:00", 'paid_at' => date('Y-m-d H:i:s', strtotime("2031-05-05 $start:00 +$minutes minutes"))]);
+    };
+    $mk('dine_in', '12:00', 30); $mk('dine_in', '12:10', 70); $mk('takeout', '13:00', 10); $mk('dine_in', '19:00', 50);
+    $mk('dine_in', '09:00', 600);                       // left open 10 hours: not counted
+    $t = $mk('takeout', '19:30', 20);
+    DB::insert('ticket_items', ['ticket_id' => $t, 'item_id' => item_id('Coke'), 'name' => 'Coke', 'qty' => 1, 'price' => 100, 'line_total' => 100,
+        'status' => 'active', 'kitchen_sent' => 1, 'sent_at' => '2031-05-05 19:34:00', 'created_by' => 1, 'created_at' => '2031-05-05 19:30:00']);
+    $s = App\Services\Reports\Dashboard::serviceTimes('2031-05-05', '2031-05-05');
+    eq(5, $s['count']);
+    eq(1, $s['skipped']);
+    eq(36.0, $s['avg'], '(30 + 70 + 10 + 50 + 20) / 5');
+    eq(30.0, $s['median']);
+    eq(70.0, $s['max']);
+    eq(20.0, $s['slow_pct'], '1 of 5 over an hour');
+    eq(50.0, $s['by_type']['dine_in']['avg']);
+    eq(15.0, $s['by_type']['takeout']['avg']);
+    eq(['count' => 2, 'avg' => 50.0], ['count' => $s['by_hour'][12]['count'], 'avg' => $s['by_hour'][12]['avg']]);
+    eq([1, 1, 1, 1, 1, 0], array_column($s['buckets'], 'count'));
+    eq(4.0, $s['taking_avg'], 'opened 19:30, Done 19:34');
+    eq(1, $s['taking_count']);
+    // Done records when lines were sent
+    $o = Tickets::create(['order_type' => 'takeout']);
+    Tickets::addItem($o['id'], item_id('Coke'), 1);
+    Tickets::done($o['id']);
+    ok(DB::value('SELECT sent_at FROM ticket_items WHERE ticket_id = ?', [$o['id']]) !== null, 'sent_at set on Done');
+});

@@ -74,6 +74,8 @@ $foodTone = $k['food_cost_pct'] > 40 ? 'red' : ($k['food_cost_pct'] > 35 ? 'ambe
     </div>
   </div>
 
+  <?= view('dashboard/_service', ['sv' => $d['service'], 'singleDay' => $singleDay, 'from' => $from, 'to' => $to], null) ?>
+
   <div class="grid-2">
     <div class="card">
       <div class="card-head"><h3>Cash &amp; financial position</h3><span class="muted small">as of <?= e(fmt_date($to)) ?></span></div>

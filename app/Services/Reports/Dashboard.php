@@ -74,6 +74,65 @@ class Dashboard
             'position' => self::position($to),
             'session' => DB::one("SELECT * FROM cash_sessions WHERE status = 'open' ORDER BY id DESC LIMIT 1"),
             'open_tickets' => DB::one("SELECT COUNT(*) cnt, COALESCE(SUM(total),0) amt FROM tickets WHERE status = 'open'"),
+            'service' => self::serviceTimes($from, $to),
+        ];
+    }
+
+    /** Orders open longer than this are left out of the service-time figures (forgotten / left open overnight). */
+    public const SERVICE_MAX_MINUTES = 360;
+    /** How long orders took, in minutes: [label, from, to) */
+    public const SERVICE_BUCKETS = [['< 15 min', 0, 15], ['15–30', 15, 30], ['30–45', 30, 45], ['45–60', 45, 60], ['60–90', 60, 90], ['90+ min', 90, PHP_INT_MAX]];
+
+    /**
+     * Service time of paid orders: order opened (first item) → paid. Also the order-taking time (opened → first Done)
+     * for orders sent with Done since that was recorded. Minutes, per order type, hour the order started, day and staff.
+     */
+    public static function serviceTimes(string $from, string $to): array
+    {
+        $rows = DB::all(
+            "SELECT t.id, t.order_type, t.business_date d, HOUR(t.created_at) h, COALESCE(u.full_name, '—') staff,
+                    TIMESTAMPDIFF(SECOND, t.created_at, t.paid_at) / 60 mins,
+                    TIMESTAMPDIFF(SECOND, t.created_at, (SELECT MIN(i.sent_at) FROM ticket_items i WHERE i.ticket_id = t.id)) / 60 taking
+             FROM tickets t LEFT JOIN users u ON u.id = t.created_by
+             WHERE t.status = 'paid' AND t.business_date BETWEEN ? AND ? AND t.created_at IS NOT NULL AND t.paid_at IS NOT NULL", [$from, $to]
+        );
+        $ok = array_values(array_filter($rows, fn ($r) => $r['mins'] !== null && (float) $r['mins'] >= 0 && (float) $r['mins'] <= self::SERVICE_MAX_MINUTES));
+        $mins = array_map(fn ($r) => (float) $r['mins'], $ok);
+        sort($mins);
+        $n = count($mins);
+        $avg = fn (array $v) => $v ? r2(array_sum($v) / count($v)) : null;
+        $pct = function (array $sorted, float $p) {
+            if (!$sorted) return null;
+            $i = ($p / 100) * (count($sorted) - 1);
+            $lo = (int) floor($i);
+            return r2($sorted[$lo] + ($sorted[min($lo + 1, count($sorted) - 1)] - $sorted[$lo]) * ($i - $lo));
+        };
+        $group = function (string $key) use ($ok, $avg) {
+            $g = [];
+            foreach ($ok as $r) $g[$r[$key]][] = (float) $r['mins'];
+            $out = [];
+            foreach ($g as $k => $v) $out[$k] = ['avg' => $avg($v), 'count' => count($v)];
+            return $out;
+        };
+        $buckets = [];
+        foreach (self::SERVICE_BUCKETS as [$label, $lo, $hi]) {
+            $c = count(array_filter($mins, fn ($m) => $m >= $lo && $m < $hi));
+            $buckets[] = ['label' => $label, 'count' => $c, 'pct' => $n ? r2($c / $n * 100) : 0.0];
+        }
+        $taking = array_values(array_filter(array_map(fn ($r) => $r['taking'] === null ? null : (float) $r['taking'], $ok), fn ($v) => $v !== null && $v >= 0));
+        $byHour = $group('h');
+        ksort($byHour);
+        $byDay = $group('d');
+        ksort($byDay);
+        $byStaff = $group('staff');
+        uasort($byStaff, fn ($a, $b) => $b['count'] <=> $a['count']);
+        return [
+            'count' => $n, 'skipped' => count($rows) - $n,
+            'avg' => $avg($mins), 'median' => $pct($mins, 50), 'p90' => $pct($mins, 90), 'max' => $n ? r2(max($mins)) : null,
+            'slow_pct' => $n ? r2(count(array_filter($mins, fn ($m) => $m >= 60)) / $n * 100) : 0.0,
+            'taking_avg' => $avg($taking), 'taking_count' => count($taking),
+            'by_type' => $group('order_type'), 'by_hour' => $byHour, 'by_day' => $byDay,
+            'by_staff' => array_slice($byStaff, 0, 8, true), 'buckets' => $buckets,
         ];
     }
 
