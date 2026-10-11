@@ -517,6 +517,12 @@ class Payroll
 
     // ------------------------------------------------------------------ approve, pay out, void
     /** Approve (post) a draft: journal entry, cash advance repayments; payslips become visible to the employees. */
+    /** The payroll expense is booked on the cut-off's last day (when the salaries were earned), or today if approved before it. */
+    public static function bookDate(array $run): string
+    {
+        return min($run['period_to'], today());
+    }
+
     public static function post(int $runId): void
     {
         Auth::require('payroll.post');
@@ -532,7 +538,8 @@ class Payroll
             $bal = (float) DB::value("SELECT balance FROM cash_advances WHERE id = ? AND status = 'approved'", [$l['advance_id']]);
             if ((float) $l['amount'] > $bal + 0.001) throw HttpException::bad("{$l['full_name']}: {$l['description']} is more than its balance (" . number_format($bal, 2) . ')');
         }
-        DB::transaction(function () use ($r, $slips, $lines) {
+        $bookDate = self::bookDate($r);
+        DB::transaction(function () use ($r, $slips, $lines, $bookDate) {
             $gross = r2(array_sum(array_map(fn ($s) => (float) $s['gross_pay'], $slips)));
             $net = r2(array_sum(array_map(fn ($s) => (float) $s['net_pay'], $slips)));
             $by = ['statutory' => 0.0, 'tax' => 0.0, 'other' => 0.0];
@@ -548,11 +555,11 @@ class Payroll
             if ($by['statutory'] > 0) $je[] = ['key' => 'statutory_payable', 'credit' => r2($by['statutory']), 'memo' => 'SSS / PhilHealth / Pag-IBIG'];
             if ($by['tax'] > 0) $je[] = ['key' => 'wtax_payable', 'credit' => r2($by['tax']), 'memo' => 'Withholding tax'];
             if ($by['other'] > 0) $je[] = ['key' => 'payroll_other', 'credit' => r2($by['other']), 'memo' => 'Other payroll deductions'];
-            $jeId = $gross > 0 ? Ledger::post($r['pay_date'], "Payroll {$r['run_no']} · " . range_label($r['period_from'], $r['period_to']), $je, 'payroll', (int) $r['id'], $r['run_no']) : null;
+            $jeId = $gross > 0 ? Ledger::post($bookDate, "Payroll {$r['run_no']} · " . range_label($r['period_from'], $r['period_to']), $je, 'payroll', (int) $r['id'], $r['run_no']) : null;
             // cash advances repaid by salary deduction (the payroll entry above already credits Employee advances)
             foreach ($lines as $l) {
                 if ($l['type'] !== 'cash_advance') continue;
-                $rid = DB::insert('ca_repayments', ['doc_no' => Sequence::next('CAR', 'CAR'), 'advance_id' => (int) $l['advance_id'], 'pay_date' => $r['pay_date'],
+                $rid = DB::insert('ca_repayments', ['doc_no' => Sequence::next('CAR', 'CAR'), 'advance_id' => (int) $l['advance_id'], 'pay_date' => $bookDate,
                     'amount' => (float) $l['amount'], 'method' => 'payroll', 'reference' => $r['run_no'], 'status' => 'posted', 'journal_entry_id' => $jeId,
                     'created_by' => Auth::id(), 'created_at' => now()]);
                 DB::update('payslip_lines', (int) $l['id'], ['repayment_id' => $rid]);

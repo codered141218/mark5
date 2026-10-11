@@ -161,6 +161,15 @@ test('payroll run: computed from attendance, standing deductions + cash advance,
     $r = Payroll::find($run);
     eq('posted', $r['status']);
     ok($r['journal_entry_id']);
+    // booked on the cut-off's last day (not the future pay-out date), so it shows in the journal list up to today
+    $jeDate = DB::value('SELECT entry_date FROM journal_entries WHERE id = ?', [$r['journal_entry_id']]);
+    eq(min('2026-10-10', today()), $jeDate);
+    ok(in_array((int) $r['journal_entry_id'], array_map('intval', array_column(App\Services\Finance\Journals::list('2026-09-01', today(), 'payroll'), 'id')), true), 'in the journal list');
+    // upgrade step 10 re-dates payrolls approved before this fix (booked on the pay-out date)
+    DB::run("UPDATE journal_entries SET entry_date = '2099-01-15' WHERE id = ?", [$r['journal_entry_id']]);
+    DB::run("UPDATE settings SET value = '9' WHERE `key` = 'db_version'");
+    App\Services\Migrations::run();
+    eq($jeDate, DB::value('SELECT entry_date FROM journal_entries WHERE id = ?', [$r['journal_entry_id']]));
     eq(r2($salaries + 4420 - 100), acct_balance('salaries'), 'gross to salaries; other deductions reduce it');
     eq(-3020.0, acct_balance('salaries_payable'));
     eq(-300.0, acct_balance('statutory_payable'));

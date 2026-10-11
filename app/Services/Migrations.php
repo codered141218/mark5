@@ -135,6 +135,14 @@ class Migrations
                 self::addColumn('employees', 'shift_hours', 'DECIMAL(4,2) NULL');
                 self::addColumn('payslips', 'days_paid', 'DECIMAL(6,2) NOT NULL DEFAULT 0 AFTER days_leave');
             },
+            // 10: approved payrolls were booked on the (future) pay-out date and did not show in the journal yet:
+            //     book them on the cut-off's last day, like new ones
+            10 => function () {
+                DB::run('UPDATE journal_entries e JOIN payroll_runs r ON r.journal_entry_id = e.id
+                         SET e.entry_date = LEAST(r.period_to, DATE(COALESCE(r.posted_at, NOW()))) WHERE e.entry_date > LEAST(r.period_to, DATE(COALESCE(r.posted_at, NOW())))');
+                DB::run("UPDATE ca_repayments c JOIN payroll_runs r ON r.journal_entry_id = c.journal_entry_id
+                         SET c.pay_date = LEAST(r.period_to, DATE(COALESCE(r.posted_at, NOW()))) WHERE c.method = 'payroll' AND c.pay_date > LEAST(r.period_to, DATE(COALESCE(r.posted_at, NOW())))");
+            },
         ];
     }
 

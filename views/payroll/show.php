@@ -53,7 +53,7 @@ $unpaidTotal = array_sum(array_map(fn ($s) => (float) $s['net_pay'], $unpaid));
     <button class="btn btn-ghost text-red" data-open="dlg-void" data-reset>Void payroll</button>
   <?php endif; ?>
   <?php if ($r['journal_entry_id'] && can('finance.view')): ?>
-    <a class="btn btn-ghost" href="<?= url('/finance/journals/' . $r['journal_entry_id']) ?>">Journal entry →</a>
+    <a class="btn btn-ghost" href="<?= url('/finance/journals/' . $r['journal_entry_id']) ?>">Journal entry<?= ($jd = App\Core\DB::value('SELECT entry_date FROM journal_entries WHERE id = ?', [$r['journal_entry_id']])) ? ' · ' . e(fmt_date($jd)) : '' ?> →</a>
   <?php endif; ?>
 </div>
 
