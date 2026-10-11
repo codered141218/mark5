@@ -188,7 +188,7 @@ class PosApiController
     /** For the Open Day dialog: the petty cash fund balance (null when there is no petty cash account). */
     public function dayInfo(Request $req): Response
     {
-        return json(['petty_cash' => Ledger::accountOrNull('petty_cash') ? PettyCash::fundBalance() : null]);
+        return json(['petty_cash' => Ledger::accountOrNull('petty_cash') ? PettyCash::fundBalance() : null, 'today' => today()]);
     }
 
     public function xreading(Request $req): Response

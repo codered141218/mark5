@@ -168,7 +168,7 @@
     receipts: (q) => get('/receipts' + (q ? '?q=' + encodeURIComponent(q) : '')),
     customers: () => get('/customers'),
     openDay: (data) => post('/day/open', data),                    // {business_date, opening_cash, denominations, source: cash|petty_cash}
-    dayInfo: () => get('/day/info'),                                // {petty_cash: fund balance | null}
+    dayInfo: () => get('/day/info'),                                // {petty_cash: fund balance | null, today}
     xreading: () => get('/day/xreading'),
     closeDay: (data) => post('/day/close', data),
     payouts: () => get('/payouts'),
@@ -1734,13 +1734,15 @@
     let mode = 'count';
     // where the beginning cash comes from: the petty cash fund (when there is money in it) or cash on hand / the safe
     const info = await Api.dayInfo().catch(() => ({ petty_cash: null }));
+    const today = info.today || B.today;   // the server's date now (the page may have been open since yesterday)
     const fund = info.petty_cash;
     let source = fund !== null && fund > 0 ? 'petty_cash' : 'cash';
     const m = modal({
       title: 'Open business day — beginning cash',
       cls: 'wide dlg-cash',
-      body: `<label class="field"><span class="field-label">Business date</span><input class="input" type="date" name="business_date" value="${esc(B.today)}">
-          <span class="field-hint">Sales after midnight still count to this date until the day is closed.</span></label>
+      body: `<div class="field"><span class="field-label">Business date</span>
+          <div class="biz-date">${esc(new Date(today + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }))} <span class="muted small">· today</span></div>
+          <span class="field-hint">The day can only be opened for today. Sales after midnight still count to this date until the day is closed.</span></div>
         ${fund === null ? '' : `<div class="field mt"><span class="field-label">Beginning cash comes from</span>
           <div class="seg open-source">
             <button type="button" class="seg-btn${source === 'petty_cash' ? ' on' : ''}" data-act="source" data-source="petty_cash">
@@ -1772,7 +1774,7 @@
       },
       onSubmit: async (btn) => {
         const c = readCounts(m.el);
-        const data = { business_date: m.$('[name=business_date]').value, opening_cash: mode === 'count' ? c.total : r2(m.$('[name=opening_cash]').value),
+        const data = { business_date: today, opening_cash: mode === 'count' ? c.total : r2(m.$('[name=opening_cash]').value),
           denominations: mode === 'count' ? c.counts : null, source };
         const s = await run(() => Api.openDay(data), btn);
         if (!s) return;

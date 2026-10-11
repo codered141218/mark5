@@ -160,3 +160,13 @@ test('sales trend: buckets with no gaps, previous period of the same length, wee
     eq([400.0, 0.0, 0.0, 200.0, 0.0, 0.0], $s['series'][0]['values']);
     eq(6, count($s['labels']));
 });
+
+test('business day opens only for today: back-dated and post-dated dates are refused', function () {
+    if ($s = CashSessions::current()) { DB::run("UPDATE tickets SET status = 'void' WHERE status = 'open'"); CashSessions::close([], 0); }
+    throws(fn () => CashSessions::open(0, add_days(today(), -1)), 'only be opened for today');
+    throws(fn () => CashSessions::open(0, add_days(today(), 1)), 'only be opened for today');
+    eq(null, CashSessions::current());
+    eq(today(), CashSessions::open(0, today())['business_date']);
+    CashSessions::close([], 0);
+    eq(today(), CashSessions::open(0)['business_date'], 'no date given: today');
+});

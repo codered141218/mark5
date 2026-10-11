@@ -61,7 +61,11 @@ class CashSessions
                     throw HttpException::bad('The petty cash fund has only ' . peso($fund) . '. Replenish the fund in the back office (Petty Cash) or take the beginning cash from cash on hand.');
                 }
             }
-            $date = is_date($businessDate) ? $businessDate : today();
+            // The business day is always today (server date, Asia/Manila): no back-dated or post-dated days.
+            $date = today();
+            if ($businessDate !== null && $businessDate !== '' && $businessDate !== $date) {
+                throw HttpException::bad('The business day can only be opened for today (' . fmt_date($date) . '). Back-dated or future business dates are not allowed.');
+            }
             $id = DB::insert('cash_sessions', [
                 'business_date' => $date, 'status' => 'open',
                 'opened_by' => Auth::id(), 'opened_at' => now(), 'opening_cash' => $openingCash,
