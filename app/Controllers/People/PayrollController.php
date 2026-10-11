@@ -96,7 +96,9 @@ class PayrollController
         $s = Payroll::slip((int) $id);
         if (!Payroll::canSee($s)) throw HttpException::forbidden();
         $edit = $s['run_status'] === 'draft' && Auth::can('payroll.manage');
+        $emp = DB::one('SELECT * FROM employees WHERE id = ?', [(int) $s['employee_id']]) ?: [];
         $data = ['title' => 'Payslip · ' . $s['full_name'], 's' => $s, 'edit' => $edit, 'settings' => Settings::all(), 'cfg' => Payroll::settings(),
+            'schedule' => Payroll::scheduleLabel($emp),
             'advances' => $edit ? DB::all("SELECT id, doc_no, balance FROM cash_advances WHERE employee_id = ? AND status = 'approved' AND balance > 0", [$s['employee_id']]) : []];
         if ($req->query('print')) return view('payroll/payslip_print', $data + ['slips' => [$s]], 'blank');
         return view('payroll/payslip', $data);

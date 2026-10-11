@@ -37,6 +37,7 @@ class Settings
         'payroll.grace_minutes' => '0',        // undertime up to this many minutes a day is not deducted
         'payroll.paid_rest_days' => '0',       // day-offs per week that are not deducted as absent
         'payroll.day_starts' => '05:00',       // punches before this belong to the previous day (closing after midnight)
+        'payroll.cutoffs' => '[{"end":10,"pay":15},{"end":25,"pay":30}]',   // cut-offs a month: end day + pay-out day (31 = month end)
     ];
 
     public static function all(): array

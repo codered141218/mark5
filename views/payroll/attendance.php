@@ -43,10 +43,10 @@ $h = fn ($m) => $m ? intdiv((int) $m, 60) . ':' . str_pad((string) ((int) $m % 6
       <tbody>
       <?php foreach ($grid as $g): $e = $g['employee']; ?>
         <tr>
-          <th class="att-name"><?= e($e['full_name']) ?><div class="muted small"><?= $e['biometric_id'] !== null && $e['biometric_id'] !== '' ? 'device #' . e($e['biometric_id']) : 'not linked' ?></div></th>
+          <th class="att-name"><?= e($e['full_name']) ?><div class="muted small"><?= $e['biometric_id'] !== null && $e['biometric_id'] !== '' ? 'device #' . e($e['biometric_id']) : 'not linked' ?><?= $g['off'] ? ' · ' . e($g['off']) . ' off' : '' ?></div></th>
           <?php foreach ($g['days'] as $d):
               $st = $d['status'];
-              $cls = str_starts_with($st, 'Present') ? ($d['late'] || $d['ut'] ? 'late' : 'ok') : (str_starts_with($st, 'Day off') || $st === 'Paid leave' ? 'rest' : 'bad');
+              $cls = str_starts_with($st, 'Present') ? ($d['late'] || $d['ut'] ? 'late' : 'ok') : ((str_starts_with($st, 'Day off') && $st !== 'Day off (unpaid)') || $st === 'Paid leave' ? 'rest' : 'bad');
               $tip = date('D M j', strtotime($d['date'])) . ' · ' . $st . ($d['hours'] ? ' · ' . $h($d['hours']) . ' h' : '') . ($d['late'] ? ' · late ' . $d['late'] . ' min' : '') . ($d['ot'] ? ' · OT ' . $h($d['ot']) : '') . ($d['note'] ? ' · ' . $d['note'] : ''); ?>
             <td class="att-c <?= $cls ?>" title="<?= e($tip) ?>"
                 <?php if (can('payroll.manage')): ?>data-day='<?= e(json_encode(['employee_id' => $e['id'], 'name' => $e['full_name'], 'work_date' => $d['date'], 'time_in' => $d['in'], 'time_out' => $d['out'], 'note' => $d['note'], 'type' => $d['type'] ?? 'auto', 'label' => date('D, M j, Y', strtotime($d['date']))])) ?>'<?php endif; ?>>

@@ -37,10 +37,10 @@ $back = can('payroll.view', 'payroll.manage', 'payroll.post') ? url('/payroll/' 
       <tbody>
         <?php if ($s['pay_type'] === 'daily'): ?>
           <tr><td>Daily rate</td><td class="right"><?= money($s['daily_rate']) ?></td></tr>
-          <tr><td>Basic pay <span class="muted small"><?= (float) $s['days_present'] + (float) $s['days_leave'] ?> day(s) × <?= money($s['daily_rate']) ?></span></td><td class="right"><?= money($s['basic_pay']) ?></td></tr>
+          <tr><td>Basic pay <span class="muted small"><?= (float) ($s['days_paid'] ?: (float) $s['days_present'] + (float) $s['days_leave']) ?> day(s) × <?= money($s['daily_rate']) ?><?= (float) $s['days_paid'] > (float) $s['days_present'] + (float) $s['days_leave'] ? ' · incl. paid day-offs' : '' ?></span></td><td class="right"><?= money($s['basic_pay']) ?></td></tr>
         <?php else: ?>
           <tr><td>Monthly rate <span class="muted small">daily <?= money($s['daily_rate']) ?> · hourly <?= money($s['hourly_rate']) ?></span></td><td class="right"><?= money($s['monthly_rate']) ?></td></tr>
-          <tr><td>Basic pay <span class="muted small">half month</span></td><td class="right"><?= money($s['basic_pay']) ?></td></tr>
+          <tr><td>Basic pay <span class="muted small"><?= (float) $s['basic_pay'] > 0 && (float) $s['monthly_rate'] > 0 ? 'monthly ÷ ' . round((float) $s['monthly_rate'] / (float) $s['basic_pay']) . ' cut-offs' : 'per cut-off' ?></span></td><td class="right"><?= money($s['basic_pay']) ?></td></tr>
           <tr><td>Absences <span class="muted small"><?= (float) $s['days_absent'] ?> day(s) × <?= money($s['daily_rate']) ?></span></td><td class="right text-red">−<?= money($s['absence_deduction']) ?></td></tr>
         <?php endif; ?>
         <tr><td>Undertime <span class="muted small"><?= (float) $s['undertime_hours'] ?> hr × <?= money($s['hourly_rate']) ?></span></td><td class="right text-red">−<?= money($s['undertime_deduction']) ?></td></tr>
@@ -73,13 +73,13 @@ $back = can('payroll.view', 'payroll.manage', 'payroll.post') ? url('/payroll/' 
   </div>
 
   <div class="card">
-    <div class="card-head"><h3>Attendance</h3><span class="muted small">shift <?= e($cfg['shift_start']) ?> · <?= (float) $cfg['shift_hours'] ?> h a day</span></div>
+    <div class="card-head"><h3>Attendance</h3><span class="muted small"><?= e($schedule) ?></span></div>
     <div class="table-wrap" style="max-height:560px">
       <table class="table dense att-days">
         <thead><tr><th>Date</th><th>In</th><th>Out</th><th class="right">Hours</th><th class="right">Late</th><th class="right">UT</th><th class="right">OT</th><th>Status</th></tr></thead>
         <tbody>
         <?php foreach ($s['days'] as $d): $st = $d['status']; ?>
-          <tr class="<?= str_starts_with($st, 'Absent') || str_starts_with($st, 'Incomplete') ? 'att-absent' : (str_starts_with($st, 'Day off') ? 'att-rest' : '') ?>">
+          <tr class="<?= str_starts_with($st, 'Absent') || str_starts_with($st, 'Incomplete') || $st === 'Day off (unpaid)' ? 'att-absent' : (str_starts_with($st, 'Day off') ? 'att-rest' : '') ?>">
             <td class="nowrap"><?= e(date('D M j', strtotime($d['date']))) ?></td>
             <td><?= e($d['in'] ?? '') ?></td><td><?= e($d['out'] ?? '') ?></td>
             <td class="right"><?= e($hrs($d['hours'])) ?></td>

@@ -11,9 +11,12 @@ use App\Services\Sequence;
 use App\Services\Settings;
 
 /**
- * Payroll per cut-off (default 26–10 paid on the 15th, 11–25 paid on the 30th), computed like the restaurant's template:
- *   daily rate = monthly rate / 30, hourly rate = daily rate / 12 (regular hours a day)
- *   monthly-paid: basic = monthly / 2, minus absent days x daily rate      daily-paid: basic = days present x daily rate
+ * Payroll per cut-off (set in Payroll settings; default 26–10 paid on the 15th, 11–25 paid on the 30th), computed like the
+ * restaurant's template:
+ *   daily rate = monthly rate / 30, hourly rate = daily rate / 12 (regular hours a day; the employee's own shift if set)
+ *   monthly-paid: basic = monthly / cut-offs a month, minus absent days x daily rate
+ *   daily-paid: basic = (days present + paid leave + paid day-offs) x daily rate
+ *   each employee can have fixed day(s) off a week and a number of paid day-offs a week (else the payroll default)
  *   undertime (hours short of 12) x hourly rate is deducted; overtime (hours over 12) x hourly x OT rate is added
  *   gross = basic − absences − undertime + overtime + bonuses; net = gross − deductions
  * Deductions: cash advances (linked to Cash Advances), SSS / PhilHealth / Pag-IBIG / tax (amounts from the employee setup)
@@ -41,7 +44,42 @@ class Payroll
             'days_per_month' => max(1.0, (float) $g('days_per_month')), 'ot_rate' => max(0.0, (float) $g('ot_rate')),
             'ot_min_minutes' => max(0, (int) $g('ot_min_minutes')), 'grace_minutes' => max(0, (int) $g('grace_minutes')),
             'paid_rest_days' => max(0, min(7, (int) $g('paid_rest_days'))), 'day_starts' => substr($g('day_starts'), 0, 5),
+            'cutoffs' => self::cutoffDefs((string) $g('cutoffs')),
         ];
+    }
+
+    /**
+     * Cut-off schedule: [['end' => day, 'pay' => day], ...] in month order. Each cut-off starts the day after the previous one ends
+     * (the first one the day after the last cut-off of the previous month). Day 31 = the month's last day; a pay day before the
+     * end day is in the next month.
+     */
+    public static function cutoffDefs(?string $json = null): array
+    {
+        $json = $json ?? (string) Settings::get('payroll.cutoffs', Settings::DEFAULTS['payroll.cutoffs']);
+        $defs = [];
+        foreach ((array) json_decode($json, true) as $c) {
+            $end = (int) ($c['end'] ?? 0);
+            $pay = (int) ($c['pay'] ?? 0);
+            if ($end >= 1 && $end <= 31 && $pay >= 1 && $pay <= 31) $defs[$end] = ['end' => $end, 'pay' => $pay];
+        }
+        ksort($defs);
+        return $defs ? array_values($defs) : [['end' => 10, 'pay' => 15], ['end' => 25, 'pay' => 30]];
+    }
+
+    /** "26 – 10, paid on the 15th" for each cut-off of the schedule. */
+    public static function cutoffLabels(?array $defs = null): array
+    {
+        $defs = $defs ?? self::cutoffDefs();
+        $ord = fn ($n) => $n . (in_array($n % 100, [11, 12, 13], true) ? 'th' : (['th', 'st', 'nd', 'rd'][$n % 10] ?? 'th'));
+        $day = fn ($n) => $n >= 31 ? 'month end' : (string) $n;
+        $out = [];
+        foreach ($defs as $i => $c) {
+            $prevEnd = $defs[$i ? $i - 1 : count($defs) - 1]['end'];
+            $start = $prevEnd >= 31 ? 1 : $prevEnd + 1;
+            $out[] = $day($start) . ' – ' . $day($c['end']) . ', paid on the ' . ($c['pay'] >= 31 ? 'last day' : $ord($c['pay']))
+                . ($c['pay'] < $c['end'] ? ' of the next month' : '');
+        }
+        return $out;
     }
 
     public static function saveSettings(array $in): void
@@ -59,21 +97,47 @@ class Payroll
             'paid_rest_days' => (string) max(0, min(7, (int) ($in['paid_rest_days'] ?? $s['paid_rest_days']))),
             'day_starts' => $time($in['day_starts'] ?? '', $s['day_starts']),
         ];
+        if (isset($in['cut_end'])) {
+            $defs = [];
+            foreach ((array) $in['cut_end'] as $i => $end) {
+                if (trim((string) $end) === '' && trim((string) ($in['cut_pay'][$i] ?? '')) === '') continue;
+                $end = (int) $end;
+                $pay = (int) ($in['cut_pay'][$i] ?? 0);
+                if ($end < 1 || $end > 31) throw HttpException::bad('Each cut-off needs the day it ends (1 to 31; 31 = month end)');
+                if ($pay < 1 || $pay > 31) throw HttpException::bad('Each cut-off needs its pay-out day (1 to 31; 31 = last day of the month)');
+                if (isset($defs[$end])) throw HttpException::bad("Two cut-offs end on day $end");
+                $defs[$end] = ['end' => $end, 'pay' => $pay];
+            }
+            if (!$defs) throw HttpException::bad('Set at least one cut-off');
+            if (count($defs) > 4) throw HttpException::bad('At most 4 cut-offs a month');
+            ksort($defs);
+            $vals['cutoffs'] = json_encode(array_values($defs));
+        }
         foreach ($vals as $k => $v) Settings::set('payroll.' . $k, $v);
         Audit::log('update', 'settings', null, ['payroll' => $vals]);
     }
 
     // ------------------------------------------------------------------ periods
-    /** The two cut-offs of a month: 26 (previous month) – 10 paid on the 15th, and 11 – 25 paid on the 30th (or the month's last day). */
-    public static function cutoffs(string $month): array
+    /** The cut-offs that end in a month: [['from', 'to', 'pay_date'], ...] (default 26 (previous month) – 10 paid on the 15th, 11 – 25 paid on the 30th). */
+    public static function cutoffs(string $month, ?array $defs = null): array
     {
+        $defs = $defs ?? self::cutoffDefs();
         $first = date('Y-m-01', strtotime($month));
-        $prev = date('Y-m-26', strtotime($first . ' -1 month'));
-        $last = (int) date('t', strtotime($first));
-        return [
-            ['from' => $prev, 'to' => date('Y-m-10', strtotime($first)), 'pay_date' => date('Y-m-15', strtotime($first))],
-            ['from' => date('Y-m-11', strtotime($first)), 'to' => date('Y-m-25', strtotime($first)), 'pay_date' => date('Y-m-', strtotime($first)) . min(30, $last)],
-        ];
+        $day = function (string $monthStart, int $d): string {
+            return date('Y-m-', strtotime($monthStart)) . sprintf('%02d', min($d, (int) date('t', strtotime($monthStart))));
+        };
+        $prevMonth = date('Y-m-01', strtotime($first . ' -1 month'));
+        $nextMonth = date('Y-m-01', strtotime($first . ' +1 month'));
+        $out = [];
+        $prevEnd = $day($prevMonth, end($defs)['end']);
+        foreach ($defs as $c) {
+            $to = $day($first, $c['end']);
+            $pay = $day($first, $c['pay']);
+            if ($pay < $to) $pay = $day($nextMonth, $c['pay']);
+            $out[] = ['from' => add_days($prevEnd, 1), 'to' => $to, 'pay_date' => $pay];
+            $prevEnd = $to;
+        }
+        return $out;
     }
 
     /** Suggested next cut-off: the one after the last payroll, else the latest one that has ended. */
@@ -99,34 +163,72 @@ class Payroll
         return $h * 60 + $m;
     }
 
+    public const WEEKDAYS = [1 => 'Mon', 2 => 'Tue', 3 => 'Wed', 4 => 'Thu', 5 => 'Fri', 6 => 'Sat', 7 => 'Sun'];
+
+    /**
+     * Work schedule of an employee (their own settings, else the payroll defaults):
+     * ['work' => weekdays worked (1 = Mon … 7 = Sun), 'off' => fixed day-offs, 'paid_rest' => paid day-offs a week, 'shift_start', 'shift_hours'].
+     */
+    public static function schedule(array $e, ?array $cfg = null): array
+    {
+        $cfg = $cfg ?? self::settings();
+        $wd = array_values(array_unique(array_map('intval', str_split(preg_replace('/[^1-7]/', '', (string) ($e['work_days'] ?? ''))))));
+        sort($wd);
+        if (!$wd) $wd = [1, 2, 3, 4, 5, 6, 7];
+        $paid = isset($e['paid_rest_days']) && $e['paid_rest_days'] !== '' ? max(0, min(7, (int) $e['paid_rest_days'])) : $cfg['paid_rest_days'];
+        return [
+            'work' => $wd, 'off' => array_values(array_diff([1, 2, 3, 4, 5, 6, 7], $wd)), 'paid_rest' => $paid,
+            'shift_start' => !empty($e['shift_start']) ? substr((string) $e['shift_start'], 0, 5) : $cfg['shift_start'],
+            'shift_hours' => (float) ($e['shift_hours'] ?? 0) > 0 ? (float) $e['shift_hours'] : $cfg['shift_hours'],
+        ];
+    }
+
+    /** "Mon–Sat · Sun off · 1 paid day-off a week · 10:00, 12 h" */
+    public static function scheduleLabel(array $e, ?array $cfg = null): string
+    {
+        $s = self::schedule($e, $cfg);
+        $names = fn ($days) => implode(', ', array_map(fn ($d) => self::WEEKDAYS[$d], $days));
+        $work = count($s['work']) === 7 ? 'Any day' : $names($s['work']);
+        return $work . ($s['off'] ? ' · ' . $names($s['off']) . ' off' : '') . ' · ' . $s['paid_rest'] . ' paid day-off' . ($s['paid_rest'] === 1 ? '' : 's') . ' a week · '
+            . $s['shift_start'] . ', ' . rtrim(rtrim(number_format($s['shift_hours'], 2), '0'), '.') . ' h';
+    }
+
     /** Rates of an employee: [daily, hourly]. */
     public static function rates(array $e, ?array $cfg = null): array
     {
         $cfg = $cfg ?? self::settings();
         $daily = $e['pay_type'] === 'daily' && (float) $e['daily_rate'] > 0 ? (float) $e['daily_rate'] : (float) $e['monthly_rate'] / $cfg['days_per_month'];
-        return [$daily, $daily / $cfg['shift_hours']];
+        return [$daily, $daily / self::schedule($e, $cfg)['shift_hours']];
     }
 
     /**
      * Attendance and pay of one employee for a period (no bonuses / deductions). Returns the payslip fields + 'days'.
+     * Day-offs: the employee's fixed day(s) off (e.g. every Monday) are paid up to their paid day-offs a week; when they have
+     * more paid day-offs than fixed ones (or no fixed day off), that many unworked days a week are not deducted.
      */
     public static function compute(array $e, string $from, string $to, array $att, ?array $cfg = null): array
     {
         $cfg = $cfg ?? self::settings();
-        $shiftMin = (int) round($cfg['shift_hours'] * 60);
-        $start = self::minutes($cfg['shift_start']);
+        $sch = self::schedule($e, $cfg);
+        $shiftMin = (int) round($sch['shift_hours'] * 60);
+        $start = self::minutes($sch['shift_start']);
         $days = [];
         $n = ['present' => 0, 'absent' => 0, 'rest' => 0, 'leave' => 0];
         $mins = ['worked' => 0, 'late' => 0, 'ut' => 0, 'ot' => 0];
+        $manualRest = 0;
+        $weeks = [];                                                               // calendar week => ['fixed' => fixed day-offs in it, 'off' => those not worked]
         for ($d = $from; $d <= $to; $d = add_days($d, 1)) {
             $r = $att[$d] ?? null;
             $type = $r['day_type'] ?? 'auto';
             $in = self::minutes($r['time_in'] ?? null);
             $out = self::minutes($r['time_out'] ?? null);
+            $off = in_array((int) date('N', strtotime($d)), $sch['off'], true);
+            $wk = date('o-W', strtotime($d));
+            $weeks[$wk]['fixed'] = ($weeks[$wk]['fixed'] ?? 0) + ($off ? 1 : 0);
             $row = ['date' => $d, 'in' => !empty($r['time_in']) ? substr($r['time_in'], 0, 5) : null, 'out' => !empty($r['time_out']) ? substr($r['time_out'], 0, 5) : null,
-                'hours' => 0, 'late' => 0, 'ut' => 0, 'ot' => 0, 'status' => '', 'note' => $r['note'] ?? null, 'type' => $type];
+                'hours' => 0, 'late' => 0, 'ut' => 0, 'ot' => 0, 'status' => '', 'note' => $r['note'] ?? null, 'type' => $type, 'off' => $off];
             if ($type === 'rest') {
-                $n['rest']++; $row['status'] = 'Day off';
+                $n['rest']++; $manualRest++; $row['status'] = 'Day off';
             } elseif ($type === 'leave') {
                 $n['leave']++; $row['status'] = 'Paid leave';
             } elseif ($type === 'absent') {
@@ -142,32 +244,56 @@ class Payroll
                 if ($ot < $cfg['ot_min_minutes']) $ot = 0;
                 $n['present']++;
                 $mins['worked'] += $worked; $mins['late'] += $late; $mins['ut'] += $ut; $mins['ot'] += $ot;
-                $row = ['hours' => $worked, 'late' => $late, 'ut' => $ut, 'ot' => $ot, 'status' => 'Present'] + $row;
+                $row = ['hours' => $worked, 'late' => $late, 'ut' => $ut, 'ot' => $ot, 'status' => $off ? 'Present (day off)' : 'Present'] + $row;
+            } elseif ($off && $in === null && $out === null) {
+                $weeks[$wk]['off'][] = count($days);                                 // decided below: paid or unpaid day off
             } else {
                 $n['absent']++;
                 $row['status'] = $in !== null || $out !== null ? 'Incomplete punch' : 'Absent';
             }
+            $row['week'] = $wk;
             $days[] = $row;
         }
-        // day-offs that are not deducted: e.g. 1 a week -> 2 in a 15-day cut-off (days marked "day off" count first)
         $daysIn = count($days);
-        $allowed = intdiv($daysIn * $cfg['paid_rest_days'], 7);
-        $convert = min($n['absent'], max(0, $allowed - $n['rest']));
+        // fixed day-offs: paid up to the paid day-offs of each week, the rest are unpaid (deducted like an absence);
+        // worked on the fixed day off -> an unworked day of that week becomes the paid day off (day off moved)
+        $paidFixed = 0;
+        foreach ($weeks as $wk => $w) {
+            $entitled = min($sch['paid_rest'], $w['fixed']);
+            foreach ($w['off'] ?? [] as $k => $i) {
+                if ($k < $entitled) { $days[$i]['status'] = 'Day off'; $n['rest']++; $paidFixed++; }
+                else { $days[$i]['status'] = 'Day off (unpaid)'; $n['absent']++; }
+            }
+            $moved = $entitled - min($entitled, count($w['off'] ?? []));
+            foreach ($days as &$row) {
+                if ($moved > 0 && $row['week'] === $wk && $row['status'] === 'Absent' && $row['type'] === 'auto') {
+                    $row['status'] = 'Day off (moved)'; $n['absent']--; $n['rest']++; $paidFixed++; $moved--;
+                }
+            }
+            unset($row);
+        }
+        // flexible day-offs: paid day-offs a week beyond the fixed ones, e.g. 1 a week -> 2 in a 15-day cut-off (days marked "day off" count first)
+        $flexAllowed = intdiv($daysIn * max(0, $sch['paid_rest'] - count($sch['off'])), 7);
+        $convert = min(count(array_filter($days, fn ($x) => $x['status'] === 'Absent' && $x['type'] === 'auto')), max(0, $flexAllowed - $manualRest));
         if ($convert > 0) {
             $n['absent'] -= $convert;
             $n['rest'] += $convert;
             foreach ($days as &$row) {                                              // label the first unworked days as day-offs
-                if ($convert > 0 && $row['status'] === 'Absent') { $row['status'] = 'Day off (allowed)'; $convert--; }
+                if ($convert > 0 && $row['status'] === 'Absent' && $row['type'] === 'auto') { $row['status'] = 'Day off (allowed)'; $convert--; }
             }
             unset($row);
         }
+        // paid day-offs (for daily-paid staff): fixed ones within the allowance + flexible ones (incl. days marked "day off") within it
+        $paidRest = $paidFixed + min($n['rest'] - $paidFixed, $flexAllowed);
 
+        foreach ($days as &$row) unset($row['week']);
+        unset($row);
         [$daily, $hourly] = self::rates($e, $cfg);
         if ($e['pay_type'] === 'daily') {
-            $basic = r2(($n['present'] + $n['leave']) * $daily);
+            $basic = r2(($n['present'] + $n['leave'] + $paidRest) * $daily);
             $absence = 0.0;
         } else {
-            $basic = r2((float) $e['monthly_rate'] / 2);
+            $basic = r2((float) $e['monthly_rate'] / max(1, count($cfg['cutoffs'])));
             $absence = min($basic, r2($n['absent'] * $daily));
         }
         $ut = min(r2($mins['ut'] / 60 * $hourly), max(0, $basic - $absence));
@@ -175,6 +301,7 @@ class Payroll
         return [
             'pay_type' => $e['pay_type'], 'monthly_rate' => (float) $e['monthly_rate'], 'daily_rate' => round($daily, 4), 'hourly_rate' => round($hourly, 4),
             'days_in_period' => $daysIn, 'days_present' => $n['present'], 'days_absent' => $n['absent'], 'days_rest' => $n['rest'], 'days_leave' => $n['leave'],
+            'days_paid' => $e['pay_type'] === 'daily' ? $n['present'] + $n['leave'] + $paidRest : $daysIn - $n['absent'],
             'hours_worked' => round($mins['worked'] / 60, 2), 'late_minutes' => $mins['late'],
             'undertime_hours' => round($mins['ut'] / 60, 2), 'ot_hours' => round($mins['ot'] / 60, 2),
             'basic_pay' => $basic, 'absence_deduction' => $absence, 'undertime_deduction' => $ut, 'ot_pay' => $ot,

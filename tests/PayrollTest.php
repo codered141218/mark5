@@ -253,3 +253,114 @@ test('upgrade step 8 is re-runnable and gives existing roles payslip access', fu
     ok(in_array('payroll.self', $p, true));
     eq(1, count(array_keys($p, 'payroll.self')), 'not added twice');
 });
+
+test('import: one device user per employee; a device user without punches never wipes days; suggestions are one-to-one', function () {
+    $eva = Employees::save(['full_name' => 'Eva Mallo', 'biometric_id' => '027', 'pay_type' => 'monthly', 'monthly_rate' => 15000]);
+    eq('27', DB::value('SELECT biometric_id FROM employees WHERE id = ?', [$eva]), 'leading zeros dropped');
+    $chan = Employees::save(['full_name' => 'Chan Lee', 'pay_type' => 'monthly', 'monthly_rate' => 9000]);
+    $day = ['2026-10-11' => ['10:00', '22:00'], '2026-10-12' => ['10:05', '22:01']];
+    // like the restaurant's device: "Eve" #1 (registered twice, no punches) and "Eva" #7; two users named Chan
+    $p = ['format' => 'test', 'from' => '2026-10-11', 'to' => '2026-10-12', 'people' => [
+        '23' => ['name' => 'Chan', 'days' => $day], '21' => ['name' => 'Eve', 'days' => []], '27' => ['name' => 'Eva', 'days' => $day], '29' => ['name' => 'Chan', 'days' => $day]]];
+    $prev = array_column(Attendance::preview($p), null, 'device_id');
+    eq([$eva, 'device ID'], [$prev['27']['employee_id'], $prev['27']['matched_by']]);
+    eq(null, $prev['21']['employee_id'], 'Eve is not matched to Eva Mallo');
+    eq($chan, $prev['23']['employee_id']);
+    eq(null, $prev['29']['employee_id'], 'the second Chan is not suggested the same employee');
+    throws(fn () => Attendance::save($p, ['21' => (string) $eva, '27' => (string) $eva], 'x.xls'), 'more than one device user');
+    eq('27', DB::value('SELECT biometric_id FROM employees WHERE id = ?', [$eva]), 'nothing changed');
+    $r = Attendance::save($p, ['21' => 'skip', '27' => (string) $eva, '23' => (string) $chan, '29' => 'skip'], 'x.xls');
+    eq(2, $r['employees']);
+    eq([$eva, '27', 2], [$r['linked'][1]['employee_id'], $r['linked'][1]['device_id'], $r['linked'][1]['days']]);
+    eq(2, (int) DB::value('SELECT COUNT(*) FROM attendance WHERE employee_id = ? AND time_in IS NOT NULL', [$eva]));
+    // choosing the empty device user by mistake moves the link but keeps the punches already imported
+    Attendance::save($p, ['21' => (string) $eva], 'x.xls');
+    eq('21', DB::value('SELECT biometric_id FROM employees WHERE id = ?', [$eva]));
+    eq(2, (int) DB::value('SELECT COUNT(*) FROM attendance WHERE employee_id = ? AND time_in IS NOT NULL', [$eva]));
+    Attendance::save($p, ['27' => (string) $eva, '21' => 'skip'], 'x.xls');
+    eq('27', DB::value('SELECT biometric_id FROM employees WHERE id = ?', [$eva]));
+});
+
+test('cut-off schedule is configurable: any end / pay-out days, 1 to 4 a month, monthly basic = monthly / cut-offs', function () {
+    $mk = fn ($json) => Payroll::cutoffs('2026-02-01', Payroll::cutoffDefs($json));
+    eq([['from' => '2026-02-01', 'to' => '2026-02-15', 'pay_date' => '2026-02-20'], ['from' => '2026-02-16', 'to' => '2026-02-28', 'pay_date' => '2026-03-05']],
+        $mk('[{"end":31,"pay":5},{"end":15,"pay":20}]'), '1-15 paid 20th, 16-end paid 5th of next month');
+    eq([['from' => '2026-02-01', 'to' => '2026-02-28', 'pay_date' => '2026-02-28']], $mk('[{"end":31,"pay":31}]'), 'monthly');
+    eq('2026-01-26', $mk('[{"end":10,"pay":15},{"end":25,"pay":30}]')[0]['from'], 'default 26-10');
+    eq(['1 – 15, paid on the 20th', '16 – month end, paid on the 5th of the next month'], Payroll::cutoffLabels(Payroll::cutoffDefs('[{"end":15,"pay":20},{"end":31,"pay":5}]')));
+
+    Payroll::saveSettings(['cut_end' => ['25', '10', ''], 'cut_pay' => ['30', '15', '']]);
+    eq([['end' => 10, 'pay' => 15], ['end' => 25, 'pay' => 30]], Payroll::settings()['cutoffs'], 'sorted, blank row ignored');
+    throws(fn () => Payroll::saveSettings(['cut_end' => ['10', '10'], 'cut_pay' => ['15', '20']]), 'Two cut-offs end on day 10');
+    throws(fn () => Payroll::saveSettings(['cut_end' => ['10'], 'cut_pay' => ['0']]), 'pay-out day');
+    throws(fn () => Payroll::saveSettings(['cut_end' => [''], 'cut_pay' => ['']]), 'at least one');
+
+    $e = ['pay_type' => 'monthly', 'monthly_rate' => 15000, 'daily_rate' => 0];
+    $cfg = Payroll::settings();
+    eq(7500, Payroll::compute($e, '2026-10-11', '2026-10-11', att_days('2026-10-11', ['10:00-22:00']), $cfg)['basic_pay']);
+    $cfg['cutoffs'] = Payroll::cutoffDefs('[{"end":31,"pay":5}]');
+    eq(15000, Payroll::compute($e, '2026-10-11', '2026-10-11', att_days('2026-10-11', ['10:00-22:00']), $cfg)['basic_pay'], 'one cut-off a month');
+    $cfg['cutoffs'] = Payroll::cutoffDefs('[{"end":7,"pay":10},{"end":15,"pay":18},{"end":22,"pay":25},{"end":31,"pay":3}]');
+    eq(3750, Payroll::compute($e, '2026-10-11', '2026-10-11', att_days('2026-10-11', ['10:00-22:00']), $cfg)['basic_pay'], 'four a month');
+});
+
+test("employee's work schedule: fixed day-offs paid up to their paid day-offs a week, own shift, daily-paid get paid day-offs", function () {
+    // Oct 11-25 2026: Sundays 11, 18, 25 (one in each calendar week); work Mon-Sat 10:00-22:00
+    $spans = [];
+    for ($d = '2026-10-11'; $d <= '2026-10-25'; $d = add_days($d, 1)) $spans[] = date('N', strtotime($d)) === '7' ? '' : '10:00-22:00';
+    $att = att_days('2026-10-11', $spans);
+    $cfg = Payroll::settings();
+    $cfg['paid_rest_days'] = 0;
+    $e = ['pay_type' => 'monthly', 'monthly_rate' => 15000, 'daily_rate' => 0, 'work_days' => '123456', 'paid_rest_days' => 1];
+    $c = Payroll::compute($e, '2026-10-11', '2026-10-25', $att, $cfg);
+    eq([12, 3, 0, 0.0], [$c['days_present'], $c['days_rest'], $c['days_absent'], $c['absence_deduction']], 'every Sunday off is paid');
+    eq('Day off', $c['days'][0]['status']);
+    $c = Payroll::compute(['paid_rest_days' => 0] + $e, '2026-10-11', '2026-10-25', $att, $cfg);
+    eq([3, 1500.0, 'Day off (unpaid)'], [$c['days_absent'], $c['absence_deduction'], $c['days'][0]['status']], 'no paid day-off: Sundays deducted');
+    // Saturday + Sunday off (Sat 17 / 24 not worked)
+    $att2 = $att;
+    unset($att2['2026-10-17'], $att2['2026-10-24']);
+    $c = Payroll::compute(['work_days' => '12345'] + $e, '2026-10-11', '2026-10-25', $att2, $cfg);
+    eq([3, 2], [$c['days_rest'], $c['days_absent']], 'Sat + Sun off, 1 paid a week: Saturday paid, Sunday unpaid');
+    // worked on the day off
+    $att3 = $att + att_days('2026-10-18', ['10:00-22:00']);
+    $c = Payroll::compute($e, '2026-10-11', '2026-10-25', $att3, $cfg);
+    eq([13, 2, 'Present (day off)'], [$c['days_present'], $c['days_rest'], $c['days'][7]['status']]);
+    // worked on Sunday 18 but not on Wednesday 14 (same week): Wednesday becomes the paid day off
+    $att4 = $att3;
+    unset($att4['2026-10-14']);
+    $c = Payroll::compute($e, '2026-10-11', '2026-10-25', $att4, $cfg);
+    eq([12, 3, 0, 'Day off (moved)'], [$c['days_present'], $c['days_rest'], $c['days_absent'], $c['days'][3]['status']]);
+    unset($att4['2026-10-15']);
+    eq(1, Payroll::compute($e, '2026-10-11', '2026-10-25', $att4, $cfg)['days_absent'], 'only one day off a week moves');
+    // flexible day-off (any day) from the employee's own setting, while the default is 0
+    $flex = ['work_days' => null, 'paid_rest_days' => 1] + $e;
+    $c = Payroll::compute($flex, '2026-10-11', '2026-10-25', $att, $cfg);
+    eq([2, 1], [$c['days_rest'], $c['days_absent']], '1 a week = 2 in 15 days');
+    // daily-paid: paid day-offs are paid
+    $daily = ['pay_type' => 'daily', 'monthly_rate' => 0, 'daily_rate' => 600, 'work_days' => '123456', 'paid_rest_days' => 1];
+    $c = Payroll::compute($daily, '2026-10-11', '2026-10-25', $att, $cfg);
+    eq([15.0, 9000.0], [(float) $c['days_paid'], $c['basic_pay']]);
+    $c = Payroll::compute(['paid_rest_days' => 0] + $daily, '2026-10-11', '2026-10-25', $att, $cfg);
+    eq([12.0, 7200.0], [(float) $c['days_paid'], $c['basic_pay']]);
+    // own shift: 09:00, 10 hours
+    $own = ['shift_start' => '09:00', 'shift_hours' => 10, 'work_days' => null, 'paid_rest_days' => null] + $e;
+    $c = Payroll::compute($own, '2026-10-12', '2026-10-12', att_days('2026-10-12', ['09:30-19:30']), $cfg);
+    eq([30, 0.0, 0.0, 50.0], [$c['late_minutes'], $c['undertime_hours'], $c['ot_hours'], $c['hourly_rate']]);
+});
+
+test('employee schedule fields are saved and validated; upgrade step 9 adds them', function () {
+    $id = Employees::save(['full_name' => 'Sched Test', 'work_days' => '6543 21', 'work_days_set' => '1', 'paid_rest_days' => '1', 'shift_start' => '9:00', 'shift_hours' => '10']);
+    $row = DB::one('SELECT work_days, paid_rest_days, shift_start, shift_hours FROM employees WHERE id = ?', [$id]);
+    eq(['123456', 1, '09:00', 10.0], [$row['work_days'], (int) $row['paid_rest_days'], $row['shift_start'], (float) $row['shift_hours']]);
+    ok(str_contains(Payroll::scheduleLabel(DB::one('SELECT * FROM employees WHERE id = ?', [$id])), 'Sun off'));
+    Employees::save(['id' => $id, 'full_name' => 'Sched Test', 'active' => 1, 'work_days' => '1234567', 'paid_rest_days' => '', 'shift_start' => '', 'shift_hours' => '']);
+    eq([null, null, null, null], array_values(DB::one('SELECT work_days, paid_rest_days, shift_start, shift_hours FROM employees WHERE id = ?', [$id])), 'blank = defaults');
+    throws(fn () => Employees::save(['id' => $id, 'full_name' => 'Sched Test', 'work_days' => '', 'work_days_set' => '1']), 'at least one working day');
+    throws(fn () => Employees::save(['id' => $id, 'full_name' => 'Sched Test', 'paid_rest_days' => '9']), '0 to 7');
+    throws(fn () => Employees::save(['id' => $id, 'full_name' => 'Sched Test', 'shift_start' => '25:00']), 'shift start');
+    DB::run("UPDATE settings SET value = '8' WHERE `key` = 'db_version'");
+    App\Services\Migrations::run();
+    App\Services\Migrations::run();
+    ok((int) DB::value("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'payslips' AND column_name = 'days_paid'") === 1);
+});

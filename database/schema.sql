@@ -44,7 +44,11 @@ CREATE TABLE IF NOT EXISTS employees (
   philhealth DECIMAL(12,2) NOT NULL DEFAULT 0,
   pagibig DECIMAL(12,2) NOT NULL DEFAULT 0,
   wtax DECIMAL(12,2) NOT NULL DEFAULT 0,
-  ca_deduction DECIMAL(12,2) NOT NULL DEFAULT 0       -- cash advance deducted per pay-out (0 = the whole balance)
+  ca_deduction DECIMAL(12,2) NOT NULL DEFAULT 0,      -- cash advance deducted per pay-out (0 = the whole balance)
+  work_days VARCHAR(7) NULL,            -- weekdays worked, 1 = Mon … 7 = Sun (e.g. 123456 = Sunday off); NULL = any day
+  paid_rest_days TINYINT NULL,          -- paid day-offs a week; NULL = the payroll default
+  shift_start VARCHAR(5) NULL,          -- own shift start (HH:MM); NULL = the payroll default
+  shift_hours DECIMAL(4,2) NULL         -- own regular hours a day; NULL = the payroll default
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS users (
@@ -718,6 +722,7 @@ CREATE TABLE IF NOT EXISTS payslips (
   days_absent DECIMAL(6,2) NOT NULL DEFAULT 0,
   days_rest DECIMAL(6,2) NOT NULL DEFAULT 0,
   days_leave DECIMAL(6,2) NOT NULL DEFAULT 0,
+  days_paid DECIMAL(6,2) NOT NULL DEFAULT 0,          -- days paid: daily-paid = present + leave + paid day-offs; monthly = days − absences
   hours_worked DECIMAL(8,2) NOT NULL DEFAULT 0,
   late_minutes INT NOT NULL DEFAULT 0,
   undertime_hours DECIMAL(8,2) NOT NULL DEFAULT 0,

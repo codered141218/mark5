@@ -95,6 +95,7 @@ class Attendance
                 if ($v === 'ID:') { for ($k = $c + 1; $k < count($r); $k++) if ($r[$k] !== '') { $id = $r[$k]; break; } }
                 if ($v === 'Name:') { for ($k = $c + 1; $k < count($r); $k++) if ($r[$k] !== '') { $name = $r[$k]; break; } }
             }
+            $id = ltrim(trim($id), '0') ?: ($id === '' ? '' : '0');
             if ($id === '') continue;
             $days = [];
             $next = $rows[$i + 1] ?? [];
@@ -165,44 +166,74 @@ class Attendance
     }
 
     // ------------------------------------------------------------------ matching & saving
-    /** Each device user with the employee it matches (by biometric ID, else a name suggestion). */
+    /**
+     * Each device user with the employee it matches: the employee linked to that device ID, else a name suggestion
+     * (only for users with punches, and never an employee already linked or suggested for another device user).
+     */
     public static function preview(array $parsed): array
     {
-        $emps = DB::all('SELECT id, emp_no, full_name, biometric_id, active FROM employees ORDER BY full_name');
+        $emps = DB::all('SELECT id, emp_no, full_name, biometric_id, active FROM employees ORDER BY active DESC, full_name');
+        $byDevice = [];
+        foreach ($emps as $e) if ($e['biometric_id'] !== null && $e['biometric_id'] !== '') $byDevice[(string) $e['biometric_id']] = (int) $e['id'];
+        $taken = [];
         $out = [];
         foreach ($parsed['people'] as $id => $p) {
-            $match = null;
-            $how = '';
-            foreach ($emps as $e) if ((string) $e['biometric_id'] === (string) $id) { $match = (int) $e['id']; $how = 'device ID'; break; }
-            if (!$match) {
-                $n = mb_strtolower(trim($p['name']));
+            $match = $byDevice[(string) $id] ?? null;
+            if ($match) $taken[$match] = true;
+            $out[(string) $id] = ['device_id' => (string) $id, 'name' => $p['name'], 'days' => count($p['days']), 'employee_id' => $match, 'matched_by' => $match ? 'device ID' : ''];
+        }
+        // name suggestions: exact full / first name first, then a first name that starts the same (3+ letters)
+        foreach ([1, 2] as $pass) {
+            foreach ($out as &$x) {
+                if ($x['employee_id'] || !$x['days']) continue;
+                $n = mb_strtolower(trim($x['name']));
+                if (mb_strlen($n) < 2 || preg_match('/^user \d+$/', $n)) continue;
                 foreach ($emps as $e) {
-                    if ($e['biometric_id'] !== null && $e['biometric_id'] !== '') continue;
-                    $full = mb_strtolower($e['full_name']);
+                    if (!$e['active'] || isset($taken[(int) $e['id']]) || ($e['biometric_id'] !== null && $e['biometric_id'] !== '')) continue;
+                    $full = mb_strtolower(trim($e['full_name']));
                     $first = explode(' ', $full)[0];
-                    if ($n !== '' && ($full === $n || $first === $n || str_starts_with($first, $n) || str_starts_with($n, $first))) { $match = (int) $e['id']; $how = 'name'; break; }
+                    $hit = $pass === 1 ? ($full === $n || $first === $n)
+                        : (mb_strlen($n) >= 3 && mb_strlen($first) >= 3 && (str_starts_with($first, $n) || str_starts_with($n, $first)));
+                    if ($hit) { $x['employee_id'] = (int) $e['id']; $x['matched_by'] = 'name'; $taken[(int) $e['id']] = true; break; }
                 }
             }
-            $out[] = ['device_id' => (string) $id, 'name' => $p['name'], 'days' => count($p['days']), 'employee_id' => $match, 'matched_by' => $how];
+            unset($x);
         }
+        $out = array_values($out);
         usort($out, fn ($a, $b) => (int) $a['device_id'] <=> (int) $b['device_id']);
         return $out;
     }
 
     /**
      * Save the punches. $map = [device id => employee id | 'new' | 'skip']. 'new' creates the employee with the device name.
-     * Days set by hand (source manual) are kept. Returns ['employees' => n, 'days' => n, 'import_id' => id].
+     * One device user per employee. Days set by hand (source manual) are kept; a device user without any punch in the file
+     * is only linked (their days are not touched). Returns ['employees' => n, 'days' => n, 'import_id' => id, 'linked' => [...]].
      */
     public static function save(array $parsed, array $map, string $fileName = ''): array
     {
         Auth::require('payroll.manage');
+        $chosen = [];
+        foreach ($parsed['people'] as $devId => $p) {
+            $choice = (string) ($map[(string) $devId] ?? 'skip');
+            if ($choice === 'skip' || $choice === '' || $choice === 'new') continue;
+            $chosen[(int) $choice][] = '#' . $devId . ' ' . $p['name'];
+        }
+        foreach ($chosen as $empId => $devs) {
+            if (count($devs) > 1) {
+                $name = DB::value('SELECT full_name FROM employees WHERE id = ?', [$empId]) ?: 'One employee';
+                throw HttpException::bad("$name is chosen for more than one device user (" . implode(', ', $devs) . '). '
+                    . 'Choose the device user who punches for this employee and set the other one to Skip.');
+            }
+        }
         return DB::transaction(function () use ($parsed, $map, $fileName) {
             $importId = DB::insert('attendance_imports', ['file_name' => mb_substr($fileName, 0, 190) ?: null, 'period_from' => $parsed['from'], 'period_to' => $parsed['to'],
                 'created_by' => Auth::id(), 'created_at' => now()]);
             $emps = 0;
             $days = 0;
+            $linked = [];
             foreach ($parsed['people'] as $devId => $p) {
-                $choice = $map[(string) $devId] ?? 'skip';
+                $devId = (string) $devId;
+                $choice = (string) ($map[$devId] ?? 'skip');
                 if ($choice === 'skip' || $choice === '') continue;
                 if ($choice === 'new') {
                     $empId = \App\Services\Finance\Employees::save(['full_name' => $p['name'], 'active' => 1]);
@@ -210,28 +241,34 @@ class Attendance
                     $empId = (int) $choice;
                     if (!DB::value('SELECT id FROM employees WHERE id = ?', [$empId])) throw HttpException::notFound('Employee');
                 }
-                DB::run('UPDATE employees SET biometric_id = NULL WHERE biometric_id = ? AND id <> ?', [(string) $devId, $empId]);
-                DB::update('employees', $empId, ['biometric_id' => (string) $devId]);
+                DB::run('UPDATE employees SET biometric_id = NULL WHERE biometric_id = ? AND id <> ?', [$devId, $empId]);
+                DB::run('UPDATE employees SET biometric_id = ? WHERE id = ?', [$devId, $empId]);
                 $emps++;
+                $n = 0;
                 // every day of the file's period: punches, or none (absent unless set by hand)
-                for ($d = $parsed['from']; $d <= $parsed['to']; $d = add_days($d, 1)) {
-                    $punches = $p['days'][$d] ?? [];
-                    $row = DB::one('SELECT * FROM attendance WHERE employee_id = ? AND work_date = ?', [$empId, $d]);
-                    if ($row && $row['source'] === 'manual') continue;
-                    $data = [
-                        'time_in' => $punches ? $punches[0] . ':00' : null,
-                        'time_out' => count($punches) > 1 ? end($punches) . ':00' : null,
-                        'punches' => $punches ? implode(' ', $punches) : null,
-                        'source' => 'device', 'import_id' => $importId, 'updated_by' => Auth::id(), 'updated_at' => now(),
-                    ];
-                    if ($row) DB::update('attendance', (int) $row['id'], $data);
-                    elseif ($punches) DB::insert('attendance', $data + ['employee_id' => $empId, 'work_date' => $d, 'day_type' => 'auto']);
-                    if ($punches) $days++;
+                if ($p['days']) {
+                    for ($d = $parsed['from']; $d <= $parsed['to']; $d = add_days($d, 1)) {
+                        $punches = $p['days'][$d] ?? [];
+                        $row = DB::one('SELECT * FROM attendance WHERE employee_id = ? AND work_date = ?', [$empId, $d]);
+                        if ($row && $row['source'] === 'manual') continue;
+                        $data = [
+                            'time_in' => $punches ? $punches[0] . ':00' : null,
+                            'time_out' => count($punches) > 1 ? end($punches) . ':00' : null,
+                            'punches' => $punches ? implode(' ', $punches) : null,
+                            'source' => 'device', 'import_id' => $importId, 'updated_by' => Auth::id(), 'updated_at' => now(),
+                        ];
+                        if ($row) DB::update('attendance', (int) $row['id'], $data);
+                        elseif ($punches) DB::insert('attendance', $data + ['employee_id' => $empId, 'work_date' => $d, 'day_type' => 'auto']);
+                        if ($punches) $n++;
+                    }
                 }
+                $days += $n;
+                $linked[] = ['employee_id' => $empId, 'device_id' => $devId, 'days' => $n];
             }
             DB::update('attendance_imports', $importId, ['employees' => $emps, 'days' => $days]);
-            Audit::log('import', 'attendance', $importId, ['file' => $fileName, 'from' => $parsed['from'], 'to' => $parsed['to'], 'employees' => $emps]);
-            return ['employees' => $emps, 'days' => $days, 'import_id' => $importId];
+            Audit::log('import', 'attendance', $importId, ['file' => $fileName, 'from' => $parsed['from'], 'to' => $parsed['to'], 'employees' => $emps,
+                'map' => array_map(fn ($l) => "#{$l['device_id']}→{$l['employee_id']}", $linked)]);
+            return ['employees' => $emps, 'days' => $days, 'import_id' => $importId, 'linked' => $linked];
         });
     }
 

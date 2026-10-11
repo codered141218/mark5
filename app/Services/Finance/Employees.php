@@ -40,6 +40,29 @@ class Employees
         if ($row['date_hired'] && !is_date($row['date_hired'])) throw HttpException::bad('Enter a valid date hired');
         foreach (self::MONEY as $f) if (array_key_exists($f, $d)) $row[$f] = max(0, r2(num($d[$f])));
         if (array_key_exists('pay_type', $d)) $row['pay_type'] = $d['pay_type'] === 'daily' ? 'daily' : 'monthly';
+        // work schedule: blank = the payroll defaults
+        if (array_key_exists('work_days', $d)) {
+            $wd = array_unique(str_split(preg_replace('/[^1-7]/', '', is_array($d['work_days']) ? implode('', $d['work_days']) : (string) $d['work_days'])));
+            sort($wd);
+            if (array_key_exists('work_days_set', $d) && !$wd) throw HttpException::bad('Tick at least one working day');
+            $row['work_days'] = $wd && count($wd) < 7 ? implode('', $wd) : null;
+        }
+        if (array_key_exists('paid_rest_days', $d)) {
+            $v = trim((string) $d['paid_rest_days']);
+            if ($v !== '' && (!is_numeric($v) || (int) $v < 0 || (int) $v > 7)) throw HttpException::bad('Paid day-offs a week: 0 to 7 (blank = the payroll default)');
+            $row['paid_rest_days'] = $v === '' ? null : (int) $v;
+        }
+        if (array_key_exists('shift_start', $d)) {
+            $v = trim((string) $d['shift_start']);
+            if ($v !== '' && (!preg_match('/^(\d{1,2}):(\d{2})/', $v, $m) || (int) $m[1] > 23 || (int) $m[2] > 59)) throw HttpException::bad('Enter the shift start like 10:00');
+            $row['shift_start'] = $v === '' ? null : sprintf('%02d:%02d', $m[1], $m[2]);
+        }
+        if (array_key_exists('shift_hours', $d)) {
+            $v = trim((string) $d['shift_hours']);
+            if ($v !== '' && (!is_numeric($v) || (float) $v < 1 || (float) $v > 24)) throw HttpException::bad('Hours a day: 1 to 24 (blank = the payroll default)');
+            $row['shift_hours'] = $v === '' ? null : (float) $v;
+        }
+        if ($row['biometric_id'] !== null) $row['biometric_id'] = ltrim((string) $row['biometric_id'], '0') ?: '0';   // device user IDs have no leading zeros
         if ($row['biometric_id'] && DB::value('SELECT id FROM employees WHERE biometric_id = ? AND id <> ?', [$row['biometric_id'], (int) ($d['id'] ?? 0)])) {
             throw HttpException::bad('Another employee already has biometric ID ' . $row['biometric_id']);
         }

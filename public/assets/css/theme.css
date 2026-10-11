@@ -494,6 +494,13 @@ a.pay-step:hover { border-color: var(--brand); }
 .att-legend { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
 .att-k { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-left: 8px; }
 .att-k.ok { background: rgba(5, 150, 105, .25); } .att-k.late { background: rgba(217, 119, 6, .35); } .att-k.bad { background: rgba(220, 38, 38, .25); } .att-k.rest { background: #d6dae2; }
+.input.is-invalid { border-color: var(--red); box-shadow: 0 0 0 3px var(--red-soft); }
+.cutoff-table td { vertical-align: middle; }
+.cutoff-table .input { width: 90px; }
+.wd-pick { display: flex; gap: 6px; flex-wrap: wrap; }
+.wd-pick label { display: inline-flex; align-items: center; gap: 4px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 13px; user-select: none; }
+.wd-pick input { margin: 0; }
+.wd-pick label:has(input:not(:checked)) { color: var(--muted); background: var(--bg, #f6f7f9); text-decoration: line-through; }
 .my-slips { display: grid; gap: 10px; max-width: 640px; }
 .my-slip { display: flex; justify-content: space-between; gap: 12px; padding: 16px 18px; border-radius: 16px; background: var(--surface); border: 1px solid var(--border);
   box-shadow: var(--shadow); color: var(--text); text-decoration: none; }

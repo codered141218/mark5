@@ -127,6 +127,14 @@ class Migrations
                     DB::run('UPDATE roles SET permissions = ? WHERE id = ?', [json_encode(array_values(array_unique(array_merge($p, $add)))), $r['id']]);
                 }
             },
+            // 9: each employee's work schedule (fixed day-offs, paid day-offs a week, own shift); paid days on the payslip
+            9 => function () {
+                self::addColumn('employees', 'work_days', 'VARCHAR(7) NULL');
+                self::addColumn('employees', 'paid_rest_days', 'TINYINT NULL');
+                self::addColumn('employees', 'shift_start', 'VARCHAR(5) NULL');
+                self::addColumn('employees', 'shift_hours', 'DECIMAL(4,2) NULL');
+                self::addColumn('payslips', 'days_paid', 'DECIMAL(6,2) NOT NULL DEFAULT 0 AFTER days_leave');
+            },
         ];
     }
 

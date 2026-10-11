@@ -31,7 +31,7 @@ $n = fn ($v) => rtrim(rtrim(number_format((float) $v, 2), '0'), '.') ?: '0';
     <div class="ps-cols">
       <div>
         <h4>Pay computation</h4>
-        <div class="ps-row"><span>Basic pay<?= $s['pay_type'] === 'daily' ? ' (' . $n($s['days_present'] + $s['days_leave']) . ' days)' : '' ?></span><b><?= money($s['basic_pay']) ?></b></div>
+        <div class="ps-row"><span>Basic pay<?= $s['pay_type'] === 'daily' ? ' (' . $n((float) $s['days_paid'] ?: $s['days_present'] + $s['days_leave']) . ' days)' : '' ?></span><b><?= money($s['basic_pay']) ?></b></div>
         <div class="ps-row"><span>Days present</span><b><?= $n($s['days_present']) ?> / <?= (int) $s['days_in_period'] ?></b></div>
         <div class="ps-row"><span>OT (hrs)</span><b><?= $n($s['ot_hours']) ?></b></div>
         <div class="ps-row"><span>OT pay</span><b><?= money($s['ot_pay']) ?></b></div>
