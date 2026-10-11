@@ -101,7 +101,15 @@
   const activeLines = (t) => (t ? t.items.filter((i) => i.status === 'active') : []);
   const unsentLines = (t) => activeLines(t).filter((i) => !i.kitchen_sent);   // Done not pressed yet
   const unprintedLines = (t) => activeLines(t).filter((i) => !i.printed);      // order slip never printed (sent or not)
-  const hasSlipPrinter = () => Printer.printers().some((p) => p.slips);       // this device prints order slips
+  /**
+   * This device prints order slips: a slip printer is set up AND usable here (a Bluetooth printer needs Web Bluetooth
+   * and must have been paired once). A phone with a leftover / never-paired printer entry counts as no printer.
+   */
+  const hasSlipPrinter = () => Printer.printers().some((p) => p.slips
+    && (p.method !== 'bluetooth' || (!!navigator.bluetooth && !!p.deviceName))
+    && (p.method !== 'serial' || !!navigator.serial));
+  /** A slip printer that can print right now (Bluetooth / USB connected). Done and auto print only print then. */
+  const slipsReadyHere = () => hasSlipPrinter() && Printer.status().printers.some((x) => x.slips && (!x.linkable || x.connected));
   const itemCount = (t) => activeLines(t).reduce((s, i) => s + Number(i.qty), 0);
   const needsTable = (t) => t.order_type === 'dine_in' && !t.table_label;
   const OPT = B.options || {};
@@ -239,7 +247,7 @@
       const o = fresh[0];
       App.toast(`🔔 New order${fresh.length > 1 ? `s (${fresh.length})` : ''}: ${orderTitle(o)}${o.created_by_name ? ' · from ' + o.created_by_name : ''} — order slip not printed yet`, 'info');
     }
-    if (!Printer.config().autoPrintSent || !hasSlipPrinter()) return;
+    if (!Printer.config().autoPrintSent || !slipsReadyHere()) return;
     for (const o of S.orders) {
       if (!o.waiting || S.printing.has(o.id) || S.slipJobs.has(o.id) || (S.autoFailed.get(o.id) || 0) > Date.now()) continue;
       printWaiting(o.id).then((ok) => { if (!ok) S.autoFailed.set(o.id, Date.now() + 120000); });   // failed: try again in 2 minutes
@@ -485,14 +493,15 @@
     const waiting = r.waiting || r.sent;
     if (!waiting.length) return;
     const qty = plural(waiting.reduce((n, l) => n + Number(l.qty), 0), 'item');
-    if (Printer.config().slipOnDone && hasSlipPrinter()) {
+    if (Printer.config().slipOnDone && slipsReadyHere()) {
       printSlips(r.ticket, waiting);
       App.toast(`${orderTitle(r.ticket)}: order slip printing (${qty})`);
     } else if (!hasSlipPrinter()) {
       // e.g. a waiter's phone: the order goes to the cashier, whose tablet prints the slip
       App.toast(`${orderTitle(r.ticket)} sent (${qty}) — the order slip prints at the cashier`);
     } else {
-      App.toast(`${orderTitle(r.ticket)} saved — order slip not printed yet`);
+      // printer set up here but not connected: nothing is queued; the order shows as NEW · not printed with a Print button
+      App.toast(`${orderTitle(r.ticket)} saved — order slip NOT printed (printer not connected). Print it from the orders board.`, 'info');
     }
   }
 
@@ -502,10 +511,18 @@
    */
   async function printSlips(t, lines, extra = {}) {
     if (!lines.length) return true;
+    const mark = () => Api.printed(t.id, lines.map((l) => l.id)).then(() => { if (S.view === 'board') loadOrders({ quiet: true }); }).catch(() => {});
+    // Only paper that really came out counts. A sleeping printer keeps the job: the lines are marked when it prints on reconnect.
+    let queued = 0;
+    let failed = false;
+    const onQueuedPrinted = () => { queued--; if (queued === 0 && !failed) mark(); };
     S.slipJobs.add(t.id);
     try {
-      const ok = await Print.slips(t, lines, extra);
-      if (ok) await Api.printed(t.id, lines.map((l) => l.id)).catch(() => {});
+      const ok = await Print.slips(t, lines, { ...extra, onQueuedPrinted }, (rs) => {
+        queued = rs.filter((r) => r.queued).length;
+        failed = rs.some((r) => !r.ok && !r.queued);
+      });
+      if (ok) await mark();
       return ok;
     } finally { S.slipJobs.delete(t.id); }
   }
@@ -558,7 +575,7 @@
     const cfg = Printer.config();
     const job = paidDialog(t, cfg.autoPrint);
     if (cfg.autoPrint) job.printed = await Print.receipt(t, false);
-    if (cfg.slipOnDone && unsent.length && hasSlipPrinter()) printSlips(t, unsent);
+    if (cfg.slipOnDone && unsent.length && slipsReadyHere()) printSlips(t, unsent);
   }
 
   async function cancelOrder() {
@@ -1916,7 +1933,7 @@
   const printCtx = (extra) => ({ business: B.business, tax: B.tax, methods: B.payment_methods, stations: B.stations || [], ...extra });
   const Print = {
     receipt: (t, reprint) => report(t.status === 'open' ? 'Bill' : 'Receipt', (o) => Printer.printReceipt(t, printCtx({ reprint: !!reprint, ...o }))),
-    slips: (t, lines, extra = {}) => report(extra.reprint ? 'Order slip reprint' : 'Order slip', (o) => Printer.printSlips(t, lines, printCtx({ ...extra, ...o })), { queuedOk: true }),
+    slips: (t, lines, extra = {}, onResults = null) => report(extra.reprint ? 'Order slip reprint' : 'Order slip', (o) => Printer.printSlips(t, lines, printCtx({ ...extra, ...o })), { onResults }),
     reading: (r, isZ) => report(isZ ? 'Z-reading' : 'X-reading', (o) => Printer.printReading(r, printCtx(o), isZ)),
   };
 
@@ -1926,17 +1943,18 @@
    * - A printer asleep / out of range: the job is kept by that printer and prints by itself on reconnect (toast).
    * - Other failures: dialog with "Connect & retry" for that printer.
    */
-  async function report(what, job, { queuedOk = false } = {}) {
+  async function report(what, job, { onResults = null } = {}) {
     let results;
     try { results = await job({}); } catch (err) {
       if (err.noPrinter) { noPrinterDialog(what, err); return false; }
       App.toast(`${what}: ${err.message}`, 'error');
       return false;
     }
+    if (onResults) onResults(results);
     let ok = true;
     for (const r of results) {
       if (r.ok) continue;
-      if (!(r.queued && queuedOk)) ok = false;   // queuedOk: a job kept by a sleeping printer counts (it prints on reconnect)
+      ok = false;
       if (r.queued) App.toast(`${r.printer.name} is not connected — the ${what.toLowerCase()} will print when it reconnects.`, 'info');
       else printFailedDialog(what, r, job);
     }

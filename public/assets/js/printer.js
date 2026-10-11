@@ -575,9 +575,9 @@
 
   // ------------------------------------------------------------------ print queue (jobs that could not print yet)
   let jobSeq = 1;
-  function enqueue(p, label, bytes) {
+  function enqueue(p, label, bytes, onPrinted = null) {
     const c = conn(p.id);
-    const job = { id: jobSeq++, label, bytes, time: new Date().toLocaleTimeString('en-PH') };
+    const job = { id: jobSeq++, label, bytes, onPrinted, time: new Date().toLocaleTimeString('en-PH') };
     c.queue.push(job);
     if (c.queue.length > 30) c.queue.shift();
     addLog('warn', `Queued "${label}" — it will print when the printer reconnects.`, p);
@@ -605,6 +605,7 @@
         await sendBytes(p, job.bytes);
         c.queue.shift();
         addLog('info', `Printed queued "${job.label}"`, p);
+        if (job.onPrinted) { try { job.onPrinted(); } catch (e) { /* caller's problem */ } }
         emit();
       }
     } catch (e) {
@@ -633,7 +634,7 @@
       emit();
     } catch (e) {
       if (e.notConnected && config().autoReconnect && p.method === 'bluetooth') {
-        const job = enqueue(p, opts.label || 'print job', bytes);
+        const job = enqueue(p, opts.label || 'print job', bytes, opts.onPrinted || null);   // onPrinted: called if it prints later
         scheduleReconnect(p.id);
         res.queued = true;
         res.jobId = job.id;
@@ -939,7 +940,8 @@
         const docs = opts.slipPerStation || groups.length === 1
           ? groups.map((g) => slipDoc(ticket, g.lines, g.title, { reprint: ctx.reprint, cols, big: opts.bigItems }))
           : [slipDoc(ticket, groups.flatMap((g) => g.lines), 'ORDER SLIP', { reprint: ctx.reprint, cols, big: opts.bigItems })];
-        return output(p, docs, { copies: p.slipCopies, label: `${ctx.reprint ? 'Reprint ' : ''}${groups.map((g) => g.title.toLowerCase()).join(' + ')} slip ${ticket.ticket_no}` });
+        return output(p, docs, { copies: p.slipCopies, label: `${ctx.reprint ? 'Reprint ' : ''}${groups.map((g) => g.title.toLowerCase()).join(' + ')} slip ${ticket.ticket_no}`,
+          onPrinted: ctx.onQueuedPrinted || null });
       }));
     },
 
