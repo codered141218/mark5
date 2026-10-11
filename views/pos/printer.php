@@ -51,6 +51,7 @@ $business = [
       <div class="col gap-sm">
         <label class="checkbox"><input type="checkbox" data-opt="autoPrint"> Print the receipt automatically after payment</label>
         <label class="checkbox"><input type="checkbox" data-opt="slipOnDone"> Print the order slips when the cashier presses <b>Done</b></label>
+        <label class="checkbox"><input type="checkbox" data-opt="autoPrintSent"> Print orders sent from waiters' phones automatically (otherwise they show as <b>NEW</b> with a Print button)</label>
         <label class="checkbox"><input type="checkbox" data-opt="slipPerStation"> One slip per station (untick: one slip with all the items)</label>
         <label class="checkbox"><input type="checkbox" data-opt="bigItems"> Big item lines on order slips (double height)</label>
         <label class="checkbox"><input type="checkbox" data-opt="autoReconnect"> Reconnect automatically when a printer wakes up, and keep missed prints</label>

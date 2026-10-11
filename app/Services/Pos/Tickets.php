@@ -46,7 +46,7 @@ class Tickets
         foreach (['id', 'pax', 'sc_count', 'cash_session_id', 'vat_inclusive'] as $k) $t[$k] = $t[$k] === null ? null : (int) $t[$k];
         foreach ($t['items'] as &$i) {
             foreach (['qty', 'price', 'line_total', 'discount_value', 'discount_amount'] as $k) $i[$k] = (float) $i[$k];
-            $i['id'] = (int) $i['id']; $i['item_id'] = (int) $i['item_id']; $i['kitchen_sent'] = (int) $i['kitchen_sent'];
+            $i['id'] = (int) $i['id']; $i['item_id'] = (int) $i['item_id']; $i['kitchen_sent'] = (int) $i['kitchen_sent']; $i['printed'] = (int) ($i['printed'] ?? 0);
             $i['station_id'] = $i['station_id'] === null ? null : (int) $i['station_id'];
         }
         foreach ($t['payments'] as &$p) {
@@ -65,15 +65,24 @@ class Tickets
     /** Open orders for the POS board. */
     public static function openList(): array
     {
-        // unsent / unsent_qty: lines (and their quantity) whose order slip was never printed; sent: lines already printed
-        return array_map(fn ($r) => ['total' => (float) $r['total'], 'pax' => (int) $r['pax'], 'item_count' => (float) $r['item_count'], 'id' => (int) $r['id'],
-            'unsent' => (int) $r['unsent'], 'unsent_qty' => (float) $r['unsent_qty'], 'sent' => (int) $r['sent']] + $r, DB::all(
-            "SELECT t.id, t.ticket_no, t.table_label, t.order_type, t.customer_name, t.pax, t.total, t.created_at, u.full_name AS created_by_name,
-                    x.item_count, x.unsent, x.unsent_qty, x.sent
+        // per order, active lines that are: unsent (Done not pressed yet), waiting (sent with Done, order slip not printed yet), printed
+        $int = ['id', 'created_by', 'unsent', 'waiting', 'printed', 'sent'];
+        $num = ['total', 'item_count', 'unsent_qty', 'waiting_qty'];
+        return array_map(function ($r) use ($int, $num) {
+            foreach ($int as $k) $r[$k] = (int) $r[$k];
+            foreach ($num as $k) $r[$k] = (float) $r[$k];
+            $r['pax'] = (int) $r['pax'];
+            return $r;
+        }, DB::all(
+            "SELECT t.id, t.ticket_no, t.table_label, t.order_type, t.customer_name, t.pax, t.total, t.created_at, t.created_by, u.full_name AS created_by_name,
+                    x.item_count, x.unsent, x.unsent_qty, x.waiting, x.waiting_qty, x.printed, x.sent
              FROM tickets t LEFT JOIN users u ON u.id = t.created_by
              JOIN (SELECT t2.id, COALESCE(SUM(i.qty), 0) AS item_count,
                           COUNT(CASE WHEN i.kitchen_sent = 0 THEN 1 END) AS unsent,
                           COALESCE(SUM(CASE WHEN i.kitchen_sent = 0 THEN i.qty END), 0) AS unsent_qty,
+                          COUNT(CASE WHEN i.kitchen_sent = 1 AND i.printed = 0 THEN 1 END) AS waiting,
+                          COALESCE(SUM(CASE WHEN i.kitchen_sent = 1 AND i.printed = 0 THEN i.qty END), 0) AS waiting_qty,
+                          COUNT(CASE WHEN i.printed = 1 THEN 1 END) AS printed,
                           COUNT(CASE WHEN i.kitchen_sent = 1 THEN 1 END) AS sent
                    FROM tickets t2 LEFT JOIN ticket_items i ON i.ticket_id = t2.id AND i.status = 'active'
                    WHERE t2.status = 'open' GROUP BY t2.id) x ON x.id = t.id
@@ -237,7 +246,25 @@ class Tickets
         self::requireTable($t);
         $pending = array_values(array_filter($t['items'], fn ($i) => $i['status'] === 'active' && !$i['kitchen_sent']));
         DB::run("UPDATE ticket_items SET kitchen_sent = 1 WHERE ticket_id = ? AND status = 'active' AND kitchen_sent = 0", [$id]);
-        return ['ticket' => self::get($id), 'sent' => $pending];
+        $t = self::get($id);
+        // waiting: every line sent but not printed yet (just sent now, or sent earlier from a device without a printer)
+        $waiting = array_values(array_filter($t['items'], fn ($i) => $i['status'] === 'active' && $i['kitchen_sent'] && !$i['printed']));
+        return ['ticket' => $t, 'sent' => $pending, 'waiting' => $waiting];
+    }
+
+    /**
+     * The order slips of these lines were printed (by the device that printed them). Done alone does not mark a line
+     * printed, so orders sent from a phone without a printer stay "not printed" on the cashier's board until printed.
+     */
+    public static function markPrinted(int $id, array $lineIds): array
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $lineIds))));
+        if (!DB::value('SELECT id FROM tickets WHERE id = ?', [$id])) throw HttpException::notFound('Order');
+        if ($ids) {
+            $in = implode(',', array_fill(0, count($ids), '?'));
+            DB::run("UPDATE ticket_items SET printed = 1, kitchen_sent = 1 WHERE ticket_id = ? AND status = 'active' AND id IN ($in)", array_merge([$id], $ids));
+        }
+        return self::get($id);
     }
 
     /** Older name of done() (kept for API compatibility). */

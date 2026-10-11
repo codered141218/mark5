@@ -84,6 +84,12 @@ class Migrations
                 self::addColumn('cash_sessions', 'opening_txn_id', 'INT UNSIGNED NULL AFTER opening_source');
                 self::addColumn('cash_sessions', 'return_txn_id', 'INT UNSIGNED NULL AFTER opening_txn_id');
             },
+            // 5: "sent" (Done, e.g. by a waiter on a phone) and "order slip printed" are tracked separately
+            5 => function () {
+                $had = (int) DB::value("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'ticket_items' AND column_name = 'printed'");
+                self::addColumn('ticket_items', 'printed', 'TINYINT(1) NOT NULL DEFAULT 0 AFTER kitchen_sent');
+                if (!$had) DB::run('UPDATE ticket_items SET printed = kitchen_sent');   // until now Done meant printed
+            },
         ];
     }
 

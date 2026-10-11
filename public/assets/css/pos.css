@@ -354,3 +354,6 @@ html.kb-open .pos-dlg .modal-body { padding-top: 10px; padding-bottom: 10px; }
 .source-hint { display: block; margin-top: 6px; }
 .return-fund { align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--amber-soft); width: 100%; }
 .return-fund small { display: block; font-size: 12px; margin-top: 2px; }
+.oc-badge.taking { color: #1d4ed8; background: #e0ecff; }
+.oc-print { margin-top: 4px; height: 44px; width: 100%; font-weight: 800; }
+.sent-dot.waiting { background: transparent; box-shadow: inset 0 0 0 2px var(--amber); }

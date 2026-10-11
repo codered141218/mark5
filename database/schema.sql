@@ -571,7 +571,8 @@ CREATE TABLE IF NOT EXISTS ticket_items (
   void_reason VARCHAR(255) NULL,
   voided_by INT UNSIGNED NULL,
   voided_at DATETIME NULL,
-  kitchen_sent TINYINT(1) NOT NULL DEFAULT 0,
+  kitchen_sent TINYINT(1) NOT NULL DEFAULT 0,   -- sent: Done was pressed (on any device, e.g. a waiter's phone)
+  printed TINYINT(1) NOT NULL DEFAULT 0,        -- the order slip of this line was actually printed
   created_by INT UNSIGNED NULL,
   created_at DATETIME NULL,
   KEY ix_ti_ticket (ticket_id),

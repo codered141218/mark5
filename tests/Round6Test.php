@@ -82,3 +82,46 @@ test('orders board: new (never printed), items added after the slip, printed, em
     eq([0, 0, 0.0], [$rows[$empty['id']]['unsent'], $rows[$empty['id']]['sent'], $rows[$empty['id']]['item_count']]);
     eq(4.0, $rows[$added['id']]['item_count']);
 });
+
+test('waiter sends with Done (no printer): stays "waiting" until a device prints it; markPrinted; payment keeps it', function () {
+    if (!CashSessions::current()) CashSessions::open(0);
+    $t = Tickets::create(['order_type' => 'dine_in', 'table_label' => '9']);
+    Tickets::addItem($t['id'], item_id('Chicken Adobo'), 2);
+    $r = Tickets::done($t['id']);
+    eq(1, count($r['sent']));
+    eq(1, count($r['waiting']));
+    $row = array_column(Tickets::openList(), null, 'id')[$t['id']];
+    eq([0, 1, 2.0, 0], [$row['unsent'], $row['waiting'], $row['waiting_qty'], $row['printed']], 'sent, not printed');
+    // more items, Done again: the earlier unprinted line is still waiting too
+    Tickets::addItem($t['id'], item_id('Coke'), 1);
+    $r = Tickets::done($t['id']);
+    eq(1, count($r['sent']));
+    eq(2, count($r['waiting']));
+    $ids = array_column($r['waiting'], 'id');
+    $after = Tickets::markPrinted($t['id'], $ids);
+    ok(array_reduce($after['items'], fn ($c, $i) => $c && $i['printed'] === 1, true));
+    $row = array_column(Tickets::openList(), null, 'id')[$t['id']];
+    eq([0, 0, 2], [$row['unsent'], $row['waiting'], $row['printed']]);
+    // lines of another order are not touched
+    $o = Tickets::create(['order_type' => 'takeout']);
+    $line = Tickets::addItem($o['id'], item_id('Coke'), 1)['items'][0]['id'];
+    Tickets::markPrinted($t['id'], [$line]);
+    eq(0, (int) DB::value('SELECT printed FROM ticket_items WHERE id = ?', [$line]));
+    // Done on the other order: its line waits for a printer too
+    Tickets::done($o['id']);
+    $row = array_column(Tickets::openList(), null, 'id')[$o['id']];
+    eq(1, $row['waiting']);
+});
+
+test('upgrade step 5: existing sent lines count as printed; re-running does not reset printed flags', function () {
+    DB::pdo()->exec('ALTER TABLE ticket_items DROP COLUMN printed');
+    $sent = (int) DB::value('SELECT COUNT(*) FROM ticket_items WHERE kitchen_sent = 1');
+    ok($sent > 0);
+    DB::run("UPDATE settings SET value = '4' WHERE `key` = 'db_version'");
+    App\Services\Migrations::run();
+    eq($sent, (int) DB::value('SELECT COUNT(*) FROM ticket_items WHERE printed = 1'));
+    DB::run('UPDATE ticket_items SET printed = 0');
+    DB::run("UPDATE settings SET value = '4' WHERE `key` = 'db_version'");
+    App\Services\Migrations::run();
+    eq(0, (int) DB::value('SELECT COUNT(*) FROM ticket_items WHERE printed = 1'));
+});

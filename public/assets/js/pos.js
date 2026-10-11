@@ -86,6 +86,12 @@
     queue: Promise.resolve(),       // order changes run one after another (fast taps never get lost)
     boardFilter: (() => { try { return localStorage.getItem('mark5_board_filter') || 'all'; } catch (e) { return 'all'; } })(),
     flash: null,                    // {id, itemId, at}: the order line last highlighted (revealLine)
+    printing: new Set(),            // order ids printed from the board now (printWaiting)
+    slipJobs: new Set(),            // order ids whose slips this device is printing now (printSlips)
+    autoFailed: new Map(),          // order id -> time to retry an automatic print that failed
+    waitingSeen: null,              // order id -> quantity waiting to print, at the last refresh (null before the first)
+    lastLoad: 0,
+    boardPainted: 0,
     adds: [],                       // item taps shown on the order panel but not saved yet: {n, target, item, qty, sending}
     addSeq: 0,
     flushing: false,                // flushAdds() is queued / running
@@ -93,7 +99,9 @@
   };
 
   const activeLines = (t) => (t ? t.items.filter((i) => i.status === 'active') : []);
-  const unsentLines = (t) => activeLines(t).filter((i) => !i.kitchen_sent);   // order slip not printed yet
+  const unsentLines = (t) => activeLines(t).filter((i) => !i.kitchen_sent);   // Done not pressed yet
+  const unprintedLines = (t) => activeLines(t).filter((i) => !i.printed);      // order slip never printed (sent or not)
+  const hasSlipPrinter = () => Printer.printers().some((p) => p.slips);       // this device prints order slips
   const itemCount = (t) => activeLines(t).reduce((s, i) => s + Number(i.qty), 0);
   const needsTable = (t) => t.order_type === 'dine_in' && !t.table_label;
   const OPT = B.options || {};
@@ -140,7 +148,8 @@
     updateLine: (id, line, data) => post(`/orders/${id}/items/${line}`, data),
     voidLine: (id, line, reason, pin) => post(`/orders/${id}/items/${line}/void`, { reason, pin }),
     discountLine: (id, line, data) => post(`/orders/${id}/items/${line}/discount`, data),  // {discount_id, value, sc_person, pin}
-    done: (id) => post(`/orders/${id}/done`),                       // {ticket, sent}: lines whose slips must print now
+    done: (id) => post(`/orders/${id}/done`),                       // {ticket, sent, waiting}: waiting = sent lines whose slip is not printed yet
+    printed: (id, lines) => post(`/orders/${id}/printed`, { lines }), // this device printed the order slips of these lines
     discount: (id, data) => post(`/orders/${id}/discount`, data),   // {discount_id, value, sc_count, pax, sc_details, pin}
     split: (id, data) => post(`/orders/${id}/split`, data),         // {source, target}
     merge: (id, sourceId) => post(`/orders/${id}/merge`, { source_id: sourceId }),
@@ -193,15 +202,70 @@
   async function loadMenu() {
     try { S.menu = await Api.menu(); renderMenu(); } catch (e) { showError(e); }
   }
-  async function loadOrders() {
+  async function loadOrders({ quiet = false } = {}) {
     try {
       const r = await Api.orders();
+      S.lastLoad = Date.now();
+      const changed = JSON.stringify(r.orders) !== JSON.stringify(S.orders) || JSON.stringify(r.tables) !== JSON.stringify(S.tables);
       S.orders = r.orders;
       S.tables = r.tables;
-      if ((r.session && r.session.id) !== (S.session && S.session.id)) S.session = r.session; // opened / closed on another terminal
-      renderTop();
-      if (S.view === 'board') renderBoard();
-    } catch (e) { showError(e); }
+      const sessionChanged = (r.session && r.session.id) !== (S.session && S.session.id);
+      if (sessionChanged) S.session = r.session; // opened / closed on another terminal
+      if (changed || sessionChanged || !quiet || Date.now() - S.boardPainted > 30000) {   // 30 s: keep the order timers fresh
+        renderTop();
+        if (S.view === 'board') renderBoard();
+      }
+      watchSentOrders();
+    } catch (e) { if (!quiet) showError(e); }
+  }
+
+  /**
+   * Orders sent from another device (a waiter's phone) whose slips nobody printed yet: tell the cashier
+   * (beep + message) and, if this device is set to, print them automatically.
+   */
+  function watchSentOrders() {
+    const fresh = [];
+    const seen = new Map();
+    for (const o of S.orders) {
+      if (!o.waiting) continue;
+      seen.set(o.id, o.waiting_qty);
+      const before = S.waitingSeen ? S.waitingSeen.get(o.id) || 0 : null;
+      if (before !== null && o.waiting_qty > before && o.created_by !== B.user.id && !S.printing.has(o.id) && !S.slipJobs.has(o.id)) fresh.push(o);
+    }
+    S.waitingSeen = seen;
+    const cashierSide = hasSlipPrinter() || can('pos.settle');
+    if (fresh.length && cashierSide) {
+      chime();
+      const o = fresh[0];
+      App.toast(`🔔 New order${fresh.length > 1 ? `s (${fresh.length})` : ''}: ${orderTitle(o)}${o.created_by_name ? ' · from ' + o.created_by_name : ''} — order slip not printed yet`, 'info');
+    }
+    if (!Printer.config().autoPrintSent || !hasSlipPrinter()) return;
+    for (const o of S.orders) {
+      if (!o.waiting || S.printing.has(o.id) || S.slipJobs.has(o.id) || (S.autoFailed.get(o.id) || 0) > Date.now()) continue;
+      printWaiting(o.id).then((ok) => { if (!ok) S.autoFailed.set(o.id, Date.now() + 120000); });   // failed: try again in 2 minutes
+    }
+  }
+
+  /** A short two-tone chime (Web Audio; silent until the screen has been touched once). */
+  function chime() {
+    try {
+      S.audio = S.audio || new (window.AudioContext || window.webkitAudioContext)();
+      const ctx = S.audio;
+      if (ctx.state === 'suspended') ctx.resume();
+      [[880, 0], [1320, 0.16]].forEach(([f, at]) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = 'sine';
+        o.frequency.value = f;
+        g.gain.setValueAtTime(0.0001, ctx.currentTime + at);
+        g.gain.exponentialRampToValueAtTime(0.35, ctx.currentTime + at + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + at + 0.28);
+        o.connect(g).connect(ctx.destination);
+        o.start(ctx.currentTime + at);
+        o.stop(ctx.currentTime + at + 0.3);
+      });
+    } catch (e) { /* no audio */ }
+    if (navigator.vibrate) navigator.vibrate(120);
   }
 
   // =====================================================================================================
@@ -418,13 +482,47 @@
     const r = await run(() => Api.done(S.order.id), $('[data-act="done"]'));
     if (!r) return;
     closeOrder();
-    if (!r.sent.length) return;
-    if (Printer.config().slipOnDone) {
-      Print.slips(r.ticket, r.sent);
-      App.toast(`${orderTitle(r.ticket)}: order slip printing (${plural(r.sent.reduce((n, l) => n + Number(l.qty), 0), 'item')})`);
+    const waiting = r.waiting || r.sent;
+    if (!waiting.length) return;
+    const qty = plural(waiting.reduce((n, l) => n + Number(l.qty), 0), 'item');
+    if (Printer.config().slipOnDone && hasSlipPrinter()) {
+      printSlips(r.ticket, waiting);
+      App.toast(`${orderTitle(r.ticket)}: order slip printing (${qty})`);
+    } else if (!hasSlipPrinter()) {
+      // e.g. a waiter's phone: the order goes to the cashier, whose tablet prints the slip
+      App.toast(`${orderTitle(r.ticket)} sent (${qty}) — the order slip prints at the cashier`);
     } else {
-      App.toast(`${orderTitle(r.ticket)} saved`);
+      App.toast(`${orderTitle(r.ticket)} saved — order slip not printed yet`);
     }
+  }
+
+  /**
+   * Print the order slips of `lines` on this device's printers, then tell the server they are printed
+   * (a printer that is asleep keeps the job and prints it on reconnect, which counts as printed).
+   */
+  async function printSlips(t, lines, extra = {}) {
+    if (!lines.length) return true;
+    S.slipJobs.add(t.id);
+    try {
+      const ok = await Print.slips(t, lines, extra);
+      if (ok) await Api.printed(t.id, lines.map((l) => l.id)).catch(() => {});
+      return ok;
+    } finally { S.slipJobs.delete(t.id); }
+  }
+
+  /** Board: print the slips of an order sent from another device (waiter) that nobody printed yet. */
+  async function printWaiting(id, btn) {
+    if (S.printing.has(id)) return;
+    S.printing.add(id);
+    try {
+      const t = await run(() => Api.show(id), btn);
+      if (!t) return false;
+      const lines = activeLines(t).filter((l) => l.kitchen_sent && !l.printed);
+      const ok = lines.length ? await spin(btn, () => printSlips(t, lines)) : true;
+      if (ok && lines.length) App.toast(`${orderTitle(t)}: order slip printed (${plural(lines.reduce((n, l) => n + Number(l.qty), 0), 'item')})`);
+      await loadOrders();
+      return ok;
+    } finally { S.printing.delete(id); }
   }
 
   /**
@@ -460,7 +558,7 @@
     const cfg = Printer.config();
     const job = paidDialog(t, cfg.autoPrint);
     if (cfg.autoPrint) job.printed = await Print.receipt(t, false);
-    if (cfg.slipOnDone && unsent.length) Print.slips(t, unsent);
+    if (cfg.slipOnDone && unsent.length && hasSlipPrinter()) printSlips(t, unsent);
   }
 
   async function cancelOrder() {
@@ -489,7 +587,7 @@
     const go = async (stations, b) => {
       const chosen = lines.filter((l) => stations.includes(l.station_id || 0));
       if (!(await run(() => Api.reprintOrder(id, stations), b))) return false;
-      Print.slips(t, chosen, { reprint: true });
+      printSlips(t, chosen, { reprint: true }).then(() => { if (S.view === 'board') loadOrders(); });
       return true;
     };
     if (ids.length === 1) { go(ids); return; }
@@ -550,17 +648,24 @@
     $('#pos-top').innerHTML = top.join('');
   }
 
-  /** Print state of an order on the board: 'new' (no order slip printed yet), 'added' (items added after the slip), 'printed', 'empty'. */
+  /**
+   * Order slip state of an order on the board:
+   *   'new'     sent with Done (e.g. by a waiter) and no slip printed yet   'added'  more items sent after the slip was printed
+   *   'taking'  items not sent yet (someone is still taking the order)     'printed' every slip printed     'empty' no items
+   */
   function slipState(o) {
-    if (!Number(o.unsent) && !Number(o.sent)) return 'empty';
-    if (!Number(o.unsent)) return 'printed';
-    return Number(o.sent) ? 'added' : 'new';
+    if (o.waiting) return o.printed ? 'added' : 'new';
+    if (o.unsent) return 'taking';
+    return o.printed || o.sent ? 'printed' : 'empty';
   }
   const BOARD_FILTERS = { all: 'All', unprinted: 'Not printed', printed: 'Printed' };
 
   function renderBoard() {
     const total = S.orders.reduce((sum, o) => sum + o.total, 0);
-    const unprinted = S.orders.filter((o) => ['new', 'added'].includes(slipState(o)));
+    S.boardPainted = Date.now();
+    const unprinted = S.orders.filter((o) => ['new', 'added', 'taking'].includes(slipState(o)));
+    const toPrint = S.orders.filter((o) => o.waiting).length;
+    const printHere = hasSlipPrinter();
     const counts = { all: S.orders.length, unprinted: unprinted.length, printed: S.orders.filter((o) => slipState(o) === 'printed').length };
     if (!BOARD_FILTERS[S.boardFilter] || (S.boardFilter !== 'all' && !counts[S.boardFilter])) S.boardFilter = 'all';
     const shown = S.orders.filter((o) => S.boardFilter === 'all' || (S.boardFilter === 'unprinted' ? unprinted.includes(o) : slipState(o) === 'printed'));
@@ -568,11 +673,14 @@
       const sub = [o.table_label && o.customer_name ? o.customer_name : '', TYPE[o.order_type], o.ticket_no].filter(Boolean).join(' · ');
       const mins = minutesSince(o.created_at);
       const st = slipState(o);
-      const qty = Number(o.unsent_qty) || Number(o.unsent);
-      const badge = st === 'new' ? `<span class="oc-badge new">● NEW · not printed</span>`
-        : st === 'added' ? `<span class="oc-badge added">+ ${plural(qty, 'item')} not printed</span>`
+      const from = o.created_by !== B.user.id && o.created_by_name ? ` · ${esc(o.created_by_name.split(' ')[0])}` : '';
+      const badge = st === 'new' ? `<span class="oc-badge new">● NEW · not printed${from}</span>`
+        : st === 'added' ? `<span class="oc-badge added">+ ${plural(o.waiting_qty, 'new item')} · not printed</span>`
+        : st === 'taking' ? `<span class="oc-badge taking">✎ ${o.printed || o.sent ? '+ ' : ''}${plural(o.unsent_qty, 'item')} not sent yet${from}</span>`
         : st === 'printed' ? `<span class="oc-badge printed">✓ Printed</span>`
         : `<span class="oc-badge empty">No items</span>`;
+      const printBtn = o.waiting && printHere
+        ? `<button type="button" class="btn btn-primary oc-print" data-act="printWaiting" data-id="${o.id}" ${S.printing.has(o.id) ? 'disabled' : ''}>⎙ Print order slip</button>` : '';
       return `<div class="order-card t-${o.order_type} slip-${st}" role="button" tabindex="0" data-act="open" data-id="${o.id}">
           ${badge}
           <span class="oc-head"><span class="oc-title">${esc(orderTitle(o))}</span>
@@ -580,6 +688,7 @@
             <button type="button" class="oc-more" data-act="cardMenu" data-id="${o.id}" aria-label="More">⋯</button></span>
           <span class="oc-sub">${esc(sub)}</span>
           <span class="oc-foot"><span>${plural(o.item_count, 'item')}${o.pax > 1 ? ` · ${o.pax} pax` : ''}</span><b>${peso(o.total)}</b></span>
+          ${printBtn}
         </div>`;
     }).join('');
     const filters = S.orders.length && counts.unprinted ? `<div class="board-filter" role="tablist">
@@ -602,7 +711,7 @@
         <button class="btn btn-xl" type="button" data-act="new" data-type="takeout" ${off}>+ Take-out</button>
         <button class="btn btn-xl" type="button" data-act="new" data-type="delivery" ${off}>+ Delivery</button>
         <span class="grow"></span>
-        <span class="muted board-sum">${S.orders.length} open · ${peso(total)}${counts.unprinted ? ` · <b class="text-unprinted">${counts.unprinted} not printed</b>` : ''}</span>
+        <span class="muted board-sum">${S.orders.length} open · ${peso(total)}${toPrint ? ` · <b class="text-unprinted">${toPrint} to print</b>` : ''}</span>
         <button class="btn btn-lg" type="button" data-act="refresh" title="Refresh">↻</button>
       </div>
       ${filters}
@@ -649,7 +758,7 @@
     const keepScroll = oldList && S.renderedOrderId === t.id ? oldList.scrollTop : null;
     S.renderedOrderId = t.id;
     const active = activeLines(t);
-    const unsent = unsentLines(t).length;
+    const unsent = (hasSlipPrinter() ? unprintedLines(t) : unsentLines(t)).length;
     // a line still flashing keeps flashing when the panel is redrawn (the saved line replaces the one shown on the tap)
     const fl = S.flash && Date.now() - S.flash.at < 1600 ? S.flash : null;
     const flashId = fl && (fl.itemId ? pendingLineId(t, fl.itemId) : fl.id);
@@ -658,7 +767,7 @@
       <div class="tline${l.status === 'void' ? ' voided' : ''}${l.saving ? ' saving' : ''}${l.id === flashId ? flashCss : ''}" data-id="${l.id}" data-line-item="${l.item_id}" ${l.status === 'active' ? 'data-act="line"' : ''}>
         <span class="tline-qty">${qtyStr(l.qty)}</span>
         <div>
-          <div class="tline-name">${esc(l.name)}${l.kitchen_sent ? '<span class="sent-dot" title="Order slip printed"></span>' : ''}</div>
+          <div class="tline-name">${esc(l.name)}${l.printed ? '<span class="sent-dot" title="Order slip printed"></span>' : l.kitchen_sent ? '<span class="sent-dot waiting" title="Sent — order slip not printed yet"></span>' : ''}</div>
           ${l.notes ? `<div class="tline-note">${esc(l.notes)}</div>` : ''}
           ${l.status === 'active' && l.discount_kind ? `<div class="tline-disc"><span>${esc(l.discount_name || 'Discount')}</span><span>−${money(l.discount_amount)}</span></div>` : ''}
           ${l.status === 'void' ? `<div class="small">VOID: ${esc(l.void_reason || '')}</div>` : ''}
@@ -700,7 +809,7 @@
         <button type="button" class="btn" data-act="bill" ${off(active.length)}>Print bill</button>
         <button type="button" class="btn" data-act="reprintOrder" ${off(active.length && !t.draft)}>Reprint order</button>
         <button type="button" class="btn btn-danger" data-act="cancel">Cancel order</button>
-        <button type="button" class="btn btn-primary done-btn" data-act="done">Done${unsent ? ` · print ${unsent}` : ''}</button>
+        <button type="button" class="btn btn-primary done-btn" data-act="done">Done${unsent ? ` · ${hasSlipPrinter() ? 'print' : 'send'} ${unsent}` : ''}</button>
         ${can('pos.settle') ? `<button type="button" class="btn btn-success pay" data-act="pay" ${off(active.length)}>PAY ${peso(t.total)}</button>` : ''}
       </div>`;
     const list = $('#order-pane .ticket-lines');
@@ -1297,7 +1406,7 @@
     const pays = [];           // [{method, amount, reference, customer_id}]
     let method = 'cash';
     let customers = null;      // loaded when "charge" is chosen
-    const unsent = unsentLines(t);
+    const unsent = unprintedLines(t);   // slips never printed (not sent yet, or sent from a phone without a printer)
     const total = t.total;
     const sums = () => {
       const paid = r2(pays.reduce((s, p) => s + p.amount, 0));
@@ -1795,6 +1904,7 @@
         <div class="col gap-sm mt">
           <label class="checkbox"><input type="checkbox" data-act="toggle" data-key="autoPrint" ${c.autoPrint ? 'checked' : ''}> Print the receipt automatically after payment</label>
           <label class="checkbox"><input type="checkbox" data-act="toggle" data-key="slipOnDone" ${c.slipOnDone ? 'checked' : ''}> Print the order slips when I press Done</label>
+          <label class="checkbox"><input type="checkbox" data-act="toggle" data-key="autoPrintSent" ${c.autoPrintSent ? 'checked' : ''}> Print orders sent from waiters' phones automatically</label>
         </div>`;
     }
     Printer.onStatus(paint);
@@ -1806,7 +1916,7 @@
   const printCtx = (extra) => ({ business: B.business, tax: B.tax, methods: B.payment_methods, stations: B.stations || [], ...extra });
   const Print = {
     receipt: (t, reprint) => report(t.status === 'open' ? 'Bill' : 'Receipt', (o) => Printer.printReceipt(t, printCtx({ reprint: !!reprint, ...o }))),
-    slips: (t, lines, extra = {}) => report(extra.reprint ? 'Order slip reprint' : 'Order slip', (o) => Printer.printSlips(t, lines, printCtx({ ...extra, ...o }))),
+    slips: (t, lines, extra = {}) => report(extra.reprint ? 'Order slip reprint' : 'Order slip', (o) => Printer.printSlips(t, lines, printCtx({ ...extra, ...o })), { queuedOk: true }),
     reading: (r, isZ) => report(isZ ? 'Z-reading' : 'X-reading', (o) => Printer.printReading(r, printCtx(o), isZ)),
   };
 
@@ -1816,7 +1926,7 @@
    * - A printer asleep / out of range: the job is kept by that printer and prints by itself on reconnect (toast).
    * - Other failures: dialog with "Connect & retry" for that printer.
    */
-  async function report(what, job) {
+  async function report(what, job, { queuedOk = false } = {}) {
     let results;
     try { results = await job({}); } catch (err) {
       if (err.noPrinter) { noPrinterDialog(what, err); return false; }
@@ -1826,7 +1936,7 @@
     let ok = true;
     for (const r of results) {
       if (r.ok) continue;
-      ok = false;
+      if (!(r.queued && queuedOk)) ok = false;   // queuedOk: a job kept by a sleeping printer counts (it prints on reconnect)
       if (r.queued) App.toast(`${r.printer.name} is not connected — the ${what.toLowerCase()} will print when it reconnects.`, 'info');
       else printFailedDialog(what, r, job);
     }
@@ -2022,6 +2132,7 @@
     done: doneOrder,
     pay: startPay,
     pane: (b) => { S.pane = b.dataset.pane; render(); },
+    printWaiting: (b, e) => { e.stopPropagation(); printWaiting(Number(b.dataset.id), b); },
     boardFilter: (b) => {
       S.boardFilter = b.dataset.filter;
       try { localStorage.setItem('mark5_board_filter', S.boardFilter); } catch (e) { /* private mode */ }
@@ -2079,7 +2190,11 @@
   if (Printer.config().keepAwake) Printer.keepAwake(true);
 
   // Multiple terminals: refresh the board every 15 s (and when the tab comes back into view)
-  setInterval(() => { if (!document.hidden) loadOrders(); }, 15000);
+  // the board refreshes every 5 s (new orders from waiters show quickly); inside an order every 15 s
+  setInterval(() => {
+    if (document.hidden) return;
+    if (S.view === 'board' || Date.now() - S.lastLoad > 15000) loadOrders({ quiet: true });
+  }, 5000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) loadOrders(); });
 
   trackViewport();

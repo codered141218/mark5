@@ -112,6 +112,12 @@ class PosApiController
         return json(Tickets::done((int) $id));
     }
 
+    /** The device printed the order slips of these lines: {lines: [id, ...]}. */
+    public function printed(Request $req, string $id): Response
+    {
+        return json(Tickets::markPrinted((int) $id, (array) $req->input('lines', [])));
+    }
+
     public function discount(Request $req, string $id): Response
     {
         return json(Tickets::discount((int) $id, $req->all(), $req->input('pin')));

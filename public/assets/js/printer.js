@@ -43,6 +43,7 @@
   const OPTIONS = {
     autoPrint: true,          // receipt after payment
     slipOnDone: true,         // order slips when the cashier presses Done
+    autoPrintSent: false,     // print by itself the slips of orders sent from other devices (waiters' phones)
     slipPerStation: true,     // one slip per station (else one slip with every item, grouped by station)
     currency: 'P', bigItems: true, autoReconnect: true, keepAwake: true,
   };

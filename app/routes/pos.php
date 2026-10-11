@@ -17,6 +17,7 @@ $router->post('/api/pos/orders/{id}/items', [Api::class, 'addItem'], 'pos.access
 $router->post('/api/pos/orders/{id}/items/{line}', [Api::class, 'updateLine'], 'pos.access');
 $router->post('/api/pos/orders/{id}/items/{line}/void', [Api::class, 'voidLine'], 'pos.access');
 $router->post('/api/pos/orders/{id}/done', [Api::class, 'done'], 'pos.access');
+$router->post('/api/pos/orders/{id}/printed', [Api::class, 'printed'], 'pos.access');
 $router->post('/api/pos/orders/{id}/send', [Api::class, 'done'], 'pos.access');   // older name
 $router->post('/api/pos/orders/{id}/items/{line}/discount', [Api::class, 'discountLine'], 'pos.access');
 $router->post('/api/pos/orders/{id}/reprint-order', [Api::class, 'reprintOrder'], 'pos.access');
