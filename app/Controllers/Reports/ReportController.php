@@ -95,7 +95,39 @@ class ReportController
             return view('reports/index', $data + ['petty' => $result]);
         }
         if ($x = Table::export($req, $filename, $rep['label'], $subtitle, $rep['columns'], $result)) return $x;
-        return view('reports/index', $data + ['rows' => $result]);
+        $charts = $this->charts($req, $rep, $result, $from, $to);
+        return view('reports/index', $data + ['rows' => $result, 'charts' => $charts] + ($charts ? ['scripts' => ['js/charts.js']] : []));
+    }
+
+    /** Chart data for a report that has a 'chart' spec (sales reports): trend, top-5 series over time, breakdown bars. */
+    private function charts(Request $req, array $rep, array $rows, string $from, string $to): ?array
+    {
+        $spec = $rep['chart'] ?? null;
+        if (!$spec) return null;
+        $grain = $req->query('grain');
+        $out = ['spec' => $spec, 'grain' => isset(SalesReports::GRAINS[$grain ?? '']) ? $grain : SalesReports::autoGrain($from, $to)];
+        if (!empty($spec['trend'])) $out['trend'] = SalesReports::trend($from, $to, $out['grain']);
+        if (!empty($spec['series'])) $out['series'] = SalesReports::topSeries($from, $to, $spec['series'], $out['grain']);
+        if (!empty($spec['bars'])) {
+            $b = $spec['bars'];
+            $list = $rows;
+            if (!empty($b['short']) && $rows) {
+                // hours of the day: every hour from the first to the last sale, quiet hours as zero
+                $byHour = array_column($rows, null, $b['short']);
+                $hours = array_map('intval', array_keys($byHour));
+                $list = [];
+                for ($h = min($hours); $h <= max($hours); $h++) $list[] = $byHour[$h] ?? [$b['short'] => $h, $b['value'] => 0];
+            }
+            usort($list, fn ($x, $y) => empty($b['vertical']) ? (float) $y[$b['value']] <=> (float) $x[$b['value']] : 0);
+            if (!empty($b['top'])) $list = array_slice($list, 0, $b['top']);
+            $out['bars'] = [
+                'title' => $b['title'], 'vertical' => !empty($b['vertical']), 'money' => !empty($b['money']),
+                'labels' => array_map(fn ($r) => !empty($b['short']) ? str_pad((string) $r[$b['short']], 2, '0', STR_PAD_LEFT) . ':00' : (string) $r[$b['label']], $list),
+                'values' => array_map(fn ($r) => r2((float) $r[$b['value']]), $list),
+                'more' => max(count($rows) - count($list), 0),
+            ];
+        }
+        return $out;
     }
 
     /** Choices for the extra filters a report uses. */

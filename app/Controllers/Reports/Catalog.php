@@ -98,6 +98,7 @@ class Catalog
         return [
             'daily' => [
                 'label' => 'Sales summary by date',
+                'chart' => ['trend' => true],
                 'rows' => fn ($f) => SalesReports::daily($f['from'], $f['to']),
                 'columns' => [self::date(), self::int('receipts', 'Receipts'), self::int('pax', 'Guests'), self::money('gross', 'Gross sales'),
                     self::money('discounts', 'Discounts'), self::money('vatable_sales', 'VATable'), self::money('vat_exempt', 'VAT-exempt'),
@@ -106,6 +107,7 @@ class Catalog
             ],
             'items' => [
                 'label' => 'Sales by item',
+                'chart' => ['series' => 'item', 'bars' => ['label' => 'item', 'value' => 'gross', 'top' => 10, 'title' => 'Top 10 items by sales', 'money' => true]],
                 'rows' => fn ($f) => SalesReports::items($f['from'], $f['to']),
                 'columns' => [self::text('sku', 'SKU'), self::text('item', 'Item'), self::text('category', 'Category'), self::qty('qty', 'Qty sold', true),
                     self::money('gross', 'Sales'), self::money('avg_price', 'Avg price', false), self::money('unit_cost', 'Unit cost', false),
@@ -113,6 +115,7 @@ class Catalog
             ],
             'categories' => [
                 'label' => 'Sales by category',
+                'chart' => ['series' => 'category', 'bars' => ['label' => 'category', 'value' => 'gross', 'top' => 12, 'title' => 'Sales by category', 'money' => true]],
                 'rows' => fn ($f) => SalesReports::categories($f['from'], $f['to']),
                 'columns' => [self::text('category', 'Category'), self::int('receipts', 'Receipts', false), self::qty('qty', 'Qty sold', true),
                     self::money('gross', 'Sales'), self::pct('share_pct', '% of sales')],
@@ -129,17 +132,20 @@ class Catalog
             ],
             'payments' => [
                 'label' => 'Sales by payment method',
+                'chart' => ['bars' => ['label' => 'label', 'value' => 'amount', 'title' => 'Amount by payment method', 'money' => true]],
                 'rows' => fn ($f) => SalesReports::payments($f['from'], $f['to']),
                 'columns' => [self::text('label', 'Method'), self::int('transactions', 'Transactions'), self::money('amount', 'Amount')],
             ],
             'hourly' => [
                 'label' => 'Sales by hour',
+                'chart' => ['bars' => ['label' => 'hour', 'value' => 'net_sales', 'title' => 'Net sales by hour of the day', 'money' => true, 'vertical' => true, 'short' => 'h']],
                 'rows' => fn ($f) => SalesReports::hourly($f['from'], $f['to']),
                 'columns' => [self::text('hour', 'Hour'), self::int('receipts', 'Receipts'), self::int('pax', 'Guests'),
                     self::money('net_sales', 'Net sales'), self::money('avg_ticket', 'Avg ticket', false)],
             ],
             'cashiers' => [
                 'label' => 'Sales by cashier',
+                'chart' => ['bars' => ['label' => 'cashier', 'value' => 'net_sales', 'title' => 'Net sales by cashier', 'money' => true]],
                 'rows' => fn ($f) => SalesReports::cashiers($f['from'], $f['to']),
                 'columns' => [self::text('cashier', 'Cashier'), self::int('receipts', 'Receipts'), self::money('net_sales', 'Net sales'),
                     self::money('discounts', 'Discounts'), self::int('voids_authorized', 'Voids authorized')],

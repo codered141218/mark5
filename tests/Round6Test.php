@@ -125,3 +125,38 @@ test('upgrade step 5: existing sent lines count as printed; re-running does not 
     App\Services\Migrations::run();
     eq(0, (int) DB::value('SELECT COUNT(*) FROM ticket_items WHERE printed = 1'));
 });
+
+test('sales trend: buckets with no gaps, previous period of the same length, weekly / monthly grouping, top 5 series', function () {
+    if (!CashSessions::current()) CashSessions::open(0);
+    $sid = (int) CashSessions::current()['id'];
+    $mk = function (string $date, float $total, int $pax = 2) use ($sid) {
+        $id = DB::insert('tickets', ['ticket_no' => 'TR' . mt_rand(), 'receipt_no' => 'TRR' . mt_rand(), 'cash_session_id' => $sid, 'business_date' => $date,
+            'order_type' => 'dine_in', 'pax' => $pax, 'status' => 'paid', 'subtotal' => $total, 'total' => $total, 'created_by' => 1, 'created_at' => "$date 12:00:00"]);
+        DB::insert('ticket_items', ['ticket_id' => $id, 'item_id' => item_id('Chicken Adobo'), 'name' => 'Chicken Adobo', 'qty' => 1, 'price' => $total,
+            'line_total' => $total, 'status' => 'active', 'kitchen_sent' => 1, 'created_by' => 1, 'created_at' => "$date 12:00:00"]);
+    };
+    $mk('2030-03-02', 100); $mk('2030-03-02', 300, 4); $mk('2030-03-05', 200);
+    $mk('2030-02-27', 50);                                   // previous period (Feb 24 – Mar 1 for a 6-day range)
+    $t = App\Services\Reports\SalesReports::trend('2030-03-02', '2030-03-07', 'day');
+    eq(6, count($t['current']), 'one bucket per day, days without sales included');
+    eq([400.0, 0.0, 0.0, 200.0, 0.0, 0.0], array_column($t['current'], 'net_sales'));
+    eq(2, $t['current'][0]['receipts']);
+    eq(200.0, $t['current'][0]['avg_ticket']);
+    eq(['2030-02-24', '2030-03-01'], [$t['prev_from'], $t['prev_to']]);
+    eq(600.0, $t['totals']['net_sales']);
+    eq(50.0, $t['prev_totals']['net_sales']);
+    eq(8, $t['totals']['pax']);
+    $w = App\Services\Reports\SalesReports::trend('2030-03-02', '2030-03-07', 'week');   // Mar 2 2030 is a Saturday
+    eq(['Feb 25', 'Mar 4'], array_column($w['current'], 'label'), 'weeks start on Monday');
+    eq(['2030-03-02', '2030-03-03'], [$w['current'][0]['from'], $w['current'][0]['to']], 'the first week is cut to the range');
+    eq([400.0, 200.0], array_column($w['current'], 'net_sales'));
+    $m = App\Services\Reports\SalesReports::trend('2030-02-27', '2030-03-07', 'month');
+    eq(['Feb 2030', 'Mar 2030'], array_column($m['current'], 'label'));
+    eq('day', App\Services\Reports\SalesReports::autoGrain('2030-01-01', '2030-01-31'));
+    eq('week', App\Services\Reports\SalesReports::autoGrain('2030-01-01', '2030-06-30'));
+    eq('month', App\Services\Reports\SalesReports::autoGrain('2029-01-01', '2030-06-30'));
+    $s = App\Services\Reports\SalesReports::topSeries('2030-03-02', '2030-03-07', 'item', 'day');
+    eq('Chicken Adobo', $s['series'][0]['name']);
+    eq([400.0, 0.0, 0.0, 200.0, 0.0, 0.0], $s['series'][0]['values']);
+    eq(6, count($s['labels']));
+});

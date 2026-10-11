@@ -108,5 +108,6 @@ $filterParams = array_map(fn ($n) => $filterDefs[$n][0], $filters);
   </div>
 
 <?php else: ?>
+  <?php if (!empty($charts)): ?><?= view('reports/_charts', ['charts' => $charts, 'rep' => $rep], null) ?><?php endif; ?>
   <div class="card"><?= Table::html($rep['columns'], $rows, ['export' => true, 'link' => $rep['link'] ?? null]) ?></div>
 <?php endif; ?>

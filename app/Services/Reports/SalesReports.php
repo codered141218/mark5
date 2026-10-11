@@ -36,6 +36,121 @@ class SalesReports
         );
     }
 
+    // ------------------------------------------------------------------ trends (charts on the sales reports)
+    public const GRAINS = ['day' => 'Daily', 'week' => 'Weekly', 'month' => 'Monthly'];
+
+    /** Default grouping for a date range: daily up to 2 months, weekly up to a year, else monthly. */
+    public static function autoGrain(string $from, string $to): string
+    {
+        $days = (int) ((strtotime($to) - strtotime($from)) / 86400) + 1;
+        return $days <= 62 ? 'day' : ($days <= 366 ? 'week' : 'month');
+    }
+
+    /** Bucket key and label of a date: day = the date, week = its Monday, month = YYYY-MM. */
+    private static function bucket(string $date, string $grain): string
+    {
+        if ($grain === 'week') return date('Y-m-d', strtotime($date . ' -' . ((int) date('N', strtotime($date)) - 1) . ' days'));
+        if ($grain === 'month') return substr($date, 0, 7);
+        return $date;
+    }
+
+    /** Every bucket from $from to $to (no gaps: days without sales show as zero). [key => [label, from, to]] */
+    private static function buckets(string $from, string $to, string $grain): array
+    {
+        $out = [];
+        for ($d = $from; $d <= $to; $d = add_days($d, 1)) {
+            $k = self::bucket($d, $grain);
+            if (!isset($out[$k])) {
+                $label = match ($grain) {
+                    'week' => date('M j', strtotime($k)),
+                    'month' => date('M Y', strtotime($k . '-01')),
+                    default => date('M j', strtotime($k)),
+                };
+                $out[$k] = ['label' => $label, 'from' => $d, 'to' => $d];
+            }
+            $out[$k]['to'] = $d;
+        }
+        return $out;
+    }
+
+    /**
+     * Sales trend for the charts: per bucket net sales, receipts, guests, average ticket, gross and discounts,
+     * the same for the period just before (same number of days, lined up bucket by bucket), and the totals of both.
+     */
+    public static function trend(string $from, string $to, ?string $grain = null): array
+    {
+        $grain = isset(self::GRAINS[$grain]) ? $grain : self::autoGrain($from, $to);
+        $days = (int) ((strtotime($to) - strtotime($from)) / 86400) + 1;
+        $prevTo = add_days($from, -1);
+        $prevFrom = add_days($prevTo, -($days - 1));
+        $series = function (string $a, string $b) use ($grain) {
+            $rows = DB::all(
+                "SELECT business_date d, COUNT(*) receipts, COALESCE(SUM(pax),0) pax, COALESCE(SUM(total),0) net_sales,
+                        COALESCE(SUM(subtotal),0) gross, COALESCE(SUM(discount_amount),0) discounts
+                 FROM tickets WHERE status = 'paid' AND business_date BETWEEN ? AND ? GROUP BY business_date", [$a, $b]
+            );
+            $out = [];
+            foreach (self::buckets($a, $b, $grain) as $k => $info) $out[$k] = $info + ['net_sales' => 0.0, 'receipts' => 0, 'pax' => 0, 'gross' => 0.0, 'discounts' => 0.0];
+            foreach ($rows as $r) {
+                $k = self::bucket($r['d'], $grain);
+                if (!isset($out[$k])) continue;
+                $out[$k]['net_sales'] += (float) $r['net_sales'];
+                $out[$k]['receipts'] += (int) $r['receipts'];
+                $out[$k]['pax'] += (int) $r['pax'];
+                $out[$k]['gross'] += (float) $r['gross'];
+                $out[$k]['discounts'] += (float) $r['discounts'];
+            }
+            foreach ($out as &$b2) {
+                foreach (['net_sales', 'gross', 'discounts'] as $m) $b2[$m] = r2($b2[$m]);
+                $b2['avg_ticket'] = $b2['receipts'] ? r2($b2['net_sales'] / $b2['receipts']) : 0.0;
+            }
+            return array_values($out);
+        };
+        $cur = $series($from, $to);
+        $prev = $series($prevFrom, $prevTo);
+        $sum = function (array $rows) {
+            $t = ['net_sales' => 0.0, 'receipts' => 0, 'pax' => 0, 'gross' => 0.0, 'discounts' => 0.0];
+            foreach ($rows as $r) foreach ($t as $k => $_) $t[$k] += $r[$k];
+            $t['net_sales'] = r2($t['net_sales']);
+            $t['avg_ticket'] = $t['receipts'] ? r2($t['net_sales'] / $t['receipts']) : 0.0;
+            return $t;
+        };
+        return [
+            'grain' => $grain, 'from' => $from, 'to' => $to, 'prev_from' => $prevFrom, 'prev_to' => $prevTo,
+            'current' => $cur, 'previous' => $prev, 'totals' => $sum($cur), 'prev_totals' => $sum($prev),
+        ];
+    }
+
+    /**
+     * Sales over time of the top $top items or categories in the range (by sales): buckets + one series each.
+     * $by = 'item' | 'category'.
+     */
+    public static function topSeries(string $from, string $to, string $by, ?string $grain = null, int $top = 5): array
+    {
+        $grain = isset(self::GRAINS[$grain]) ? $grain : self::autoGrain($from, $to);
+        $key = $by === 'category' ? "COALESCE(c.name, 'Uncategorized')" : 'i.name';
+        $join = "FROM ticket_items i JOIN tickets t ON t.id = i.ticket_id JOIN items it ON it.id = i.item_id LEFT JOIN categories c ON c.id = it.category_id
+                 WHERE t.status = 'paid' AND i.status = 'active' AND t.business_date BETWEEN ? AND ?";
+        $names = array_column(DB::all("SELECT $key name, SUM(i.line_total) gross $join GROUP BY $key ORDER BY gross DESC LIMIT " . (int) $top, [$from, $to]), 'name');
+        $buckets = self::buckets($from, $to, $grain);
+        $index = array_flip(array_keys($buckets));
+        $series = [];
+        foreach ($names as $n) $series[$n] = array_fill(0, count($buckets), 0.0);
+        if ($names) {
+            $in = implode(',', array_fill(0, count($names), '?'));
+            foreach (DB::all("SELECT $key name, t.business_date d, SUM(i.line_total) gross $join AND $key IN ($in) GROUP BY $key, t.business_date", array_merge([$from, $to], $names)) as $r) {
+                $i = $index[self::bucket($r['d'], $grain)] ?? null;
+                if ($i !== null && isset($series[$r['name']])) $series[$r['name']][$i] = r2($series[$r['name']][$i] + (float) $r['gross']);
+            }
+        }
+        return [
+            'grain' => $grain,
+            'labels' => array_column(array_values($buckets), 'label'),
+            'ranges' => array_map(fn ($b) => [$b['from'], $b['to']], array_values($buckets)),
+            'series' => array_map(fn ($n) => ['name' => $n, 'values' => $series[$n]], $names),
+        ];
+    }
+
     /** Quantity and sales per item, with the current recipe cost as an estimate of cost of sales. */
     public static function items(string $from, string $to): array
     {
