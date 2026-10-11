@@ -646,7 +646,7 @@
     const s = S.session;
     const p = printerState();
     const top = [
-      `<span class="title">${esc(B.business.name)}</span>`,
+      `<span class="pos-brand"><span class="brand-logo" aria-hidden="true">M5</span><span class="title">${esc(B.business.name)}</span></span>`,
       s ? `<span class="chip chip-open">● Day open · ${esc(fmtDate(s.business_date))}</span>` : '<span class="chip chip-closed">Day not open</span>',
       '<span class="grow"></span>',
       `<button class="btn btn-ghost${S.view === 'board' ? ' on' : ''}" type="button" data-act="board">▦ Orders <span class="count">${S.orders.length}</span></button>`,
