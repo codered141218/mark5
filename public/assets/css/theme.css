@@ -447,3 +447,7 @@ dialog.modal[open] { animation: dlg-in .22s var(--ease); }
   html.nav-hidden .content { max-width: 1800px; padding-left: 112px; }
 }
 @media (max-width: 860px) { .nav-hide { display: none; } }
+/* the logo never shrinks; a long business name wraps beside it (the « toggle keeps its place) */
+.brand-logo { flex-shrink: 0; }
+.brand > div:not(.brand-logo) { min-width: 0; flex: 1; }
+.brand-name { overflow-wrap: anywhere; line-height: 1.2; }
