@@ -112,6 +112,13 @@
     if (e.target.closest('[data-toggle-sidebar]')) $('#sidebar')?.classList.toggle('open');
   });
 
+  // ------------------------------------------------------------------ hide / show the menu on wide screens (remembered per computer)
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('[data-nav-toggle]')) return;
+    const hidden = document.documentElement.classList.toggle('nav-hidden');
+    try { localStorage.setItem('mark5_nav_hidden', hidden ? '1' : '0'); } catch (err) { /* private mode */ }
+  });
+
   // ------------------------------------------------------------------ tables: search, sort, row links
   function initTables(root = document) {
     $$('[data-table-search]', root).forEach((input) => {

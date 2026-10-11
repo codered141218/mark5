@@ -19,6 +19,7 @@ $business = App\Services\Settings::get('business_name', 'Mark5');
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap">
   <link rel="stylesheet" href="<?= asset('css/app.css') ?>">
   <link rel="stylesheet" href="<?= asset('css/theme.css') ?>">
+  <script>try { if (localStorage.getItem('mark5_nav_hidden') === '1') document.documentElement.classList.add('nav-hidden'); } catch (e) {}</script>
 </head>
 <body>
 <div class="app">
@@ -33,6 +34,7 @@ $business = App\Services\Settings::get('business_name', 'Mark5');
         <div class="brand-name"><?= e($business) ?></div>
         <div class="brand-sub">Restaurant Suite</div>
       </div>
+      <button class="nav-hide" type="button" data-nav-toggle title="Hide the menu (more room for the page)" aria-label="Hide menu">«</button>
     </div>
     <?php if (can('pos.access')): ?>
       <div class="pos-link"><a href="<?= url('/pos') ?>">▶ Open POS / Cashier</a></div>
@@ -72,6 +74,7 @@ $business = App\Services\Settings::get('business_name', 'Mark5');
   </aside>
   <div class="sidebar-backdrop" data-toggle-sidebar></div>
   <main class="main">
+    <button class="nav-show" type="button" data-nav-toggle title="Show the menu" aria-label="Show menu">☰ <span>Menu</span></button>
     <div class="content">
       <?php if (can('admin.settings') && App\Services\Admin\SetupWizard::pending() && !str_starts_with($path, '/setup')): ?>
         <div class="alert alert-info setup-banner"><span class="grow">Your system is not set up yet — the setup wizard takes a few minutes.</span>

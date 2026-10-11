@@ -430,3 +430,20 @@ dialog.modal[open] { animation: dlg-in .22s var(--ease); }
 .svc-stats .stat { padding: 12px 14px; box-shadow: none; }
 .svc-stats .stat-value { font-size: 21px; }
 .svc-sub { margin: 4px 0 8px; font-size: 13px; }
+
+/* ---------- hide / show the back-office menu (wide screens; phones use the top bar ☰) */
+.brand { position: relative; }
+.nav-hide { margin-left: auto; width: 30px; height: 30px; border: 0; border-radius: 9px; background: rgba(255, 255, 255, .06); color: #c9cfdf;
+  font-size: 17px; line-height: 1; cursor: pointer; flex-shrink: 0; transition: background .15s, color .15s; }
+.nav-hide:hover { background: rgba(255, 255, 255, .14); color: #fff; }
+.nav-show { display: none; }
+@media (min-width: 861px) {
+  .sidebar { transition: width .22s var(--ease), border-color .22s; }
+  html.nav-hidden .sidebar { width: 0; border-right-width: 0; overflow: hidden; }
+  html.nav-hidden .nav-show { display: inline-flex; align-items: center; gap: 6px; position: fixed; top: 14px; left: 14px; z-index: 30; height: 38px; padding: 0 14px;
+    border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); font: inherit; font-weight: 600; font-size: 13px;
+    box-shadow: var(--shadow); cursor: pointer; }
+  html.nav-hidden .nav-show:hover { border-color: var(--brand); color: var(--brand); }
+  html.nav-hidden .content { max-width: 1800px; padding-left: 112px; }
+}
+@media (max-width: 860px) { .nav-hide { display: none; } }

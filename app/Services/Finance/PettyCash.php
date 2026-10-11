@@ -45,7 +45,7 @@ class PettyCash
         return DB::all(
             "SELECT p.id, p.doc_no, p.description, p.payee, p.amount, p.status, p.ref_type, p.or_no, a.name AS account_name, p.created_at
              FROM petty_cash_txns p LEFT JOIN accounts a ON a.id = p.account_id
-             WHERE p.cash_session_id = ? AND p.source = 'drawer' ORDER BY p.id",
+             WHERE p.cash_session_id = ? AND p.source = 'drawer' ORDER BY p.id DESC",   // newest first
             [$cashSessionId]
         );
     }
