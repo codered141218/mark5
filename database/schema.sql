@@ -635,6 +635,8 @@ CREATE TABLE IF NOT EXISTS petty_cash_txns (
   description VARCHAR(255) NULL,
   or_no VARCHAR(60) NULL,
   cash_session_id INT UNSIGNED NULL,
+  ref_type VARCHAR(30) NULL,            -- payout made from a back-office document (inv_doc, disbursement, cash_advance) while the
+  ref_id INT UNSIGNED NULL,             -- petty cash fund was the POS beginning cash; the document has the journal entry
   status ENUM('posted','void') NOT NULL DEFAULT 'posted',
   journal_entry_id INT UNSIGNED NULL,
   created_by INT UNSIGNED NULL,

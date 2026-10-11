@@ -170,3 +170,70 @@ test('business day opens only for today: back-dated and post-dated dates are ref
     CashSessions::close([], 0);
     eq(today(), CashSessions::open(0)['business_date'], 'no date given: today');
 });
+
+test('petty cash fund in the POS drawer: back-office payments from petty cash are POS payouts; the fund gets back the rest', function () {
+    if (CashSessions::current()) { DB::run("UPDATE tickets SET status = 'void' WHERE status = 'open'"); CashSessions::close([], (float) CashSessions::report((int) CashSessions::current()['id'])['cash']['expected']); }
+    // fund exactly 3,700
+    $fund = PettyCash::fundBalance();
+    if ($fund < 3700) PettyCash::record(['txn_type' => 'replenish', 'amount' => r2(3700 - $fund), 'from_method' => 'cash']);
+    $fund = PettyCash::fundBalance();
+    $cashGl = acct_balance('cash_on_hand');
+    $s = CashSessions::open(3700, null, null, null, 'petty_cash');
+    eq(r2($fund - 3700), PettyCash::fundBalance());
+
+    // stock-in paid from petty cash in the back office
+    $kg = (int) DB::value("SELECT id FROM uoms WHERE abbr = 'kg'");
+    $rr = App\Services\InventoryDocs::create('RECEIVE', ['payment_mode' => 'petty_cash', 'post' => 1,
+        'lines' => [['item_id' => item_id('Chicken'), 'qty' => 2, 'uom_id' => $kg, 'line_total' => 500]]]);
+    $x = CashSessions::report((int) $s['id']);
+    eq(500, $x['cash']['payouts'], 'the stock-in is a payout of the day');
+    eq(3200, $x['cash']['expected']);
+    eq(3200, $x['cash']['fund_return']);
+    $p = DB::one("SELECT * FROM petty_cash_txns WHERE ref_type = 'inv_doc' AND ref_id = ?", [$rr]);
+    eq('drawer', $p['source']);
+    throws(fn () => PettyCash::void((int) $p['id'], 'x'), 'Void that document in the back office');
+    eq(r2($fund - 3700), PettyCash::fundBalance(), 'not charged to the fund a second time');
+
+    // payment voucher from petty cash, then voided: the payout goes away
+    $lpg = (int) DB::value("SELECT id FROM accounts WHERE code = '6210'");
+    $dv = App\Services\Finance\Disbursements::create(['pay_from' => 'petty_cash', 'amount' => 300, 'account_id' => $lpg, 'payee' => 'Petron']);
+    eq(800, CashSessions::report((int) $s['id'])['cash']['payouts']);
+    App\Services\Finance\Disbursements::void($dv, 'wrong');
+    eq(500, CashSessions::report((int) $s['id'])['cash']['payouts']);
+
+    // a petty cash expense recorded in the back office comes out of the drawer too; a POS payout as well
+    PettyCash::record(['txn_type' => 'expense', 'source' => 'fund', 'amount' => 100, 'account_id' => $lpg, 'description' => 'Ice']);
+    PettyCash::record(['txn_type' => 'expense', 'source' => 'drawer', 'amount' => 50, 'account_id' => $lpg, 'description' => 'Fare']);
+    $x = CashSessions::report((int) $s['id']);
+    eq(650, $x['cash']['payouts']);
+    eq(3050, $x['cash']['fund_return']);
+    eq(3050, PettyCash::atPos());
+
+    // a sale, then End of Day: counted = expected → no short; the fund gets back 3,700 − 650
+    $t = Tickets::create(['order_type' => 'takeout']);
+    Tickets::pay(Tickets::addItem($t['id'], item_id('Chicken Adobo'), 1)['id'], [['method' => 'cash', 'amount' => 185]]);
+    $z = CashSessions::close([], 3235);
+    eq(0, $z['cash']['variance'], 'no short: 3,700 + 185 − 650');
+    eq(3050, $z['cash']['returned_to_fund']);
+    eq(r2($fund - 650), PettyCash::fundBalance(), 'fund = 3,700 − what was paid from it');
+    eq(r2($cashGl + 185), acct_balance('cash_on_hand'), 'cash on hand keeps only the sale');
+
+    // the next day from cash on hand: petty cash payments go to the fund as before
+    CashSessions::open(0);
+    $before = PettyCash::fundBalance();
+    App\Services\Finance\Disbursements::create(['pay_from' => 'petty_cash', 'amount' => 40, 'account_id' => $lpg]);
+    eq(r2($before - 40), PettyCash::fundBalance());
+    eq(0, CashSessions::report((int) CashSessions::current()['id'])['cash']['payouts']);
+    CashSessions::close([], 0);
+});
+
+test('payouts larger than the petty cash beginning cash: nothing goes back, no negative return', function () {
+    PettyCash::record(['txn_type' => 'replenish', 'amount' => 1000, 'from_method' => 'cash']);
+    $s = CashSessions::open(500, null, null, null, 'petty_cash');
+    $lpg = (int) DB::value("SELECT id FROM accounts WHERE code = '6210'");
+    PettyCash::record(['txn_type' => 'expense', 'source' => 'drawer', 'amount' => 700, 'account_id' => $lpg]);
+    eq(0, CashSessions::report((int) $s['id'])['cash']['fund_return']);
+    $z = CashSessions::close([], 0);   // expected 500 − 700 = −200; the extra 200 came out of sales cash
+    eq(0, $z['cash']['returned_to_fund']);
+    eq(null, DB::value('SELECT return_txn_id FROM cash_sessions WHERE id = ?', [$s['id']]));
+});

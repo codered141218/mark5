@@ -1,4 +1,4 @@
-<?php /** Petty cash list. Variables: $from, $to, $rows, $columns, $stats, $fundBalance, $atPos, $expenseAccounts, $banks */ use App\Core\Table; ?>
+<?php /** Petty cash list. Variables: $from, $to, $rows, $columns, $stats, $fundBalance, $atPos, $fundAtPos, $expenseAccounts, $banks */ use App\Core\Table; ?>
 <div class="page-header">
   <div>
     <h1>Petty Cash</h1>
@@ -20,7 +20,7 @@
   <?= view('finance/partials/stat', ['label' => 'Petty cash fund balance', 'value' => peso($fundBalance),
       'sub' => $atPos > 0 ? 'In the box now · plus ' . peso($atPos) . ' at the POS as beginning cash' : 'Current balance (all dates)', 'tone' => $fundBalance < 0 ? 'red' : 'brand'], null) ?>
   <?php if ($atPos > 0): ?>
-    <?= view('finance/partials/stat', ['label' => 'At the POS (beginning cash)', 'value' => peso($atPos), 'sub' => 'Taken when the day was opened · returns to the fund at close', 'tone' => 'amber'], null) ?>
+    <?= view('finance/partials/stat', ['label' => 'At the POS (beginning cash)', 'value' => peso($atPos), 'sub' => 'Beginning cash minus today\'s payouts · goes back to the fund at close', 'tone' => 'amber'], null) ?>
   <?php endif; ?>
   <?= view('finance/partials/stat', ['label' => 'Expenses from fund', 'value' => peso($stats['fund']), 'sub' => 'Paid from the petty cash box'], null) ?>
   <?= view('finance/partials/stat', ['label' => 'Replenishments', 'value' => peso($stats['replenish']), 'sub' => 'Added to the fund', 'tone' => 'green'], null) ?>
@@ -38,7 +38,8 @@
       <label class="field"><span class="field-label">Date</span><input class="input" type="date" name="txn_date" value="<?= e(today()) ?>">
         <span class="field-hint">Drawer payouts use the open business day.</span></label>
       <label class="field"><span class="field-label">Paid from</span>
-        <select class="input" name="source"><?= options(['fund' => 'Petty cash box (fund)', 'drawer' => 'POS cash drawer']) ?></select></label>
+        <select class="input" name="source"><?= options(['fund' => $fundAtPos ? 'Petty cash fund — in the POS cash drawer today' : 'Petty cash box (fund)', 'drawer' => 'POS cash drawer']) ?></select>
+        <?php if ($fundAtPos): ?><span class="field-hint">Today's POS beginning cash is the petty cash fund, so fund expenses come out of the drawer and show as POS payouts.</span><?php endif; ?></label>
       <label class="field" style="grid-column: 1 / -1"><span class="field-label">Expense account *</span>
         <?= view('finance/partials/account_select', ['name' => 'account_id', 'groups' => $expenseAccounts, 'required' => true], null) ?></label>
       <label class="field"><span class="field-label">Payee</span><input class="input" name="payee" placeholder="e.g. Shell, Puregold, tricycle"></label>

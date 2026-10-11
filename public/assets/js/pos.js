@@ -1639,6 +1639,8 @@
       title: 'Cash payout from the drawer',
       cls: 'wide dlg-payout',
       body: `<p class="muted mt-0">Small expenses paid with cash from this drawer (ice, LPG, fare…). They reduce the expected cash at end of day.</p>
+        ${S.session && S.session.opening_source === 'petty_cash' ? `<div class="alert alert-info small">Today's beginning cash is the <b>petty cash fund</b>, so payouts are paid from petty cash.
+          Stock-ins, payments and cash advances paid from petty cash in the back office also show here and reduce the expected cash.</div>` : ''}
         <div class="form-grid">
           <label class="field"><span class="field-label">Expense type *</span><select class="input" name="account_id"><option value="">Select…</option>
             ${accts.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></label>
@@ -1678,9 +1680,12 @@
         const list = await Api.payouts();
         const total = list.filter((p) => p.status === 'posted').reduce((s, p) => s + Number(p.amount), 0);
         m.$('.payout-list').innerHTML = list.length ? list.map((p) => `<div class="pick-row${p.status !== 'posted' ? ' muted-row' : ''}">
-            <div><b>${esc(p.description || p.account_name)}</b> <span class="muted small">${esc(p.doc_no)} · ${esc(p.account_name || '')}${p.payee ? ' · ' + esc(p.payee) : ''} · ${esc(fmtTime(p.created_at))}</span></div>
+            <div><b>${esc(p.description || p.account_name)}</b>${p.ref_type ? ' <span class="badge badge-blue">back office</span>' : ''}
+              <span class="muted small">${esc(p.doc_no)} · ${esc(p.account_name || '')}${p.payee ? ' · ' + esc(p.payee) : ''} · ${esc(fmtTime(p.created_at))}</span></div>
             <div class="row gap-sm"><b>${peso(p.amount)}</b>
-              ${p.status === 'posted' ? `<button type="button" class="btn" data-act="voidPayout" data-id="${p.id}" data-no="${esc(p.doc_no)}">Void</button>` : '<span class="badge badge-red">void</span>'}</div>
+              ${p.status !== 'posted' ? '<span class="badge badge-red">void</span>'
+                : p.ref_type ? '<span class="muted small" title="Void the document in the back office">from back office</span>'
+                : `<button type="button" class="btn" data-act="voidPayout" data-id="${p.id}" data-no="${esc(p.doc_no)}">Void</button>`}</div>
           </div>`).join('') + `<div class="row between mt bold"><span>Total</span><span>${peso(total)}</span></div>` : '<div class="muted small">None yet.</div>';
       } catch (e) { showError(e); }
     }
@@ -1809,6 +1814,8 @@
     const open = S.orders.length;
     const sess = (x && x.session) || S.session || {};
     const fromFund = sess.opening_source === 'petty_cash' && Number(sess.opening_cash) > 0;
+    const payouts = x ? Number(x.cash.payouts) : 0;
+    const fundBack = x && x.cash.fund_return !== undefined ? Number(x.cash.fund_return) : Math.max(0, r2(Number(sess.opening_cash) - payouts));
     const expected = x ? r2(x.cash.expected) : null;
     const blind = !!OPT.blind_count || expected === null;
     const m = modal({
@@ -1824,18 +1831,19 @@
               <div class="eod-diff short"><span class="eod-diff-label">Still to count</span><b class="eod-diff-amt">${peso(expected)}</b><small class="eod-diff-hint">short until it reaches the expected cash</small></div>
             </div>`}
         ${denomCounter()}
-        ${fromFund ? `<label class="checkbox return-fund mt"><input type="checkbox" name="return_fund" checked>
-          <span>Return the beginning cash <b>${peso(sess.opening_cash)}</b> to the petty cash fund
-          <small class="muted">(it was taken from petty cash when the day was opened — untick if it stays in the drawer for tomorrow)</small></span></label>` : ''}
+        ${fromFund ? (fundBack > 0 ? `<label class="checkbox return-fund mt"><input type="checkbox" name="return_fund" checked>
+          <span>Return <b>${peso(fundBack)}</b> to the petty cash fund
+          <small class="muted">beginning cash ${peso(sess.opening_cash)}${payouts > 0 ? ` − payouts paid from petty cash ${peso(payouts)}` : ''} · untick if it stays in the drawer for tomorrow</small></span></label>`
+          : `<div class="alert alert-info small mt">Today's payouts (${peso(payouts)}) used up the petty cash beginning cash — nothing goes back to the fund. Replenish petty cash in the back office.</div>`) : ''}
         <label class="field mt"><span class="field-label">Remarks</span><input class="input" name="notes" autocomplete="off"></label>`,
       foot: '<button type="button" class="btn btn-lg" data-x>Cancel</button><button type="submit" class="btn btn-danger btn-lg">Close day</button>',
       onSubmit: async (btn) => {
         const c = readCounts(m.el);
         const diff = blind ? 0 : r2(c.total - expected);
         const verdict = blind ? '' : diff === 0 ? ' The drawer is balanced.' : diff < 0 ? ` That is SHORT by ${peso(-diff)}.` : ` That is OVER by ${peso(diff)}.`;
-        const returnFund = fromFund && m.$('[name=return_fund]').checked;
+        const returnFund = fromFund && fundBack > 0 && m.$('[name=return_fund]').checked;
         const ok = await App.ask({ title: 'Close the business day?', okText: 'Close day', danger: true,
-          message: `Counted cash: ${peso(c.total)}.${verdict}${returnFund ? ` ${peso(sess.opening_cash)} goes back to the petty cash fund.` : ''} After closing, no more sales can be recorded for this day and the Z-reading is generated.` });
+          message: `Counted cash: ${peso(c.total)}.${verdict}${returnFund ? ` ${peso(fundBack)} goes back to the petty cash fund.` : ''} After closing, no more sales can be recorded for this day and the Z-reading is generated.` });
         if (!ok) return;
         const z = await run(() => Api.closeDay({ denominations: c.counts, notes: m.$('[name=notes]').value.trim(), return_fund: returnFund }), btn);
         if (!z) return;

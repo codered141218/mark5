@@ -79,7 +79,7 @@ $confirmPost = [
         </label>
         <label class="field"><span class="field-label">Supplier invoice / DR no.</span><input class="input" name="invoice_no" value="<?= e($h('invoice_no')) ?>" maxlength="60"></label>
         <label class="field" style="grid-column:span 2"><span class="field-label">Payment</span>
-          <select class="input" name="payment_mode" data-payment-mode><?= options(InventoryDocs::PAYMENT_MODES, $h('payment_mode') ?: 'credit') ?></select></label>
+          <select class="input" name="payment_mode" data-payment-mode><?= options(App\Services\Finance\PettyCash::labelMethods(InventoryDocs::PAYMENT_MODES), $h('payment_mode') ?: 'credit') ?></select></label>
         <label class="field" data-bank-field><span class="field-label">Bank account *</span>
           <select class="input" name="bank_account_id">
             <?= options(array_column(array_map(fn ($b) => ['id' => $b['id'], 'label' => $b['bank_name'] . ($b['account_no'] ? ' ' . substr($b['account_no'], -4) : '')], $banks), 'label', 'id'), $h('bank_account_id'), '— Choose bank —') ?>

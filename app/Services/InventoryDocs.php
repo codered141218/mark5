@@ -4,6 +4,7 @@ namespace App\Services;
 use App\Core\Auth;
 use App\Core\DB;
 use App\Core\HttpException;
+use App\Services\Finance\PettyCash;
 
 /**
  * Inventory documents: RECEIVE (delivery / stock in), ISSUE (stock issuance), WASTE (spoilage & wastage).
@@ -195,10 +196,14 @@ class InventoryDocs
         $jeId = Ledger::post($d['doc_date'], $memo, [
             ...Ledger::linesByAccount($byAccount, 'debit'),
             ['key' => 'input_vat', 'debit' => r2($gross - $net)],
-            ['account_id' => Ledger::sourceAccount($d['payment_mode'], $d['bank_account_id']), 'credit' => $gross,
+            ['account_id' => $d['payment_mode'] === 'petty_cash' ? PettyCash::payAccount($d['doc_date']) : Ledger::sourceAccount($d['payment_mode'], $d['bank_account_id']), 'credit' => $gross,
                 'bank_account_id' => $d['payment_mode'] === 'bank' ? (int) $d['bank_account_id'] : null] + $party,
         ], 'inv_receive', (int) $d['id'], $d['doc_no']);
 
+        if ($d['payment_mode'] === 'petty_cash') {
+            PettyCash::linkPayout('inv_doc', (int) $d['id'], $d['doc_date'], $gross, "Stock-in {$d['doc_no']}" . ($d['supplier_name'] ? " - {$d['supplier_name']}" : ''),
+                $d['supplier_name'] ?: null, Ledger::account('inventory'), $d['doc_no'], $jeId);
+        }
         $billId = null;
         if ($d['payment_mode'] === 'credit') {
             $terms = (int) DB::value('SELECT terms_days FROM suppliers WHERE id = ?', [$d['supplier_id']]);
@@ -260,6 +265,7 @@ class InventoryDocs
             Inventory::reverseMovements('inv_doc', (int) $d['id'], today(), "Void {$d['doc_no']}");
             Ledger::reverse($d['journal_entry_id'] ? (int) $d['journal_entry_id'] : null, today(), "Void {$d['doc_no']}: $reason");
             DB::update('inv_docs', (int) $d['id'], ['status' => 'cancelled', 'notes' => implode(' | ', array_filter([$d['notes'], "VOID: $reason"]))]);
+            PettyCash::voidLinked('inv_doc', (int) $d['id']);
             Audit::log('void', "inv_doc:{$d['doc_type']}", (int) $d['id'], $reason);
         });
     }

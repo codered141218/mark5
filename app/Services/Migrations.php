@@ -90,6 +90,11 @@ class Migrations
                 self::addColumn('ticket_items', 'printed', 'TINYINT(1) NOT NULL DEFAULT 0 AFTER kitchen_sent');
                 if (!$had) DB::run('UPDATE ticket_items SET printed = kitchen_sent');   // until now Done meant printed
             },
+            // 6: back-office payments from petty cash while the fund is the POS beginning cash show as payouts of that day
+            6 => function () {
+                self::addColumn('petty_cash_txns', 'ref_type', 'VARCHAR(30) NULL AFTER cash_session_id');
+                self::addColumn('petty_cash_txns', 'ref_id', 'INT UNSIGNED NULL AFTER ref_type');
+            },
         ];
     }
 

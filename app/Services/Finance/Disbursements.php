@@ -59,12 +59,13 @@ class Disbursements
         $payee = trim((string) ($d['payee'] ?? '')) ?: ($supplierId ? DB::value('SELECT name FROM suppliers WHERE id = ?', [$supplierId]) : null);
         $description = trim((string) ($d['description'] ?? '')) ?: null;
         $reference = trim((string) ($d['reference'] ?? '')) ?: null;
-        $sourceAcct = $from === 'bank' ? (int) $bank['gl_account_id'] : Ledger::account($from === 'cash' ? 'cash_on_hand' : 'petty_cash');
+        $sourceAcct = $from === 'bank' ? (int) $bank['gl_account_id'] : ($from === 'cash' ? Ledger::account('cash_on_hand') : PettyCash::payAccount($date));
         if ($sourceAcct === $accountId) throw HttpException::bad('The payment cannot be for the same account it is paid from');
 
         $id = DB::transaction(function () use ($date, $from, $bankId, $payee, $supplierId, $accountId, $amount, $vat, $reference, $description, $sourceAcct, $acct) {
+            $docNo = Sequence::next('DV', 'DV');
             $id = DB::insert('disbursements', [
-                'doc_no' => Sequence::next('DV', 'DV'), 'txn_date' => $date, 'pay_from' => $from, 'bank_account_id' => $bankId,
+                'doc_no' => $docNo, 'txn_date' => $date, 'pay_from' => $from, 'bank_account_id' => $bankId,
                 'payee' => $payee, 'supplier_id' => $supplierId, 'account_id' => $accountId, 'amount' => $amount, 'vat_amount' => $vat,
                 'reference' => $reference, 'description' => $description, 'status' => 'posted', 'created_by' => Auth::id(), 'created_at' => now(),
             ]);
@@ -85,6 +86,9 @@ class Disbursements
                 ]);
             }
             DB::update('disbursements', $id, $upd);
+            if ($from === 'petty_cash') {
+                PettyCash::linkPayout('disbursement', $id, $date, $amount, "Payment $docNo: $memo", $payee, $accountId, $docNo, $je);
+            }
             return $id;
         });
         Audit::log('create', 'disbursement', $id, ['amount' => $amount, 'from' => $from, 'account' => $acct['name']]);
@@ -101,6 +105,7 @@ class Disbursements
             Ledger::reverse($d['journal_entry_id'] ? (int) $d['journal_entry_id'] : null, today(), "Void {$d['doc_no']}: $reason");
             if ($d['bank_txn_id']) DB::run("UPDATE bank_txns SET status = 'void' WHERE id = ?", [$d['bank_txn_id']]);
             DB::update('disbursements', (int) $d['id'], ['status' => 'void', 'void_reason' => mb_substr($reason, 0, 255)]);
+            PettyCash::voidLinked('disbursement', (int) $d['id']);
         });
         Audit::log('void', 'disbursement', $id, $reason);
     }

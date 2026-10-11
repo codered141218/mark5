@@ -50,7 +50,7 @@ class PettyCashController
 
         return view('finance/petty_cash', [
             'title' => 'Petty Cash', 'from' => $from, 'to' => $to, 'rows' => $rows, 'columns' => $columns, 'stats' => $stats,
-            'fundBalance' => PettyCash::fundBalance(), 'atPos' => PettyCash::atPos(), 'expenseAccounts' => Accounts::grouped(['expense']), 'banks' => Banks::options(),
+            'fundBalance' => PettyCash::fundBalance(), 'atPos' => PettyCash::atPos(), 'fundAtPos' => (bool) PettyCash::fundAtPos(), 'expenseAccounts' => Accounts::grouped(['expense']), 'banks' => Banks::options(),
         ]);
     }
 

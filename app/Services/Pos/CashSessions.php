@@ -142,7 +142,10 @@ class CashSessions
             'payouts' => $payouts,
             'cash' => [
                 'opening' => r2($s['opening_cash']), 'opening_source' => $s['opening_source'] ?? 'cash',
-                'returned_to_fund' => !empty($s['return_txn_id']) ? r2($s['opening_cash']) : 0.0, 'cash_sales' => $cashSales, 'payouts' => $payoutTotal, 'refunds' => $refunds,
+                'returned_to_fund' => !empty($s['return_txn_id']) ? r2((float) DB::value('SELECT amount FROM petty_cash_txns WHERE id = ?', [$s['return_txn_id']])) : 0.0,
+                // beginning cash from petty cash: what goes back to the fund at close = beginning cash − the day's payouts (paid from the fund)
+                'fund_return' => ($s['opening_source'] ?? 'cash') === 'petty_cash' ? max(0.0, r2((float) $s['opening_cash'] - $payoutTotal)) : 0.0,
+                'cash_sales' => $cashSales, 'payouts' => $payoutTotal, 'refunds' => $refunds,
                 'expected' => $s['status'] === 'closed' ? r2($s['expected_cash']) : $expected,
                 'counted' => $s['counted_cash'] === null ? null : r2($s['counted_cash']),
                 'variance' => $s['variance'] === null ? null : r2($s['variance']),
@@ -207,8 +210,9 @@ class CashSessions
             }
             // beginning cash taken from the petty cash fund goes back to the fund (unless it stays in the drawer / safe)
             $returnId = null;
-            if ($returnFund && ($s['opening_source'] ?? 'cash') === 'petty_cash' && (float) $s['opening_cash'] > 0) {
-                $returnId = PettyCash::drawerTransfer('fund_return', (float) $s['opening_cash'], (int) $s['id'], $s['business_date']);
+            $fundBack = self::report((int) $s['id'])['cash']['fund_return'];   // beginning cash minus payouts made from the fund
+            if ($returnFund && ($s['opening_source'] ?? 'cash') === 'petty_cash' && $fundBack > 0) {
+                $returnId = PettyCash::drawerTransfer('fund_return', $fundBack, (int) $s['id'], $s['business_date']);
             }
             $den = json_decode($s['denominations'] ?? '', true) ?: [];
             $den['closing'] = $denominations;

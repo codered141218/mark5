@@ -105,8 +105,12 @@ class CashAdvances
         DB::transaction(function () use ($c, $d, $amount, $method, $date, $bankId) {
             $je = Ledger::post($date, "Cash advance {$c['doc_no']} - {$c['employee_name']}", [
                 ['key' => 'emp_advances', 'debit' => $amount, 'party_type' => 'employee', 'party_id' => (int) $c['employee_id']],
-                ['account_id' => Ledger::sourceAccount($method, $bankId), 'credit' => $amount, 'bank_account_id' => $bankId],
+                ['account_id' => $method === 'petty_cash' ? PettyCash::payAccount($date) : Ledger::sourceAccount($method, $bankId), 'credit' => $amount, 'bank_account_id' => $bankId],
             ], 'cash_advance', (int) $c['id'], $c['doc_no']);
+            if ($method === 'petty_cash') {
+                PettyCash::linkPayout('cash_advance', (int) $c['id'], $date, $amount, "Cash advance {$c['doc_no']} - {$c['employee_name']}",
+                    $c['employee_name'], Ledger::account('emp_advances'), $c['doc_no'], $je);
+            }
             DB::update('cash_advances', (int) $c['id'], [
                 'status' => 'approved', 'amount' => $amount, 'balance' => $amount, 'approved_by' => Auth::id(), 'approved_at' => now(),
                 'release_method' => $method, 'bank_account_id' => $bankId, 'release_date' => $date,

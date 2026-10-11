@@ -4,6 +4,7 @@
  * Variables: $methods ([value => label]), $banks (Banks::options()), $label, $name (default "method"), $selected (optional)
  */
 $name = $name ?? 'method';
+$methods = App\Services\Finance\PettyCash::labelMethods($methods);
 ?>
 <label class="field"><span class="field-label"><?= e($label) ?></span>
   <select class="input" name="<?= e($name) ?>" data-pay-method><?= options($methods, $selected ?? array_key_first($methods)) ?></select>

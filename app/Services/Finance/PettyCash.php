@@ -6,6 +6,7 @@ use App\Core\DB;
 use App\Core\HttpException;
 use App\Services\Audit;
 use App\Services\Ledger;
+use App\Services\Pos\CashSessions;
 use App\Services\Sequence;
 
 /**
@@ -42,7 +43,7 @@ class PettyCash
     public static function listForSession(int $cashSessionId): array
     {
         return DB::all(
-            "SELECT p.id, p.doc_no, p.description, p.payee, p.amount, p.status, a.name AS account_name, p.created_at
+            "SELECT p.id, p.doc_no, p.description, p.payee, p.amount, p.status, p.ref_type, p.or_no, a.name AS account_name, p.created_at
              FROM petty_cash_txns p LEFT JOIN accounts a ON a.id = p.account_id
              WHERE p.cash_session_id = ? AND p.source = 'drawer' ORDER BY p.id",
             [$cashSessionId]
@@ -56,11 +57,59 @@ class PettyCash
         return $id ? Ledger::balance($id) : 0.0;
     }
 
-    /** Beginning cash of the open business day that was taken from the fund and is still in the POS drawer (0 if none). */
+    /**
+     * The open business day whose beginning cash was taken from the petty cash fund — the fund is in the POS drawer.
+     * With $date, only when that date is the business date or today (an older document was not paid from today's drawer).
+     */
+    public static function fundAtPos(?string $date = null): ?array
+    {
+        $s = DB::one("SELECT * FROM cash_sessions WHERE status = 'open' AND opening_source = 'petty_cash' AND opening_txn_id IS NOT NULL ORDER BY id DESC LIMIT 1");
+        if (!$s || ($date !== null && $date !== $s['business_date'] && $date !== today())) return null;
+        return $s;
+    }
+
+    /** Labels of payment choices: "petty cash" says where the money really is while the fund is the POS beginning cash. */
+    public static function labelMethods(array $methods): array
+    {
+        if (isset($methods['petty_cash']) && self::fundAtPos()) $methods['petty_cash'] = 'Petty cash — in the POS cash drawer today (shows as a POS payout)';
+        return $methods;
+    }
+
+    /** What is left in the POS drawer of the fund: beginning cash minus the day's payouts (0 when the fund is not at the POS). */
     public static function atPos(): float
     {
-        $s = DB::one("SELECT opening_cash FROM cash_sessions WHERE status = 'open' AND opening_source = 'petty_cash' AND opening_txn_id IS NOT NULL ORDER BY id DESC LIMIT 1");
-        return $s ? r2($s['opening_cash']) : 0.0;
+        $s = self::fundAtPos();
+        return $s ? (float) CashSessions::report((int) $s['id'])['cash']['fund_return'] : 0.0;
+    }
+
+    /** GL account a payment "from petty cash" dated $date is credited to: Cash on Hand while the fund is in the POS drawer. */
+    public static function payAccount(string $date): int
+    {
+        return Ledger::account(self::fundAtPos($date) ? 'cash_on_hand' : 'petty_cash');
+    }
+
+    /**
+     * A back-office payment from petty cash (stock-in, payment voucher, cash advance) made while the fund is in the POS drawer:
+     * the cash leaves the drawer, so it is listed as a payout of the open business day (expected cash, POS payouts, Z-reading).
+     * The document keeps its own journal entry (credited to Cash on Hand via payAccount()). Returns the payout id or null.
+     */
+    public static function linkPayout(string $refType, int $refId, string $date, float $amount, string $description, ?string $payee, ?int $accountId, ?string $refNo, ?int $jeId): ?int
+    {
+        $s = self::fundAtPos($date);
+        if (!$s || !($amount > 0)) return null;
+        return DB::insert('petty_cash_txns', [
+            'doc_no' => Sequence::next('PCV', 'PCV'), 'txn_date' => $s['business_date'], 'txn_type' => 'expense', 'source' => 'drawer',
+            'amount' => r2($amount), 'account_id' => $accountId, 'payee' => $payee, 'description' => mb_substr($description, 0, 255),
+            'or_no' => $refNo, 'cash_session_id' => (int) $s['id'], 'ref_type' => $refType, 'ref_id' => $refId,
+            'status' => 'posted', 'journal_entry_id' => $jeId, 'created_by' => Auth::id(), 'created_at' => now(),
+        ]);
+    }
+
+    /** The document behind a linked payout was voided: the payout goes too (only while its business day is open). */
+    public static function voidLinked(string $refType, int $refId): void
+    {
+        DB::run("UPDATE petty_cash_txns p JOIN cash_sessions s ON s.id = p.cash_session_id SET p.status = 'void'
+                 WHERE p.ref_type = ? AND p.ref_id = ? AND p.status = 'posted' AND s.status = 'open'", [$refType, $refId]);
     }
 
     /**
@@ -80,6 +129,8 @@ class PettyCash
         if ($type === 'replenish') Auth::require('pettycash.manage');
 
         $date = is_date($d['txn_date'] ?? null) ? $d['txn_date'] : today();
+        // the petty cash fund is in the POS drawer today: an expense paid from the fund comes out of the drawer
+        if ($type === 'expense' && $source === 'fund' && self::fundAtPos($date)) $source = 'drawer';
         $sessionId = null;
         if ($source === 'drawer') {
             $s = DB::one("SELECT id, business_date FROM cash_sessions WHERE status = 'open' ORDER BY id DESC LIMIT 1");
@@ -160,6 +211,10 @@ class PettyCash
         Auth::require('pettycash.manage', 'pos.petty_cash');
         $p = DB::one('SELECT * FROM petty_cash_txns WHERE id = ?', [$id]);
         if (!$p || $p['status'] !== 'posted') throw HttpException::bad('Transaction not found or already void');
+        if ($p['ref_type']) {
+            $what = ['inv_doc' => 'stock-in / delivery', 'disbursement' => 'payment voucher', 'cash_advance' => 'cash advance'][$p['ref_type']] ?? 'document';
+            throw HttpException::bad("This payout comes from the $what {$p['or_no']}. Void that document in the back office instead.");
+        }
         if (in_array($p['txn_type'], ['change_fund', 'fund_return'], true)) {
             throw HttpException::bad('This is the POS beginning cash of a business day. It follows the day itself and cannot be voided here.');
         }
