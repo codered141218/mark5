@@ -9,6 +9,8 @@ use App\Services\Audit;
 use App\Services\Discounts;
 use App\Services\Ledger;
 use App\Services\Finance\PettyCash;
+use App\Services\Payroll\Payroll;
+use App\Services\Payroll\StaffNotes;
 use App\Services\Pos\CashSessions;
 use App\Services\Pos\Tickets;
 use App\Services\Settings;
@@ -30,7 +32,8 @@ class PosApiController
         $s = Settings::all();
         $u = Auth::user();
         $perms = ['pos.open_day', 'pos.close_day', 'pos.xreading', 'pos.settle', 'pos.discount', 'pos.void_item', 'pos.void_receipt',
-            'pos.reprint', 'pos.split_move', 'pos.petty_cash', 'dashboard.view', 'inventory.view', 'reports.sales', 'finance.view', 'admin.settings'];
+            'pos.reprint', 'pos.split_move', 'pos.petty_cash', 'dashboard.view', 'inventory.view', 'reports.sales', 'finance.view', 'admin.settings',
+            'staffnotes.record', 'payroll.manage'];
         return [
             'session' => CashSessions::current(),
             'tax' => Settings::tax(),
@@ -219,6 +222,34 @@ class PosApiController
     public function voidPayout(Request $req, string $id): Response
     {
         PettyCash::void((int) $id, $req->input('reason'), $req->input('pin'));
+        return json(['ok' => true]);
+    }
+
+    // ------------------------------------------------------------------ staff notes (absent / leave / undertime)
+    public function staffNotes(Request $req): Response
+    {
+        $date = StaffNotes::defaultDate();
+        $c = Payroll::cutoffFor($date);
+        $mine = fn ($n) => (int) $n['created_by'] === Auth::id() && substr((string) $n['created_at'], 0, 10) === date('Y-m-d');
+        return json([
+            'date' => $date, 'cutoff' => $c, 'kinds' => StaffNotes::KINDS,
+            'employees' => DB::all('SELECT id, full_name AS name, position FROM employees WHERE active = 1 ORDER BY full_name'),
+            'notes' => array_map(fn ($n) => [
+                'id' => (int) $n['id'], 'employee' => $n['employee'], 'date' => $n['note_date'], 'kind' => $n['kind'], 'label' => StaffNotes::label($n),
+                'status' => $n['status'], 'recorded_by' => $n['recorded_by'], 'created_at' => $n['created_at'],
+                'can_void' => $n['status'] === 'open' && ($mine($n) || Auth::can('payroll.manage')),
+            ], StaffNotes::list($c['from'], $c['to'])),
+        ]);
+    }
+
+    public function addStaffNote(Request $req): Response
+    {
+        return json(['id' => StaffNotes::record($req->all())]);
+    }
+
+    public function voidStaffNote(Request $req, string $id): Response
+    {
+        StaffNotes::void((int) $id);
         return json(['ok' => true]);
     }
 }

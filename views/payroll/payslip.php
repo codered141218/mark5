@@ -94,6 +94,17 @@ $back = can('payroll.view', 'payroll.manage', 'payroll.post') ? url('/payroll/' 
     </div>
   </div>
 </div>
+  <?php if (!empty($notes)): ?>
+<div class="card mt">
+    <div class="card-head"><h3>Staff notes this cut-off</h3><a class="small" href="<?= url('/payroll/notes', ['from' => $s['period_from'], 'to' => $s['period_to'], 'employee_id' => $s['employee_id']]) ?>">All notes →</a></div>
+    <table class="table dense"><tbody>
+      <?php foreach ($notes as $n): ?>
+        <tr><td class="nowrap"><?= e(date('D M j', strtotime($n['note_date']))) ?></td><td><?= e(App\Services\Payroll\StaffNotes::label($n)) ?></td>
+          <td class="muted small nowrap"><?= e($n['recorded_by'] ?? '') ?><?= $n['status'] === 'applied' ? ' · applied' : '' ?></td></tr>
+      <?php endforeach; ?>
+    </tbody></table>
+  </div>
+  <?php endif; ?>
 
 <?php if ($edit): ?>
 <dialog class="modal" id="dlg-bonus">

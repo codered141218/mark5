@@ -143,6 +143,22 @@ class Migrations
                 DB::run("UPDATE ca_repayments c JOIN payroll_runs r ON r.journal_entry_id = c.journal_entry_id
                          SET c.pay_date = LEAST(r.period_to, DATE(COALESCE(r.posted_at, NOW()))) WHERE c.method = 'payroll' AND c.pay_date > LEAST(r.period_to, DATE(COALESCE(r.posted_at, NOW())))");
             },
+            // 11: staff notes from the POS (absent / leave / undertime) and production (BOM templates, production orders)
+            11 => function () {
+                $sql = file_get_contents(BASE_PATH . '/database/schema.sql');
+                foreach (['staff_notes', 'bom_templates', 'bom_lines', 'production_orders', 'production_lines'] as $t) {
+                    if (preg_match('/CREATE TABLE IF NOT EXISTS ' . $t . ' \(.*?\) ENGINE=InnoDB[^;]*;/s', $sql, $m)) DB::pdo()->exec($m[0]);
+                }
+                foreach (DB::all('SELECT id, name, permissions FROM roles') as $r) {
+                    $p = json_decode($r['permissions'], true) ?: [];
+                    if (in_array('*', $p, true)) continue;
+                    $add = [];
+                    if (in_array('pos.close_day', $p, true) || in_array('payroll.manage', $p, true)) $add[] = 'staffnotes.record';
+                    if ($r['name'] === 'Manager') $add = array_merge($add, ['production.view', 'production.manage', 'production.bom']);
+                    if ($r['name'] === 'Inventory Clerk') $add = array_merge($add, ['production.view', 'production.manage']);
+                    if ($add) DB::run('UPDATE roles SET permissions = ? WHERE id = ?', [json_encode(array_values(array_unique(array_merge($p, $add)))), $r['id']]);
+                }
+            },
         ];
     }
 

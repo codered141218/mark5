@@ -11,7 +11,8 @@ use App\Services\Settings;
  */
 class InventoryReports
 {
-    public const MOVE_LABELS = ['RECEIVE' => 'Stock in', 'SALE' => 'Sale', 'ISSUE' => 'Issuance', 'WASTE' => 'Wastage', 'COUNT' => 'Count adj.', 'BEGINNING' => 'Beginning'];
+    public const MOVE_LABELS = ['RECEIVE' => 'Stock in', 'SALE' => 'Sale', 'ISSUE' => 'Issuance', 'WASTE' => 'Wastage', 'COUNT' => 'Count adj.', 'BEGINNING' => 'Beginning',
+        'PROD_IN' => 'Produced', 'PROD_OUT' => 'Used in production'];
 
     public const ITEM_TYPES = ['raw' => 'Ingredient', 'composite' => 'Menu (recipe)', 'retail' => 'Retail', 'non_inventory' => 'Non-inventory'];
 
@@ -60,13 +61,15 @@ class InventoryReports
                     -{$in('SALE', 'SALE_VOID')} sold,
                     -{$in('ISSUE', 'ISSUE_VOID')} issued,
                     -{$in('WASTE', 'WASTE_VOID')} wasted,
+                    {$in('PROD_IN', 'PROD_IN_VOID')} produced,
+                    -{$in('PROD_OUT', 'PROD_OUT_VOID')} production_use,
                     {$in('COUNT')} count_adj,
                     COALESCE(SUM(m.qty), 0) ending
              FROM items i LEFT JOIN uoms u ON u.id = i.base_uom_id
              LEFT JOIN stock_movements m ON m.item_id = i.id AND m.bdate <= ?
              WHERE i.item_type IN ('raw','retail') AND i.active = 1
              GROUP BY i.id, i.sku, i.name, u.abbr, i.avg_cost ORDER BY i.name",
-            [$from, $from, $from, $from, $from, $from, $to]
+            [$from, $from, $from, $from, $from, $from, $from, $from, $to]
         );
         foreach ($rows as &$r) $r['ending_value'] = r2($r['ending'] * $r['avg_cost']);
         return $rows;

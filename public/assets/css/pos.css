@@ -97,6 +97,8 @@ html.kb-open .pos-dlg .modal-body { padding-top: 10px; padding-bottom: 10px; }
 .mb-sm { margin-bottom: 6px; }
 .pick-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .pick-row.muted-row { opacity: .6; }
+.staff-kinds { display: flex; flex-wrap: wrap; gap: 8px; }
+.staff-kinds .btn.on { background: var(--brand); border-color: var(--brand); color: #fff; }
 .receipt-preview { border: 1px solid var(--border); border-radius: 8px; background: #fff; max-height: 56vh; overflow-y: auto; padding: 4px; }
 .receipt-preview .receipt { max-width: 100%; }
 /* Receipt previews: monospace width = characters per line of the paper (32 / 48) */

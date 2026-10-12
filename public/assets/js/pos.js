@@ -174,6 +174,9 @@
     payouts: () => get('/payouts'),
     addPayout: (data) => post('/payouts', data),
     voidPayout: (id, reason, pin) => post(`/payouts/${id}/void`, { reason, pin }),
+    staffNotes: () => get('/staff-notes'),                          // {date, cutoff, kinds, employees, notes}
+    addStaffNote: (data) => post('/staff-notes', data),             // {employee_id, note_date, kind, hours, note}
+    voidStaffNote: (id) => post(`/staff-notes/${id}/void`),
   };
 
   const showError = (e) => App.toast(e.message, 'error');
@@ -652,6 +655,7 @@
       `<button class="btn btn-ghost${S.view === 'board' ? ' on' : ''}" type="button" data-act="board">▦ Orders <span class="count">${S.orders.length}</span></button>`,
       '<button class="btn btn-ghost" type="button" data-act="receipts">Receipts</button>',
       can('pos.petty_cash') && s ? '<button class="btn btn-ghost" type="button" data-act="payout">Payout</button>' : '',
+      can('staffnotes.record', 'payroll.manage') ? '<button class="btn btn-ghost" type="button" data-act="staffnotes" title="Absent, leave, undertime">Staff log</button>' : '',
       can('pos.xreading', 'pos.close_day') && s ? '<button class="btn btn-ghost" type="button" data-act="xread">X-Read</button>' : '',
       can('pos.close_day') && s ? '<button class="btn btn-ghost" type="button" data-act="eod">End of Day</button>' : '',
       can('pos.open_day') && !s ? '<button class="btn btn-success" type="button" data-act="openday">Open Day</button>' : '',
@@ -1692,6 +1696,71 @@
     load();
   }
 
+  // ------------------------------------------------------------------ staff log: absent / leave / undertime notes for payroll
+  function staffNotesDialog() {
+    let D = null;
+    const m = modal({
+      title: 'Staff log',
+      cls: 'wide dlg-staff',
+      body: `<p class="muted mt-0">Record who is absent, on leave, left early or came late. Payroll sees these notes for the cut-off.</p>
+        <div class="form-grid">
+          <label class="field"><span class="field-label">Employee *</span><select class="input" name="employee_id"><option value="">Loading…</option></select></label>
+          <label class="field"><span class="field-label">Date *</span><input class="input" type="date" name="note_date"></label>
+          <div class="field" style="grid-column:1/-1"><span class="field-label">What happened *</span><input type="hidden" name="kind"><div class="staff-kinds"></div></div>
+          <label class="field" data-hours style="display:none"><span class="field-label">Hours *</span>${numField('hours', '', 'money', 'data-act="hours" placeholder="e.g. 2"')}</label>
+          <label class="field" style="grid-column:1/-1"><span class="field-label">Reason / note</span><input class="input" name="note" maxlength="255" placeholder="e.g. sick, family emergency, approved by manager" autocomplete="off"></label>
+        </div>
+        <div class="right mt"><button type="submit" class="btn btn-primary btn-lg">Save note</button></div>
+        <h3 class="mt-lg mb" data-cutoff-title>This cut-off</h3>
+        <div class="staff-list"><span class="spinner dark"></span></div>`,
+      actions: {
+        kind: (b) => {
+          m.el.querySelectorAll('[data-act="kind"]').forEach((x) => x.classList.toggle('on', x === b));
+          m.$('[name=kind]').value = b.dataset.kind;
+          m.$('[data-hours]').style.display = ['undertime', 'late'].includes(b.dataset.kind) ? '' : 'none';
+        },
+        hours: async (b) => {
+          const v = await askNumber({ title: 'Hours', suffix: 'h', max: 24, okText: 'OK' });
+          if (v !== null) b.value = String(v);
+        },
+        voidNote: async (b) => {
+          if (!(await App.ask({ title: 'Remove this note?', message: b.dataset.label, danger: true, okText: 'Remove' }))) return;
+          if (await run(() => Api.voidStaffNote(Number(b.dataset.id)), b)) { App.toast('Note removed'); load(); }
+        },
+      },
+      onSubmit: async (btn) => {
+        const v = (n) => (m.$(`[name=${n}]`) ? m.$(`[name=${n}]`).value.trim() : '');
+        if (!v('employee_id')) { App.toast('Choose the employee', 'error'); return; }
+        if (!v('kind')) { App.toast('Choose what happened', 'error'); return; }
+        const data = { employee_id: Number(v('employee_id')), note_date: v('note_date'), kind: v('kind'), hours: v('hours'), note: v('note') };
+        if (await run(() => Api.addStaffNote(data), btn)) {
+          App.toast('Note saved');
+          ['hours', 'note'].forEach((n) => { m.$(`[name=${n}]`).value = ''; });
+          m.$('[name=employee_id]').value = '';
+          load();
+        }
+      },
+    });
+    async function load() {
+      try {
+        D = await Api.staffNotes();
+        const sel = m.$('[name=employee_id]');
+        if (sel.options.length <= 1) {
+          sel.innerHTML = '<option value="">Select…</option>' + D.employees.map((e) => `<option value="${e.id}">${esc(e.name)}${e.position ? ' · ' + esc(e.position) : ''}</option>`).join('');
+          m.$('[name=note_date]').value = D.date;
+          m.$('.staff-kinds').innerHTML = Object.entries(D.kinds).map(([k, l]) => `<button type="button" class="btn" data-act="kind" data-kind="${k}">${esc(l)}</button>`).join('');
+        }
+        m.$('[data-cutoff-title]').textContent = `This cut-off · ${fmtDate(D.cutoff.from)} – ${fmtDate(D.cutoff.to)}`;
+        m.$('.staff-list').innerHTML = D.notes.length ? D.notes.map((n) => `<div class="pick-row${n.status === 'applied' ? ' muted-row' : ''}">
+            <div><b>${esc(n.employee)}</b> <span class="badge ${n.kind === 'absent' ? 'badge-red' : n.kind === 'leave' || n.kind === 'dayoff' ? 'badge-blue' : 'badge-amber'}">${esc(D.kinds[n.kind] || n.kind)}</span>
+              <div class="muted small">${esc(fmtDate(n.date))} · ${esc(n.label)} · by ${esc(n.recorded_by || '—')}${n.status === 'applied' ? ' · applied to attendance' : ''}</div></div>
+            ${n.can_void ? `<button type="button" class="btn" data-act="voidNote" data-id="${n.id}" data-label="${esc(n.employee + ' · ' + n.label)}">Remove</button>` : ''}
+          </div>`).join('') : '<div class="muted small">No notes yet in this cut-off.</div>';
+      } catch (e) { showError(e); }
+    }
+    load();
+  }
+
   // ------------------------------------------------------------------ X-reading (mid-day)
   async function xReadDialog() {
     const r = await run(() => Api.xreading(), $('[data-act="xread"]'));
@@ -2130,6 +2199,7 @@
     board: () => { if (S.view === 'order') S.queue.then(closeOrder); else loadOrders(); },
     receipts: receiptsDialog,
     payout: payoutDialog,
+    staffnotes: staffNotesDialog,
     xread: xReadDialog,
     eod: async (b) => { await loadOrders(); const x = await run(() => Api.xreading(), b); if (x) endOfDayDialog(x); },
     openday: openDayDialog,

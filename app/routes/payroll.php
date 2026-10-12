@@ -17,6 +17,11 @@ $router->get('/payroll/attendance/preview', [Att::class, 'preview'], 'payroll.ma
 $router->post('/payroll/attendance/import', [Att::class, 'import'], 'payroll.manage');
 $router->post('/payroll/attendance/day', [Att::class, 'day'], 'payroll.manage');
 
+$router->get('/payroll/notes', [App\Controllers\People\StaffNoteController::class, 'index'], ['payroll.view', 'payroll.manage']);
+$router->post('/payroll/notes', [App\Controllers\People\StaffNoteController::class, 'store'], 'payroll.manage');
+$router->post('/payroll/notes/{id}/apply', [App\Controllers\People\StaffNoteController::class, 'apply'], 'payroll.manage');
+$router->post('/payroll/notes/{id}/void', [App\Controllers\People\StaffNoteController::class, 'void'], 'payroll.manage');
+
 $router->get('/payroll/payslips/{id}', [Pay::class, 'payslip'], array_merge($view, ['payroll.self']));
 $router->post('/payroll/payslips/{id}/lines', [Pay::class, 'addLine'], 'payroll.manage');
 $router->post('/payroll/payslips/{id}/remove', [Pay::class, 'removeSlip'], 'payroll.manage');

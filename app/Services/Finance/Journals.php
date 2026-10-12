@@ -20,6 +20,7 @@ class Journals
         'inv_issue' => 'Stock issuance',
         'inv_waste' => 'Spoilage & wastage',
         'inv_count' => 'Inventory count',
+        'production' => 'Production',
         'petty_cash' => 'Petty cash',
         'bank' => 'Bank transaction',
         'bank_opening' => 'Bank opening balance',

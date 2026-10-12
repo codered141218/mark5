@@ -757,3 +757,80 @@ CREATE TABLE IF NOT EXISTS payslip_lines (
   created_by INT UNSIGNED NULL,
   KEY ix_psl (payslip_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Staff notes recorded by the cashier (absent, leave, undertime ...): a reference for payroll per cut-off.
+CREATE TABLE IF NOT EXISTS staff_notes (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  employee_id INT UNSIGNED NOT NULL,
+  note_date DATE NOT NULL,
+  kind VARCHAR(20) NOT NULL,                          -- absent | leave | undertime | late | dayoff | other
+  hours DECIMAL(5,2) NULL,                            -- undertime / late hours
+  note VARCHAR(255) NULL,
+  status VARCHAR(10) NOT NULL DEFAULT 'open',         -- open | applied (to attendance) | void
+  applied_by INT UNSIGNED NULL,
+  applied_at DATETIME NULL,
+  created_by INT UNSIGNED NULL,
+  created_at DATETIME NULL,
+  KEY ix_sn_emp (employee_id, note_date),
+  KEY ix_sn_date (note_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Production: BOM templates (finished product + ingredients per batch) and production orders.
+CREATE TABLE IF NOT EXISTS bom_templates (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  code VARCHAR(32) NULL,
+  name VARCHAR(120) NOT NULL,
+  output_item_id INT UNSIGNED NOT NULL,               -- the finished product (a stocked item)
+  yield_qty DECIMAL(14,4) NOT NULL DEFAULT 1,         -- one batch makes this much ...
+  yield_uom_id INT UNSIGNED NULL,                     -- ... in this unit
+  notes TEXT NULL,
+  active TINYINT(1) NOT NULL DEFAULT 1,
+  created_by INT UNSIGNED NULL,
+  created_at DATETIME NULL,
+  updated_at DATETIME NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS bom_lines (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  template_id INT UNSIGNED NOT NULL,
+  item_id INT UNSIGNED NOT NULL,                      -- raw material (or a recipe, broken down when used)
+  qty DECIMAL(14,4) NOT NULL,                         -- per batch
+  uom_id INT UNSIGNED NULL,
+  notes VARCHAR(255) NULL,
+  KEY ix_bom_lines (template_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- planned (editable) -> released (materials out of stock, finished product into stock) | cancelled
+CREATE TABLE IF NOT EXISTS production_orders (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  doc_no VARCHAR(32) NULL,
+  prod_date DATE NOT NULL,
+  status VARCHAR(12) NOT NULL DEFAULT 'planned',
+  template_id INT UNSIGNED NULL,
+  output_item_id INT UNSIGNED NOT NULL,
+  planned_qty DECIMAL(14,4) NOT NULL,                 -- in output_uom_id
+  output_uom_id INT UNSIGNED NULL,
+  actual_qty DECIMAL(14,4) NULL,                      -- produced, in output_uom_id (set on release)
+  actual_base DECIMAL(14,4) NULL,
+  material_cost DECIMAL(14,2) NOT NULL DEFAULT 0,
+  unit_cost DECIMAL(14,4) NOT NULL DEFAULT 0,         -- per base unit of the finished product
+  notes TEXT NULL,
+  journal_entry_id INT UNSIGNED NULL,
+  created_by INT UNSIGNED NULL,
+  created_at DATETIME NULL,
+  released_by INT UNSIGNED NULL,
+  released_at DATETIME NULL,
+  KEY ix_prod_date (prod_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS production_lines (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  order_id INT UNSIGNED NOT NULL,
+  item_id INT UNSIGNED NOT NULL,
+  qty DECIMAL(14,4) NOT NULL,
+  uom_id INT UNSIGNED NULL,
+  base_qty DECIMAL(14,4) NOT NULL DEFAULT 0,
+  line_total DECIMAL(14,2) NOT NULL DEFAULT 0,        -- estimate while planned, actual cost once released
+  notes VARCHAR(255) NULL,
+  KEY ix_prod_lines (order_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

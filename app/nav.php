@@ -18,6 +18,8 @@ return [
         ['/inventory/issuance', 'Stock Issuance', '⇧', ['inventory.issue']],
         ['/inventory/wastage', 'Spoilage & Wastage', '✕', ['inventory.waste']],
         ['/inventory/counts', 'Inventory Count', '#', ['inventory.count']],
+        ['/inventory/production', 'Production', '⚒', ['production.view', 'production.manage', 'production.bom']],
+        ['/inventory/bom', 'BOM Templates', '▤', ['production.view', 'production.manage', 'production.bom']],
         ['/inventory/categories', 'Categories', '❖', ['inventory.manage']],
         ['/inventory/arrange', 'Arrange Menu', '⇅', ['inventory.manage']],
         ['/inventory/uom', 'Units & Conversions', '⚖', ['inventory.manage']],
@@ -40,6 +42,7 @@ return [
         ['/employees', 'Employees', '☻', ['employees.manage']],
         ['/payroll', 'Payroll', '₱', ['payroll.view', 'payroll.manage', 'payroll.post']],
         ['/payroll/attendance', 'Attendance', '⏱', ['payroll.view', 'payroll.manage']],
+        ['/payroll/notes', 'Staff Notes', '✎', ['payroll.view', 'payroll.manage']],
         ['/my/payslips', 'My Payslips', '✉', ['payroll.self']],
     ],
     'Administration' => [

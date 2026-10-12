@@ -486,6 +486,9 @@ a.pay-step:hover { border-color: var(--brand); }
 .att-grid thead .att-name { z-index: 3; }
 .att-c { min-width: 46px; cursor: pointer; line-height: 1.25; font-variant-numeric: tabular-nums; }
 .att-c span { display: block; }
+.att-c.has-note { position: relative; }
+.att-c.has-note::after { content: ""; position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 50%; background: #7c3aed; }
+.att-note-k { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #7c3aed; margin-left: 8px; }
 .att-c.ok { background: rgba(5, 150, 105, .08); }
 .att-c.late { background: rgba(217, 119, 6, .12); }
 .att-c.bad { background: rgba(220, 38, 38, .08); color: var(--red); }
@@ -510,3 +513,4 @@ a.pay-step:hover { border-color: var(--brand); }
 .my-slip span { display: flex; flex-direction: column; font-weight: 700; }
 .my-slip small { font-weight: 400; color: var(--muted); font-size: 12px; margin-top: 2px; }
 .my-slip-net { text-align: right; font-size: 18px; }
+.input-static { min-height: 40px; display: flex; align-items: center; color: var(--muted); }

@@ -38,3 +38,6 @@ $router->post('/api/pos/day/close', [Api::class, 'closeDay'], 'pos.close_day');
 $router->get('/api/pos/payouts', [Api::class, 'payouts'], 'pos.petty_cash');
 $router->post('/api/pos/payouts', [Api::class, 'addPayout'], 'pos.petty_cash');
 $router->post('/api/pos/payouts/{id}/void', [Api::class, 'voidPayout'], 'pos.petty_cash');
+$router->get('/api/pos/staff-notes', [Api::class, 'staffNotes'], ['staffnotes.record', 'payroll.manage']);
+$router->post('/api/pos/staff-notes', [Api::class, 'addStaffNote'], ['staffnotes.record', 'payroll.manage']);
+$router->post('/api/pos/staff-notes/{id}/void', [Api::class, 'voidStaffNote'], ['staffnotes.record', 'payroll.manage']);

@@ -1,6 +1,7 @@
 <?php
-/** Attendance grid + upload. Variables: $from, $to, $grid, $cfg, $imports, $unmapped */
+/** Attendance grid + upload. Variables: $from, $to, $grid, $cfg, $imports, $unmapped, $notes (staff notes by employee and day) */
 use App\Services\Payroll\Attendance;
+use App\Services\Payroll\StaffNotes;
 
 $dates = [];
 for ($d = $from; $d <= $to; $d = add_days($d, 1)) $dates[] = $d;
@@ -23,7 +24,7 @@ $h = fn ($m) => $m ? intdiv((int) $m, 60) . ':' . str_pad((string) ((int) $m % 6
   <label class="field"><span class="field-label">To</span><input class="input" type="date" name="to" value="<?= e($to) ?>"></label>
   <button class="btn" type="submit">Show</button>
   <span class="grow"></span>
-  <span class="att-legend"><i class="att-k ok"></i>present <i class="att-k late"></i>late / undertime <i class="att-k bad"></i>absent / one punch <i class="att-k rest"></i>day off / leave</span>
+  <span class="att-legend"><i class="att-k ok"></i>present <i class="att-k late"></i>late / undertime <i class="att-k bad"></i>absent / one punch <i class="att-k rest"></i>day off / leave <i class="att-note-k"></i><a href="<?= url('/payroll/notes', ['from' => $from, 'to' => $to]) ?>">staff note</a></span>
 </form>
 
 <?php if ($unmapped && can('payroll.manage')): ?>
@@ -47,8 +48,10 @@ $h = fn ($m) => $m ? intdiv((int) $m, 60) . ':' . str_pad((string) ((int) $m % 6
           <?php foreach ($g['days'] as $d):
               $st = $d['status'];
               $cls = str_starts_with($st, 'Present') ? ($d['late'] || $d['ut'] ? 'late' : 'ok') : ((str_starts_with($st, 'Day off') && $st !== 'Day off (unpaid)') || $st === 'Paid leave' ? 'rest' : 'bad');
-              $tip = date('D M j', strtotime($d['date'])) . ' · ' . $st . ($d['hours'] ? ' · ' . $h($d['hours']) . ' h' : '') . ($d['late'] ? ' · late ' . $d['late'] . ' min' : '') . ($d['ot'] ? ' · OT ' . $h($d['ot']) : '') . ($d['note'] ? ' · ' . $d['note'] : ''); ?>
-            <td class="att-c <?= $cls ?>" title="<?= e($tip) ?>"
+              $dn = $notes[(int) $e['id']][$d['date']] ?? [];
+              $tip = date('D M j', strtotime($d['date'])) . ' · ' . $st . ($d['hours'] ? ' · ' . $h($d['hours']) . ' h' : '') . ($d['late'] ? ' · late ' . $d['late'] . ' min' : '') . ($d['ot'] ? ' · OT ' . $h($d['ot']) : '') . ($d['note'] ? ' · ' . $d['note'] : '')
+                  . implode('', array_map(fn ($n) => "\n✎ " . StaffNotes::label($n) . ($n['status'] === 'applied' ? ' (applied)' : ''), $dn)); ?>
+            <td class="att-c <?= $cls ?><?= $dn ? ' has-note' : '' ?>" title="<?= e($tip) ?>"
                 <?php if (can('payroll.manage')): ?>data-day='<?= e(json_encode(['employee_id' => $e['id'], 'name' => $e['full_name'], 'work_date' => $d['date'], 'time_in' => $d['in'], 'time_out' => $d['out'], 'note' => $d['note'], 'type' => $d['type'] ?? 'auto', 'label' => date('D, M j, Y', strtotime($d['date']))])) ?>'<?php endif; ?>>
               <?php if ($d['in'] || $d['out']): ?><span><?= e($d['in'] ?? '—') ?></span><span><?= e($d['out'] ?? '—') ?></span>
               <?php else: ?><span class="att-st"><?= e($st === 'Absent' ? '✕' : ($st === 'Paid leave' ? 'leave' : (str_starts_with($st, 'Day off') ? 'off' : ($st === 'Present' ? '✓' : '')))) ?></span><?php endif; ?>

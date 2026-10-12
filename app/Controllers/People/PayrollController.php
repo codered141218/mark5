@@ -9,6 +9,7 @@ use App\Core\Response;
 use App\Core\Table;
 use App\Services\Finance\Banks;
 use App\Services\Payroll\Payroll;
+use App\Services\Payroll\StaffNotes;
 use App\Services\Settings;
 
 /** Payroll runs (cut-offs), payslips with bonuses / deductions, approval, salary payouts, settings and "My payslips". */
@@ -99,6 +100,7 @@ class PayrollController
         $emp = DB::one('SELECT * FROM employees WHERE id = ?', [(int) $s['employee_id']]) ?: [];
         $data = ['title' => 'Payslip · ' . $s['full_name'], 's' => $s, 'edit' => $edit, 'settings' => Settings::all(), 'cfg' => Payroll::settings(),
             'schedule' => Payroll::scheduleLabel($emp),
+            'notes' => Auth::can('payroll.view', 'payroll.manage', 'payroll.post') ? StaffNotes::list($s['period_from'], $s['period_to'], (int) $s['employee_id']) : [],
             'advances' => $edit ? DB::all("SELECT id, doc_no, balance FROM cash_advances WHERE employee_id = ? AND status = 'approved' AND balance > 0", [$s['employee_id']]) : []];
         if ($req->query('print')) return view('payroll/payslip_print', $data + ['slips' => [$s]], 'blank');
         return view('payroll/payslip', $data);

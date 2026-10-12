@@ -204,7 +204,7 @@ class Catalog
                 'link' => fn ($r) => current_url(['report' => 'stockcard', 'item_id' => $r['id']]),
                 'columns' => [self::text('sku', 'SKU'), self::text('item', 'Item'), self::text('uom', 'Unit'), self::qty('beginning', 'Beginning'),
                     self::qty('received', 'Received'), self::qty('sold', 'Used in sales'), self::qty('issued', 'Issued'), self::qty('wasted', 'Wasted'),
-                    self::qty('count_adj', 'Count adj.'), self::qty('ending', 'Ending'), self::money('avg_cost', 'Avg cost', false),
+                    self::qty('produced', 'Produced'), self::qty('production_use', 'Used in production'), self::qty('count_adj', 'Count adj.'), self::qty('ending', 'Ending'), self::money('avg_cost', 'Avg cost', false),
                     self::money('ending_value', 'Ending value')],
             ],
             'stockcard' => [

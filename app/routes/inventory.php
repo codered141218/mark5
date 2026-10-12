@@ -4,6 +4,7 @@ use App\Controllers\Inventory\CategoryController;
 use App\Controllers\Inventory\CountController;
 use App\Controllers\Inventory\DocController;
 use App\Controllers\Inventory\ItemController;
+use App\Controllers\Inventory\ProductionController as Prod;
 use App\Controllers\Inventory\UomController;
 use App\Services\InventoryDocs;
 
@@ -24,7 +25,7 @@ $router->get('/inventory/items/{id}', [ItemController::class, 'show'], ['invento
 $router->post('/inventory/items/{id}', [ItemController::class, 'update'], 'inventory.manage');
 $router->post('/inventory/items/{id}/delete', [ItemController::class, 'delete'], 'inventory.manage');
 $router->get('/api/inventory/items/{id}/units', [ItemController::class, 'units'],
-    ['inventory.view', 'inventory.manage', 'inventory.receive', 'inventory.issue', 'inventory.waste', 'inventory.count']);
+    ['inventory.view', 'inventory.manage', 'inventory.receive', 'inventory.issue', 'inventory.waste', 'inventory.count', 'production.manage', 'production.bom']);
 
 // Units of measure & global conversions
 $router->get('/inventory/uom', [UomController::class, 'index'], 'inventory.manage');
@@ -58,3 +59,20 @@ $router->post('/inventory/counts/{id}/cancel', [CountController::class, 'cancel'
 // Arrange menu (order of POS categories, items and discounts)
 $router->get('/inventory/arrange', [App\Controllers\Inventory\ArrangeController::class, 'index'], 'inventory.manage');
 $router->post('/inventory/arrange', [App\Controllers\Inventory\ArrangeController::class, 'save'], 'inventory.manage');
+
+// Production orders and BOM templates ('new' must come before '{id}')
+$prodView = ['production.view', 'production.manage', 'production.bom'];
+$router->get('/inventory/production', [Prod::class, 'index'], $prodView);
+$router->get('/inventory/production/new', [Prod::class, 'create'], 'production.manage');
+$router->post('/inventory/production', [Prod::class, 'store'], 'production.manage');
+$router->get('/inventory/production/{id}', [Prod::class, 'show'], $prodView);
+$router->post('/inventory/production/{id}', [Prod::class, 'update'], 'production.manage');
+$router->post('/inventory/production/{id}/release', [Prod::class, 'release'], 'production.manage');
+$router->post('/inventory/production/{id}/cancel', [Prod::class, 'cancel'], 'production.manage');
+$router->post('/inventory/production/{id}/delete', [Prod::class, 'delete'], 'production.manage');
+$router->get('/inventory/bom', [Prod::class, 'templates'], $prodView);
+$router->get('/inventory/bom/new', [Prod::class, 'newTemplate'], 'production.bom');
+$router->post('/inventory/bom', [Prod::class, 'storeTemplate'], 'production.bom');
+$router->get('/inventory/bom/{id}', [Prod::class, 'showTemplate'], $prodView);
+$router->post('/inventory/bom/{id}', [Prod::class, 'updateTemplate'], 'production.bom');
+$router->post('/inventory/bom/{id}/delete', [Prod::class, 'deleteTemplate'], 'production.bom');

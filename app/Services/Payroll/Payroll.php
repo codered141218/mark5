@@ -140,6 +140,27 @@ class Payroll
         return $out;
     }
 
+    /** The cut-off a date falls in: ['from', 'to', 'pay_date']. */
+    public static function cutoffFor(string $date): array
+    {
+        foreach ([$date, date('Y-m-01', strtotime(date('Y-m-01', strtotime($date)) . ' +1 month'))] as $m) {
+            foreach (self::cutoffs($m) as $c) if ($c['from'] <= $date && $date <= $c['to']) return $c;
+        }
+        return ['from' => $date, 'to' => $date, 'pay_date' => $date];
+    }
+
+    /** Cut-offs from the newest one that has started back, $n of them (for period pickers). */
+    public static function recentCutoffs(int $n = 8): array
+    {
+        $out = [];
+        $c = self::cutoffFor(today());
+        while (count($out) < $n) {
+            $out[] = $c;
+            $c = self::cutoffFor(add_days($c['from'], -1));
+        }
+        return $out;
+    }
+
     /** Suggested next cut-off: the one after the last payroll, else the latest one that has ended. */
     public static function suggestPeriod(): array
     {
