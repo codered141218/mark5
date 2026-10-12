@@ -15,7 +15,8 @@ use PDO;
  * restored here or imported with phpMyAdmin / the mysql command line.
  *
  *   Backup::create('manual');                 // returns ['name' => ..., 'kind' => ..., 'size' => ..., 'created_at' => ...]
- *   Backup::restore(Backup::path($name));     // replaces ALL data; a 'pre-restore' copy is made first
+ *   Backup::restore(Backup::path($name));     // replaces ALL data; a 'pre-restore' copy is made first. Tables the backup
+ *                                             // does not have (features added later) are dropped, then upgrades re-create them empty
  *   Backup::autoBackup();                     // daily automatic backup (see app/routes/admin.php)
  */
 class Backup
@@ -104,8 +105,9 @@ class Backup
     }
 
     /**
-     * Replace the whole database with the contents of a backup file.
-     * A 'pre-restore' backup of the current data is taken first so the restore can be undone.
+     * Replace the whole database with the contents of a backup file: afterwards it holds exactly the backup's data.
+     * Tables not in the backup (e.g. payroll when the backup is older than that feature) are dropped, and the database
+     * upgrade then re-creates them empty. A 'pre-restore' backup of the current data is taken first so the restore can be undone.
      * Returns ['safety_backup' => name of that copy].
      */
     public static function restore(string $file, string $source): array
@@ -113,10 +115,15 @@ class Backup
         self::validate($file);
         set_time_limit(0);
         ignore_user_abort(true); // closing the browser must not stop a restore half-way
+        $keep = self::tablesIn($file);
         $safety = self::create('pre-restore');
         $pdo = DB::pdo();
         try {
             $pdo->exec('SET FOREIGN_KEY_CHECKS=0');
+            if ($keep) {
+                $now = array_column(DB::query("SHOW FULL TABLES WHERE Table_type = 'BASE TABLE'")->fetchAll(PDO::FETCH_NUM), 0);
+                foreach (array_diff($now, $keep) as $table) $pdo->exec('DROP TABLE IF EXISTS `' . str_replace('`', '``', $table) . '`');
+            }
             foreach (self::statements($file) as $sql) $pdo->exec($sql);
         } catch (\PDOException $e) {
             throw HttpException::bad('Restore failed: ' . $e->getMessage()
@@ -126,8 +133,22 @@ class Backup
             DB::reconnect();
             Settings::flush();
         }
+        Migrations::run();   // a backup from an older version: add the newer tables / columns (empty) right away
+        Settings::flush();
         Audit::log('restore', 'database', null, ['from' => $source, 'safety_backup' => $safety['name']]);
         return ['safety_backup' => $safety['name']];
+    }
+
+    /** Names of the tables a backup file contains (from its "DROP TABLE IF EXISTS `name`;" lines). */
+    public static function tablesIn(string $file): array
+    {
+        $fh = fopen($file, 'rb');
+        $tables = [];
+        while (($line = fgets($fh)) !== false) {
+            if (preg_match('/^DROP TABLE IF EXISTS `((?:[^`]|``)+)`;\s*$/', $line, $m)) $tables[] = str_replace('``', '`', $m[1]);
+        }
+        fclose($fh);
+        return $tables;
     }
 
     /** Restore from an uploaded file ($req->file('backup')). */

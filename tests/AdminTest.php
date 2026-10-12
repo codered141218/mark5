@@ -164,6 +164,29 @@ test('restoring the safety backup undoes a restore', function () {
     eq('value after backup', Settings::get('test_tricky'));
 });
 
+test('restoring a backup older than a feature removes that feature\'s data (tables not in the backup) and re-creates its tables empty', function () {
+    // a backup made before payroll existed: no payroll tables, database version 7
+    DB::pdo()->exec('SET FOREIGN_KEY_CHECKS=0');
+    foreach (['payslip_lines', 'payslips', 'payroll_runs', 'attendance', 'attendance_imports'] as $t) DB::pdo()->exec("DROP TABLE `$t`");
+    DB::pdo()->exec('SET FOREIGN_KEY_CHECKS=1');
+    DB::run("UPDATE settings SET value = '7' WHERE `key` = 'db_version'");
+    App\Services\Settings::flush();
+    $old = Backup::create('manual');
+    ok(!in_array('payroll_runs', Backup::tablesIn(Backup::path($old['name'])), true));
+    // the update adds payroll; test payroll data is entered; an unknown extra table too
+    App\Services\Migrations::run();
+    DB::insert('payroll_runs', ['run_no' => 'PR-TEST', 'period_from' => '2026-09-26', 'period_to' => '2026-10-10', 'pay_date' => '2026-10-15', 'status' => 'draft', 'created_at' => now()]);
+    DB::pdo()->exec('CREATE TABLE zz_later (id INT PRIMARY KEY)');
+    $r = Backup::restore(Backup::path($old['name']), $old['name']);
+    eq(0, (int) DB::value('SELECT COUNT(*) FROM payroll_runs'), 'payroll test data gone');
+    eq(0, (int) DB::value("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'zz_later'"));
+    eq(App\Services\Migrations::latest(), (int) App\Services\Settings::get('db_version'), 'upgraded right away');
+    // the safety copy still has the payroll data
+    ok(in_array('payroll_runs', Backup::tablesIn(Backup::path($r['safety_backup'])), true));
+    Backup::restore(Backup::path($r['safety_backup']), $r['safety_backup']);
+    eq('PR-TEST', DB::value('SELECT run_no FROM payroll_runs'));
+});
+
 test('uploaded backups: bad header, truncated file and wrong extension are rejected', function () {
     Settings::set('test_marker', 'untouched');
     $count = count(Backup::list());
