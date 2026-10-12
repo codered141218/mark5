@@ -20,3 +20,15 @@ python3 docs/demo/assemble.py docs/demo/mark5-demo.mp4   # title / end cards, ca
 
 `node docs/demo/record.js 02-pos` re-records only the named scene(s) and keeps the rest. The recorder logs in as
 `admin / admin123` (back office) and `maria / cashier123` (POS); the manager PIN typed in the discount step is `2468`.
+
+## 1-minute ad (`mark5-ad.mp4`)
+
+A 57-second spot with voice-over and music: mobile order taker, kitchen slips with copies per station, live dashboard,
+financial statements, and employee cash advances with salary deductions. Everything lives in `ad/`:
+
+```bash
+pip install piper-tts && python3 ad/voice.py /path/to/piper-voices   # vo.json -> vo-*.wav (voice files: rhasspy/piper releases)
+python3 ad/music.py 60 ad/music.wav                                   # synthesized music bed (numpy, no samples)
+node ad/ad-record.js                                                  # five scenes, paced to their target lengths
+python3 ad/ad-assemble.py docs/demo/mark5-ad.mp4                     # cards + headline chips + ducked music + VO
+```

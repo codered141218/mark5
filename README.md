@@ -9,8 +9,8 @@ Every sale, delivery, spoilage, petty cash payout and cash advance is posted to 
 - Server-rendered pages + a little plain JavaScript (no build step).
 - Works on PCs, tablets and phones (Chrome / Edge / Safari).
 
-**Demo video:** [docs/demo/mark5-demo.mp4](docs/demo/mark5-demo.mp4) (3 min) — POS, inventory, reports, finance and
-administration on sample data. See [docs/demo/README.md](docs/demo/README.md) to re-record it.
+**Videos:** [1-minute ad](docs/demo/mark5-ad.mp4) with voice-over · [3-minute walkthrough](docs/demo/mark5-demo.mp4) of POS,
+inventory, reports, finance and administration on sample data. See [docs/demo/README.md](docs/demo/README.md) to re-record them.
 
 ---
 

@@ -9,3 +9,6 @@
 # demo recording working files
 /docs/demo/rec/
 /docs/demo/build/
+/docs/demo/ad/rec/
+/docs/demo/ad/build/
+/docs/demo/ad/*.wav
