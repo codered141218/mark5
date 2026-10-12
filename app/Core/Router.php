@@ -57,7 +57,9 @@ class Router
             return $this->handleError($req, $e->status, $e->getMessage());
         } catch (\PDOException $e) {
             error_log((string) $e);
-            $msg = config('app.debug') ? $e->getMessage() : 'Database error. Please try again or contact the administrator.';
+            // administrators see the real reason (helps when reporting a problem); everyone else a plain message
+            try { $admin = Auth::can('admin.settings'); } catch (\Throwable $x) { $admin = false; }   // the database may be down
+            $msg = config('app.debug') || $admin ? 'Database error: ' . $e->getMessage() : 'Database error. Please try again or contact the administrator.';
             if (($e->errorInfo[1] ?? 0) === 1062) $msg = 'That record already exists (duplicate value).';
             if (($e->errorInfo[1] ?? 0) === 1451) $msg = 'This record is still used by other records and cannot be deleted.';
             return $this->handleError($req, 500, $msg);

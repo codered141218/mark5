@@ -108,10 +108,7 @@ class Migrations
                     ['pagibig', 'DECIMAL(12,2) NOT NULL DEFAULT 0'], ['wtax', 'DECIMAL(12,2) NOT NULL DEFAULT 0'],
                     ['ca_deduction', 'DECIMAL(12,2) NOT NULL DEFAULT 0'],
                 ] as [$col, $def]) self::addColumn('employees', $col, $def);
-                $sql = file_get_contents(BASE_PATH . '/database/schema.sql');
-                foreach (['attendance_imports', 'attendance', 'payroll_runs', 'payslips', 'payslip_lines'] as $t) {
-                    if (preg_match('/CREATE TABLE IF NOT EXISTS ' . $t . ' \(.*?\) ENGINE=InnoDB[^;]*;/s', $sql, $m)) DB::pdo()->exec($m[0]);
-                }
+                self::createTables(['attendance_imports', 'attendance', 'payroll_runs', 'payslips', 'payslip_lines']);
                 // statutory and withholding tax payables get system keys so payroll can find them
                 foreach (['2210' => 'statutory_payable', '2220' => 'wtax_payable'] as $code => $key) {
                     if (!DB::value('SELECT id FROM accounts WHERE system_key = ?', [$key])) {
@@ -145,10 +142,7 @@ class Migrations
             },
             // 11: staff notes from the POS (absent / leave / undertime) and production (BOM templates, production orders)
             11 => function () {
-                $sql = file_get_contents(BASE_PATH . '/database/schema.sql');
-                foreach (['staff_notes', 'bom_templates', 'bom_lines', 'production_orders', 'production_lines'] as $t) {
-                    if (preg_match('/CREATE TABLE IF NOT EXISTS ' . $t . ' \(.*?\) ENGINE=InnoDB[^;]*;/s', $sql, $m)) DB::pdo()->exec($m[0]);
-                }
+                self::createTables(['staff_notes', 'bom_templates', 'bom_lines', 'production_orders', 'production_lines']);
                 foreach (DB::all('SELECT id, name, permissions FROM roles') as $r) {
                     $p = json_decode($r['permissions'], true) ?: [];
                     if (in_array('*', $p, true)) continue;
@@ -158,6 +152,11 @@ class Migrations
                     if ($r['name'] === 'Inventory Clerk') $add = array_merge($add, ['production.view', 'production.manage']);
                     if ($add) DB::run('UPDATE roles SET permissions = ? WHERE id = ?', [json_encode(array_values(array_unique(array_merge($p, $add)))), $r['id']]);
                 }
+            },
+            // 12: repair: create every table of database/schema.sql that is missing (an upgrade that ran while the new
+            //     schema.sql was still being uploaded skipped its tables, e.g. staff_notes)
+            12 => function () {
+                self::createTables();
             },
         ];
     }
@@ -188,6 +187,28 @@ class Migrations
             $applied[] = $version;
         }
         return $applied;
+    }
+
+    /**
+     * Create the named tables (all tables when null) from database/schema.sql if they do not exist yet. Throws when a table
+     * is not in schema.sql: the file is older than this code (still being uploaded), so the step must not be marked as done.
+     */
+    public static function createTables(?array $names = null): void
+    {
+        $sql = (string) @file_get_contents(BASE_PATH . '/database/schema.sql');
+        preg_match_all('/CREATE TABLE IF NOT EXISTS (\w+) \(.*?\) ENGINE=InnoDB[^;]*;/s', $sql, $m, PREG_SET_ORDER);
+        $defs = array_column(array_map(fn ($x) => ['name' => $x[1], 'sql' => $x[0]], $m), 'sql', 'name');
+        $names = $names ?? array_keys($defs);
+        if (!$names) throw new \RuntimeException('database/schema.sql is missing or empty');
+        foreach ($names as $t) {
+            if (!isset($defs[$t])) throw new \RuntimeException("database/schema.sql has no table $t yet (upload still in progress?) - the upgrade will run again on the next page");
+        }
+        DB::pdo()->exec('SET FOREIGN_KEY_CHECKS=0');
+        try {
+            foreach ($names as $t) DB::pdo()->exec($defs[$t]);
+        } finally {
+            DB::pdo()->exec('SET FOREIGN_KEY_CHECKS=1');
+        }
     }
 
     /** ALTER TABLE ... ADD COLUMN only when the column does not exist yet (works on MySQL and MariaDB). */

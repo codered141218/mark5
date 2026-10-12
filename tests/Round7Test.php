@@ -175,3 +175,20 @@ test('upgrade step 11 is re-runnable and gives roles the new permissions', funct
     ok(in_array('production.manage', $perms('Inventory Clerk'), true) && !in_array('production.bom', $perms('Inventory Clerk'), true));
     eq(1, count(array_keys($perms('Cashier'), 'staffnotes.record')));
 });
+
+test('an upgrade that runs while schema.sql is still the old file is not marked done; step 12 re-creates missing tables', function () {
+    throws(fn () => App\Services\Migrations::createTables(['no_such_table']), 'has no table no_such_table');
+    // the live problem: staff_notes / production tables never created, database already at version 11
+    DB::pdo()->exec('SET FOREIGN_KEY_CHECKS=0');
+    foreach (['staff_notes', 'production_lines', 'production_orders', 'bom_lines', 'bom_templates'] as $t) DB::pdo()->exec("DROP TABLE `$t`");
+    DB::pdo()->exec('SET FOREIGN_KEY_CHECKS=1');
+    DB::run("UPDATE settings SET value = '11' WHERE `key` = 'db_version'");
+    App\Services\Settings::flush();
+    App\Services\Migrations::runIfNeeded();
+    foreach (['staff_notes', 'bom_templates', 'bom_lines', 'production_orders', 'production_lines'] as $t) {
+        eq(1, (int) DB::value('SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?', [$t]), "$t re-created");
+    }
+    eq(App\Services\Migrations::latest(), (int) App\Services\Settings::get('db_version'));
+    as_user('admin');
+    ok(is_array(StaffNotes::list('2026-01-01', '2026-12-31')));
+});
