@@ -37,7 +37,9 @@ class Table
         $link = $opts['link'] ?? null;
         $bulk = !empty($opts['bulk']['actions']) && $rows ? $opts['bulk'] : null;
         $idKey = $bulk['key'] ?? 'id';
-        $h = '<div class="datatable">';
+        // 'page' => 10: show that many rows per page, with a rows-per-page choice and page buttons (in the browser)
+        $page = (int) ($opts['page'] ?? 0);
+        $h = '<div class="datatable"' . ($page > 0 ? ' data-page-size="' . $page . '"' : '') . '>';
         if (($opts['search'] ?? true) || !empty($opts['export']) || !empty($opts['toolbar']) || $bulk) {
             $h .= '<div class="dt-toolbar">';
             if ($opts['search'] ?? true) $h .= '<input class="input dt-search" type="search" placeholder="Search…" data-table-search>';
@@ -88,7 +90,15 @@ class Table
         }
         $h .= '</table>';
         if (!$rows) $h .= '<div class="empty">' . e($opts['empty'] ?? 'No records found.') . '</div>';
-        return $h . '</div></div>';
+        $h .= '</div>';
+        if ($page > 0 && $rows) {
+            $h .= '<div class="dt-pager"><label class="row gap-sm"><span class="muted small">Show</span><select class="input input-sm" data-page-size-select>';
+            foreach (array_unique([$page, 10, 25, 50, 100]) as $n) $h .= '<option value="' . $n . '"' . ($n === $page ? ' selected' : '') . '>' . $n . '</option>';
+            $h .= '<option value="0">All</option></select></label><span class="muted small" data-page-info></span><span class="grow"></span>'
+                . '<button type="button" class="btn btn-sm" data-page-prev>‹ Prev</button><span class="small" data-page-of></span>'
+                . '<button type="button" class="btn btn-sm" data-page-next>Next ›</button></div>';
+        }
+        return $h . '</div>';
     }
 
     /** Returns an Excel download Response when ?export=xlsx is present, otherwise null. */

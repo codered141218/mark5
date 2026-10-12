@@ -12,4 +12,4 @@
 
 <?php if ($limited): ?><div class="alert alert-warn">Only the 2,000 most recent entries are shown. Narrow the period or filter by action / user to see older ones.</div><?php endif; ?>
 
-<div class="card"><?= Table::html($columns, $rows, ['export' => true, 'empty' => 'No activity in this period.']) ?></div>
+<div class="card"><?= Table::html($columns, $rows, ['export' => true, 'page' => 25, 'empty' => 'No activity in this period.']) ?></div>

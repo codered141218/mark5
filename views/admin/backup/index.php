@@ -33,7 +33,7 @@ $restoreMsg = 'This replaces ALL current data with the uploaded backup. A safety
     <div class="stat"><div class="stat-label">Total size</div><div class="stat-value"><?= e($totalSize) ?></div></div>
   </div>
 
-  <div class="card"><?= Table::html($columns, $rows, ['export' => true, 'empty' => 'No backups yet. Click “Create backup now”.']) ?></div>
+  <div class="card"><?= Table::html($columns, $rows, ['export' => true, 'page' => 10, 'empty' => 'No backups yet. Click “Create backup now”.']) ?></div>
 
   <div class="card">
     <div class="card-head"><h3>Restore from a file</h3></div>

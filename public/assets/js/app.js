@@ -126,7 +126,9 @@
       if (!table) return;
       input.addEventListener('input', () => {
         const q = input.value.toLowerCase();
-        $$('tbody tr', table).forEach((tr) => { tr.style.display = tr.textContent.toLowerCase().includes(q) ? '' : 'none'; });
+        $$('tbody tr', table).forEach((tr) => { tr.dataset.hit = tr.textContent.toLowerCase().includes(q) ? '1' : '0'; });
+        if (table._page) { table._page.go(1); return; }
+        $$('tbody tr', table).forEach((tr) => { tr.style.display = tr.dataset.hit === '0' ? 'none' : ''; });
       });
     });
     $$('table[data-table]', root).forEach((table, tIndex) => {
@@ -169,8 +171,42 @@
         const tr = e.target.closest('tr[data-href]');
         if (tr && !e.target.closest('a,button,input,select,form,label,.dt-check')) window.location.href = tr.dataset.href;
       });
+      if (wrap && wrap.dataset.pageSize) initPager(wrap, table);
       if (wrap && $('[data-bulk-bar]', wrap)) initBulk(wrap, table);
     });
+  }
+
+  /** Pages of a Table::html(..., ['page' => n]) table: rows per page (remembered per page), prev / next; search and sort apply first. */
+  function initPager(wrap, table) {
+    const sel = $('[data-page-size-select]', wrap);
+    const key = `mark5_pagesize:${location.pathname}`;
+    let size = Number(wrap.dataset.pageSize);
+    try { const v = localStorage.getItem(key); if (v !== null && [...sel.options].some((o) => o.value === v)) size = Number(v); } catch (e) { /* ignore */ }
+    sel.value = String(size);
+    let page = 1;
+    const go = (p) => {
+      const rows = $$('tbody tr', table).filter((tr) => tr.dataset.hit !== '0');
+      const pages = size > 0 ? Math.max(1, Math.ceil(rows.length / size)) : 1;
+      page = Math.min(Math.max(1, p), pages);
+      const from = size > 0 ? (page - 1) * size : 0;
+      const to = size > 0 ? from + size : rows.length;
+      $$('tbody tr', table).forEach((tr) => { tr.style.display = 'none'; });
+      rows.slice(from, to).forEach((tr) => { tr.style.display = ''; });
+      $('[data-page-info]', wrap).textContent = rows.length ? `${from + 1}–${Math.min(to, rows.length)} of ${rows.length}` : 'no match';
+      $('[data-page-of]', wrap).textContent = `Page ${page} of ${pages}`;
+      $('[data-page-prev]', wrap).disabled = page <= 1;
+      $('[data-page-next]', wrap).disabled = page >= pages;
+      table.dispatchEvent(new Event('pagechange'));
+    };
+    table._page = { go, refresh: () => go(page) };
+    sel.addEventListener('change', () => {
+      size = Number(sel.value);
+      try { localStorage.setItem(key, sel.value); } catch (e) { /* ignore */ }
+      go(1);
+    });
+    $('[data-page-prev]', wrap).addEventListener('click', () => go(page - 1));
+    $('[data-page-next]', wrap).addEventListener('click', () => go(page + 1));
+    go(1);
   }
 
   function sortTable(table, idx, dir) {
@@ -192,6 +228,7 @@
     const body = $('tbody', table);
     rows.forEach((r) => body.appendChild(r));
     if (table._sortChanged) table._sortChanged(idx, dir);
+    if (table._page) table._page.go(1);
   }
 
   /** Row checkboxes + the bulk action bar of a Table::html(..., ['bulk' => ...]) table. */
@@ -200,7 +237,7 @@
     const all = $('[data-bulk-all]', table);
     const visible = () => $$('tbody tr', table).filter((tr) => tr.style.display !== 'none');
     const boxes = () => $$('[data-bulk-id]', table);
-    const chosen = () => boxes().filter((b) => b.checked && b.closest('tr').style.display !== 'none');
+    const chosen = () => boxes().filter((b) => b.checked && b.closest('tr').dataset.hit !== '0');
     const paint = () => {
       const n = chosen().length;
       $('[data-bulk-count]', bar).textContent = n;
@@ -215,6 +252,7 @@
     });
     const search = $('[data-table-search]', wrap);
     if (search) search.addEventListener('input', paint);
+    table.addEventListener('pagechange', paint);
     bar.addEventListener('click', async (e) => {
       if (e.target.closest('[data-bulk-clear]')) { boxes().forEach((b) => { b.checked = false; }); paint(); return; }
       const btn = e.target.closest('[data-bulk-action]');
