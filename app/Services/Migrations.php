@@ -44,6 +44,23 @@ class Migrations
                 DB::run("UPDATE tickets SET promo_discount = discount_amount WHERE discount_type IN ('percent','amount') AND promo_discount = 0");
                 Discounts::seedDefaults();
             },
+            // 2: payroll — attendance from ZKTeco devices, payroll runs, daily rate / biometric id on employees
+            2 => function () {
+                self::addColumn('employees', 'daily_rate', 'DECIMAL(14,2) NOT NULL DEFAULT 0 AFTER date_hired');
+                self::addColumn('employees', 'biometric_id', 'VARCHAR(32) NULL AFTER daily_rate');
+                $schema = file_get_contents(BASE_PATH . '/database/schema.sql');
+                foreach (['attendance_logs', 'payroll_runs', 'payroll_lines'] as $t) {
+                    if (preg_match('/CREATE TABLE IF NOT EXISTS ' . $t . ' \(.*?\) ENGINE=[^;]+;/s', $schema, $m)) DB::pdo()->exec($m[0]);
+                }
+                // managers and accountants get the new permission; the Administrator role already has everything
+                foreach (DB::all("SELECT id, permissions FROM roles WHERE name IN ('Manager', 'Accountant')") as $r) {
+                    $p = json_decode($r['permissions'], true) ?: [];
+                    if (!in_array('*', $p, true) && !in_array('payroll.manage', $p, true)) {
+                        $p[] = 'payroll.manage';
+                        DB::update('roles', (int) $r['id'], ['permissions' => json_encode(array_values($p))]);
+                    }
+                }
+            },
         ];
     }
 

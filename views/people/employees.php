@@ -2,7 +2,7 @@
 <div class="page-header">
   <div>
     <h1>Employees</h1>
-    <p class="muted">Staff records used for cash advances and linking user accounts.</p>
+    <p class="muted">Staff records used for payroll, cash advances and linking user accounts.</p>
   </div>
   <div class="page-actions">
     <button class="btn btn-primary" data-open="dlg-employee" data-reset data-title="Add employee" data-fill='{"id":"","active":1}'>+ Add employee</button>
@@ -26,6 +26,8 @@
       <label class="field"><span class="field-label">Department</span><input class="input" name="department" placeholder="e.g. Kitchen, Dining"></label>
       <label class="field"><span class="field-label">Phone</span><input class="input" name="phone" placeholder="09xx xxx xxxx"></label>
       <label class="field"><span class="field-label">Date hired</span><input class="input" type="date" name="date_hired"></label>
+      <label class="field"><span class="field-label">Daily rate (₱)</span><input class="input" type="number" step="0.01" min="0" name="daily_rate" placeholder="0.00"><span class="field-hint">Payroll: pay per day worked</span></label>
+      <label class="field"><span class="field-label">Biometric / device ID</span><input class="input" name="biometric_id" placeholder="e.g. 7"><span class="field-hint">User ID enrolled on the ZKTeco</span></label>
       <label class="field" style="grid-column: 1 / -1"><span class="field-label">Notes</span><textarea class="input" name="notes" rows="2"></textarea></label>
       <label class="checkbox"><input type="checkbox" name="active" value="1"> Active employee</label>
     </div>

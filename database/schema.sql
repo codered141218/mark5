@@ -34,6 +34,8 @@ CREATE TABLE IF NOT EXISTS employees (
   department VARCHAR(80) NULL,
   phone VARCHAR(40) NULL,
   date_hired DATE NULL,
+  daily_rate DECIMAL(14,2) NOT NULL DEFAULT 0,  -- payroll: pay per day worked
+  biometric_id VARCHAR(32) NULL,                -- user ID enrolled on the ZKTeco device
   active TINYINT(1) NOT NULL DEFAULT 1,
   notes TEXT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -283,6 +285,60 @@ CREATE TABLE IF NOT EXISTS ca_repayments (
   created_by INT UNSIGNED NULL,
   created_at DATETIME NULL,
   CONSTRAINT fk_car_ca FOREIGN KEY (advance_id) REFERENCES cash_advances(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ===================================================================== payroll
+-- Punches imported from ZKTeco biometric devices (attlog.dat / CSV exports); one row per punch, duplicates ignored
+CREATE TABLE IF NOT EXISTS attendance_logs (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  employee_id INT UNSIGNED NOT NULL,
+  punch_at DATETIME NOT NULL,
+  source VARCHAR(20) NOT NULL DEFAULT 'zkteco',
+  device VARCHAR(80) NULL,
+  imported_by INT UNSIGNED NULL,
+  imported_at DATETIME NULL,
+  UNIQUE KEY uq_punch (employee_id, punch_at),
+  CONSTRAINT fk_att_emp FOREIGN KEY (employee_id) REFERENCES employees(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS payroll_runs (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  doc_no VARCHAR(32) NULL,
+  period_from DATE NOT NULL,
+  period_to DATE NOT NULL,
+  pay_date DATE NOT NULL,
+  method VARCHAR(20) NOT NULL DEFAULT 'cash',   -- cash | bank
+  bank_account_id INT UNSIGNED NULL,
+  status ENUM('draft','posted') NOT NULL DEFAULT 'draft',
+  total_gross DECIMAL(14,2) NOT NULL DEFAULT 0,
+  total_ca DECIMAL(14,2) NOT NULL DEFAULT 0,
+  total_other DECIMAL(14,2) NOT NULL DEFAULT 0,
+  total_net DECIMAL(14,2) NOT NULL DEFAULT 0,
+  notes VARCHAR(255) NULL,
+  journal_entry_id INT UNSIGNED NULL,
+  created_by INT UNSIGNED NULL,
+  created_at DATETIME NULL,
+  posted_by INT UNSIGNED NULL,
+  posted_at DATETIME NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS payroll_lines (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  run_id INT UNSIGNED NOT NULL,
+  employee_id INT UNSIGNED NOT NULL,
+  daily_rate DECIMAL(14,2) NOT NULL DEFAULT 0,
+  days_worked INT NOT NULL DEFAULT 0,
+  hours_worked DECIMAL(10,2) NOT NULL DEFAULT 0,
+  ot_hours DECIMAL(10,2) NOT NULL DEFAULT 0,
+  basic_pay DECIMAL(14,2) NOT NULL DEFAULT 0,
+  ot_pay DECIMAL(14,2) NOT NULL DEFAULT 0,
+  gross_pay DECIMAL(14,2) NOT NULL DEFAULT 0,
+  ca_deduction DECIMAL(14,2) NOT NULL DEFAULT 0,
+  other_deductions DECIMAL(14,2) NOT NULL DEFAULT 0,
+  net_pay DECIMAL(14,2) NOT NULL DEFAULT 0,
+  ca_repayment_id INT UNSIGNED NULL,
+  CONSTRAINT fk_pl_run FOREIGN KEY (run_id) REFERENCES payroll_runs(id),
+  CONSTRAINT fk_pl_emp FOREIGN KEY (employee_id) REFERENCES employees(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ===================================================================== inventory

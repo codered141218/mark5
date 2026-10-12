@@ -7,6 +7,7 @@ use App\Controllers\Finance\EmployeeController;
 use App\Controllers\Finance\JournalController;
 use App\Controllers\Finance\PartnerController;
 use App\Controllers\Finance\PayableController;
+use App\Controllers\Finance\PayrollController;
 use App\Controllers\Finance\PettyCashController;
 use App\Controllers\Finance\ReceivableController;
 
@@ -68,3 +69,14 @@ $router->post('/cash-advances/repayments/{id}/void', [CashAdvanceController::cla
 
 $router->get('/employees', [EmployeeController::class, 'index'], 'employees.manage');
 $router->post('/employees', [EmployeeController::class, 'save'], 'employees.manage');
+
+// Payroll: attendance from ZKTeco devices, payroll runs, payslips
+$router->get('/payroll', [PayrollController::class, 'index'], 'payroll.manage');
+$router->post('/payroll', [PayrollController::class, 'store'], 'payroll.manage');
+$router->get('/payroll/attendance', [PayrollController::class, 'attendance'], 'payroll.manage');
+$router->post('/payroll/attendance/import', [PayrollController::class, 'import'], 'payroll.manage');
+$router->get('/payroll/{id}', [PayrollController::class, 'show'], 'payroll.manage');
+$router->post('/payroll/{id}', [PayrollController::class, 'save'], 'payroll.manage');
+$router->post('/payroll/{id}/post', [PayrollController::class, 'post'], 'payroll.manage');
+$router->post('/payroll/{id}/delete', [PayrollController::class, 'delete'], 'payroll.manage');
+$router->get('/payroll/{id}/payslips', [PayrollController::class, 'payslips'], 'payroll.manage');

@@ -22,10 +22,12 @@ class EmployeeController
             ['key' => 'department', 'label' => 'Department'],
             ['key' => 'phone', 'label' => 'Phone'],
             ['key' => 'date_hired', 'label' => 'Date hired', 'type' => 'date'],
+            ['key' => 'daily_rate', 'label' => 'Daily rate', 'type' => 'money'],
+            ['key' => 'biometric_id', 'label' => 'Biometric ID', 'html' => fn ($r) => $r['biometric_id'] !== null && $r['biometric_id'] !== '' ? '<code>' . e($r['biometric_id']) . '</code>' : '<span class="muted">—</span>'],
             ['key' => 'ca_balance', 'label' => 'Cash advance bal.', 'type' => 'money', 'total' => true],
             ['key' => 'active', 'label' => 'Status', 'value' => fn ($r) => $r['active'] ? 'active' : 'inactive', 'html' => fn ($r) => badge($r['active'] ? 'active' : 'inactive')],
             ['key' => 'id', 'label' => '', 'export' => false, 'html' => fn ($r) => '<div class="actions"><button class="btn btn-sm" type="button" data-open="dlg-employee" data-title="Edit employee — ' . e($r['full_name']) . '" data-fill=\''
-                . e(json_encode(array_intersect_key($r, array_flip(['id', 'emp_no', 'full_name', 'position', 'department', 'phone', 'date_hired', 'notes', 'active'])))) . '\'>Edit</button></div>'],
+                . e(json_encode(array_intersect_key($r, array_flip(['id', 'emp_no', 'full_name', 'position', 'department', 'phone', 'date_hired', 'daily_rate', 'biometric_id', 'notes', 'active'])))) . '\'>Edit</button></div>'],
         ];
         if ($x = Table::export($req, 'employees', 'Employees', $showAll ? 'Including inactive' : 'Active', $columns, $rows)) return $x;
         return view('people/employees', ['title' => 'Employees', 'rows' => $rows, 'columns' => $columns, 'showAll' => $showAll]);

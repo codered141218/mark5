@@ -21,6 +21,18 @@ python3 docs/demo/assemble.py docs/demo/mark5-demo.mp4   # title / end cards, ca
 `node docs/demo/record.js 02-pos` re-records only the named scene(s) and keeps the rest. The recorder logs in as
 `admin / admin123` (back office) and `maria / cashier123` (POS); the manager PIN typed in the discount step is `2468`.
 
+## 30-second spot (`m5-30s.mp4`)
+
+"M5 Restaurant Suite" in 30 seconds with voice-over: payroll from the ZKTeco biometric log (import → attendance → payroll
+run → post → payslips), then composite items with live food cost and the menu costing report.
+
+```bash
+php docs/demo/seed-payroll.php        # after seed.php: daily rates + device IDs, a posted September payroll, zkteco-1_attlog.dat for October
+python3 ad/voice.py /path/to/piper-voices en-us-ryan-high vo30.json   # -> vo30-*.wav
+node ad/ad30-record.js                # four scenes (imports zkteco-1_attlog.dat on screen)
+python3 ad/ad30-assemble.py docs/demo/m5-30s.mp4
+```
+
 ## 1-minute ad (`mark5-ad.mp4`)
 
 A 57-second spot with voice-over and music: mobile order taker, kitchen slips with copies per station, live dashboard,

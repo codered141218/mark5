@@ -9,8 +9,8 @@ Every sale, delivery, spoilage, petty cash payout and cash advance is posted to 
 - Server-rendered pages + a little plain JavaScript (no build step).
 - Works on PCs, tablets and phones (Chrome / Edge / Safari).
 
-**Videos:** [1-minute ad](docs/demo/mark5-ad.mp4) with voice-over · [3-minute walkthrough](docs/demo/mark5-demo.mp4) of POS,
-inventory, reports, finance and administration on sample data. See [docs/demo/README.md](docs/demo/README.md) to re-record them.
+**Videos:** [30-second spot](docs/demo/m5-30s.mp4) (payroll from ZKTeco, recipes & menu costing) · [1-minute ad](docs/demo/mark5-ad.mp4) ·
+[3-minute walkthrough](docs/demo/mark5-demo.mp4) of POS, inventory, reports, finance and administration. See [docs/demo/README.md](docs/demo/README.md) to re-record them.
 
 ---
 
@@ -94,6 +94,9 @@ order slip on *Send* (with copies), reprint order slip, open the cash drawer, pr
 - **Finance**: chart of accounts, journal entries, trial balance, income statement, balance sheet, general ledger,
   accounts payable & receivable with aging, banks (money in/out/transfers, card settlement charges), petty cash.
 - **Cash advances**: request → approve (posts to the GL) → repayments (salary deduction, cash, bank).
+- **Payroll**: import the attendance log of **ZKTeco biometric devices** (USB `attlog.dat` or ZKTime / BioTime CSV) → days, hours and
+  overtime per employee → payroll run (daily rate × days + OT at 125%, less cash advances and SSS / PhilHealth / Pag-IBIG) →
+  posted to the books (salaries, CA repayments, net pay from cash or bank) → printable payslips.
 - **Users, roles & permissions** (40+ permissions), audit trail, **backup & restore** (pure PHP, no mysqldump needed).
 - Every list and report exports to **Excel**.
 
@@ -107,6 +110,7 @@ order slip on *Send* (with copies), reprint order slip, open the cash drawer, pr
 | Delivery / stock in | Dr Inventory (+ Input VAT) · Cr Cash / Bank / Petty Cash / Accounts Payable |
 | Issuance / wastage / count | Expense or Spoilage / Inventory Variance vs. Inventory |
 | Petty cash, cash advances, AP/AR, banks | the corresponding cash/bank and AP/AR entries |
+| Payroll | Dr Salaries & Wages · Cr Salaries Payable (cash advance deductions, cleared by the CA repayments), Cr SSS/PhilHealth/Pag-IBIG Payable, Cr Cash / Bank (net pay) |
 
 ---
 

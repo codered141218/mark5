@@ -46,11 +46,12 @@ class Permissions
             'finance.ar' => 'Accounts receivable',
             'partners.manage' => 'Manage suppliers & customers',
         ],
-        'Cash Advances & Employees' => [
+        'Cash Advances, Employees & Payroll' => [
             'ca.request' => 'File cash advance requests',
             'ca.approve' => 'Approve / reject / release cash advances',
             'ca.manage' => 'View all advances & record repayments',
             'employees.manage' => 'Manage employees',
+            'payroll.manage' => 'Payroll: import ZKTeco attendance, compute & post payroll, payslips',
         ],
         'Administration' => [
             'admin.users' => 'Manage users',
@@ -90,7 +91,7 @@ class Permissions
             ['name' => 'Accountant', 'description' => 'Bookkeeping & finance',
                 'permissions' => ['dashboard.view', 'reports.sales', 'reports.inventory', 'reports.finance', 'pettycash.view', 'pettycash.manage',
                     'finance.view', 'finance.accounts', 'finance.journal', 'finance.banks', 'finance.ap', 'finance.ar', 'partners.manage',
-                    'ca.request', 'ca.manage', 'inventory.view', 'inventory.post']],
+                    'ca.request', 'ca.manage', 'payroll.manage', 'inventory.view', 'inventory.post']],
         ];
     }
 }

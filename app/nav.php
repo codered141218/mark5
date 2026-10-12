@@ -34,6 +34,8 @@ return [
     'People' => [
         ['/cash-advances', 'Cash Advances', '⚑', ['ca.request', 'ca.approve', 'ca.manage']],
         ['/employees', 'Employees', '☻', ['employees.manage']],
+        ['/payroll/attendance', 'Attendance (ZKTeco)', '⌚', ['payroll.manage']],
+        ['/payroll', 'Payroll', '₱', ['payroll.manage']],
     ],
     'Administration' => [
         ['/admin/users', 'Users', '⚇', ['admin.users']],
