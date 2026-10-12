@@ -5,3 +5,7 @@
 !/storage/logs/.gitkeep
 /vendor/
 .DS_Store
+
+# demo recording working files
+/docs/demo/rec/
+/docs/demo/build/
