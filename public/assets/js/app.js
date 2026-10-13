@@ -366,6 +366,25 @@
     const words = q.toLowerCase().split(/\s+/).filter(Boolean);
     return (text) => { const t = text.toLowerCase(); return words.every((w) => t.includes(w)); };
   };
+  /**
+   * Options matching the search, nearest first: the name (text before " · ") equal to it, then starting with it, then a
+   * word starting with it, then anything containing it; the original order otherwise.
+   */
+  const ranked = (options, q) => {
+    const hit = matcher(q);
+    const query = q.trim().toLowerCase();
+    if (!query) return options.filter((o) => hit(o.text));
+    const score = (text) => {
+      const name = text.split(' · ')[0].toLowerCase();
+      if (name === query) return 0;
+      if (name.startsWith(query)) return 1;
+      if ((' ' + name).includes(' ' + query) || name.split(/[\s(/-]+/).some((w) => w.startsWith(query))) return 2;
+      if (text.toLowerCase().startsWith(query)) return 3;
+      return 4;
+    };
+    return options.map((o, i) => ({ o, i, s: hit(o.text) ? score(o.text) : -1 })).filter((x) => x.s >= 0)
+      .sort((a, b) => a.s - b.s || a.i - b.i).map((x) => x.o);
+  };
   /** Touch screens (tablets, phones) pick from a full-screen search panel; mouse and keyboard keep the dropdown. */
   const touchUI = () => window.matchMedia('(pointer: coarse)').matches;
 
@@ -397,9 +416,9 @@
         return;
       }
 
+      let typed = false;   // the user typed since the field got focus (Tab then picks the nearest match)
       const render = () => {
-        const hit = matcher(input.value);
-        matches = Array.from(sel.options).filter((o) => o.value && hit(o.text)).slice(0, 80);
+        matches = ranked(Array.from(sel.options).filter((o) => o.value), input.value).slice(0, 80);
         if (!list) { list = document.createElement('div'); list.className = 'combo-list'; (input.closest('dialog') || document.body).appendChild(list); }
         // open below the field, or above it when there is more room there (e.g. the last line of a form)
         const r = input.getBoundingClientRect();
@@ -419,10 +438,12 @@
         });
         list.children[hl]?.scrollIntoView({ block: 'nearest' });
       };
-      input.addEventListener('focus', () => { input.select(); hl = 0; render(); });
-      input.addEventListener('input', () => { hl = 0; render(); });
+      input.addEventListener('focus', () => { input.select(); hl = 0; typed = false; render(); });
+      input.addEventListener('input', () => { hl = 0; typed = true; render(); });
       input.addEventListener('blur', () => { setTimeout(() => { close(); sync(); }, 120); });
       input.addEventListener('keydown', (ev) => {
+        // Tab after typing picks the highlighted (nearest) match, then moves on to the next field as usual
+        if (ev.key === 'Tab' && !ev.shiftKey && typed && input.value.trim() && matches[hl]) { typed = false; choose(matches[hl]); return; }
         if (!list) return;
         if (ev.key === 'ArrowDown') { hl = Math.min(hl + 1, matches.length - 1); render(); ev.preventDefault(); }
         if (ev.key === 'ArrowUp') { hl = Math.max(hl - 1, 0); render(); ev.preventDefault(); }
@@ -469,8 +490,7 @@
       d.close(); d.remove();
     };
     const render = () => {
-      const hit = matcher(q.value);
-      const found = all.filter((o) => hit(o.text));
+      const found = ranked(all, q.value);
       const shown = found.slice(0, 200);
       d.querySelector('[data-count]').textContent = q.value ? `${found.length} found` : `${all.length} items`;
       list.innerHTML = shown.length ? '' : '<div class="combo-sheet-empty">No match. Try fewer letters.</div>';
