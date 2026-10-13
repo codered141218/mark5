@@ -384,3 +384,29 @@ dialog.modal:not([open]) { display: none; }
 .arrange-list .empty { padding: 16px; }
 .danger-zone { border-color: var(--red, #dc2626); }
 .table tr.import-error td { background: var(--red-soft); }
+
+/* Searchable select on touch screens: the field opens a full-screen search panel (app.js openComboSheet) that always ends
+   where the on-screen keyboard starts, so the results are never hidden. */
+.combo-tap { cursor: pointer; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%; background-size: 5px 5px; background-repeat: no-repeat; padding-right: 30px; text-overflow: ellipsis; }
+dialog.combo-sheet { position: fixed; inset: 0 0 auto 0; width: 100%; max-width: 100%; max-height: none; height: 100vh; margin: 0; padding: 0; border: 0;
+  background: var(--surface); color: var(--text); display: flex; flex-direction: column; }
+dialog.combo-sheet:not([open]) { display: none; }
+dialog.combo-sheet::backdrop { background: var(--surface); }
+.combo-sheet-head { display: flex; gap: 8px; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.combo-sheet-head .icon-btn { width: 44px; height: 44px; font-size: 20px; flex: none; }
+.combo-sheet-head .input { height: 48px; font-size: 17px; flex: 1; }
+.combo-sheet-title { display: flex; align-items: center; gap: 10px; padding: 8px 16px; font-weight: 700; font-size: 13px; color: var(--muted); }
+.combo-sheet-title span:first-child { flex: 1; text-transform: uppercase; letter-spacing: .04em; }
+.combo-sheet-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 8px 12px; }
+.combo-sheet-item { display: block; width: 100%; text-align: left; border: 0; background: none; color: inherit; font: inherit; padding: 12px 10px;
+  min-height: 52px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.combo-sheet-item b { display: block; font-size: 16px; font-weight: 600; }
+.combo-sheet-item small { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; }
+.combo-sheet-item:active, .combo-sheet-item.on { background: var(--brand-soft); }
+.combo-sheet-empty { padding: 18px 10px; color: var(--muted); text-align: center; }
+
+/* While the on-screen keyboard is up, dialogs sit at the top of the visible area and fit above the keyboard. */
+html.kb-open dialog.modal[open] { top: var(--app-top, 0); bottom: auto; margin: 8px auto auto; max-height: calc(var(--app-h, 100vh) - 16px); }
+html.kb-open dialog.modal form { max-height: calc(var(--app-h, 100vh) - 16px); }
+html.kb-open dialog.modal .modal-body { overflow-y: auto; min-height: 0; }

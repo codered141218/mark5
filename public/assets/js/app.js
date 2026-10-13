@@ -361,12 +361,20 @@
   });
 
   // ------------------------------------------------------------------ searchable select
+  /** Every word typed must appear (any order): "chick kg" finds "Chicken (whole cut) · 12 kg on hand". */
+  const matcher = (q) => {
+    const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+    return (text) => { const t = text.toLowerCase(); return words.every((w) => t.includes(w)); };
+  };
+  /** Touch screens (tablets, phones) pick from a full-screen search panel; mouse and keyboard keep the dropdown. */
+  const touchUI = () => window.matchMedia('(pointer: coarse)').matches;
+
   function initCombos(root = document) {
     $$('select[data-combo]', root).forEach((sel) => {
       if (sel.dataset.comboReady) return;
       sel.dataset.comboReady = '1';
       const input = document.createElement('input');
-      input.className = 'input';
+      input.className = 'input combo-input';
       input.type = 'text';
       input.autocomplete = 'off';
       input.placeholder = sel.dataset.placeholder || 'Type to search…';
@@ -377,12 +385,30 @@
       let list = null; let hl = 0; let matches = [];
       const close = () => { list?.remove(); list = null; };
       const choose = (opt) => { sel.value = opt.value; sync(); close(); sel.dispatchEvent(new Event('change', { bubbles: true })); };
+
+      if (touchUI()) {
+        // no keyboard on the field itself: a tap opens the search panel, where the keyboard and the results both fit
+        input.readOnly = true;
+        input.classList.add('combo-tap');
+        const open = (e) => { if (e) e.preventDefault(); openComboSheet(sel, input, choose); };
+        input.addEventListener('click', open);
+        input.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') open(e); });
+        sel.addEventListener('change', sync);
+        return;
+      }
+
       const render = () => {
-        const q = input.value.toLowerCase();
-        matches = Array.from(sel.options).filter((o) => o.value && (!q || o.text.toLowerCase().includes(q))).slice(0, 80);
+        const hit = matcher(input.value);
+        matches = Array.from(sel.options).filter((o) => o.value && hit(o.text)).slice(0, 80);
         if (!list) { list = document.createElement('div'); list.className = 'combo-list'; (input.closest('dialog') || document.body).appendChild(list); }
+        // open below the field, or above it when there is more room there (e.g. the last line of a form)
         const r = input.getBoundingClientRect();
-        Object.assign(list.style, { left: r.left + 'px', top: r.bottom + 2 + 'px', width: Math.max(r.width, 220) + 'px' });
+        const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+        const below = vh - r.bottom - 8;
+        const above = r.top - 8;
+        const up = below < 220 && above > below;
+        Object.assign(list.style, { left: r.left + 'px', width: Math.max(r.width, 220) + 'px', maxHeight: Math.max(120, Math.min(320, up ? above : below)) + 'px',
+          top: up ? 'auto' : r.bottom + 2 + 'px', bottom: up ? (window.innerHeight - r.top + 2) + 'px' : 'auto' });
         list.innerHTML = matches.length ? '' : '<div class="combo-group">No match</div>';
         matches.forEach((o, i) => {
           const d = document.createElement('div');
@@ -391,6 +417,7 @@
           d.addEventListener('mousedown', (ev) => { ev.preventDefault(); choose(o); });
           list.appendChild(d);
         });
+        list.children[hl]?.scrollIntoView({ block: 'nearest' });
       };
       input.addEventListener('focus', () => { input.select(); hl = 0; render(); });
       input.addEventListener('input', () => { hl = 0; render(); });
@@ -403,8 +430,71 @@
         if (ev.key === 'Escape') close();
       });
       sel.addEventListener('change', sync);
-      window.addEventListener('scroll', close, true);
+      window.addEventListener('scroll', (e) => { if (list && !list.contains(e.target)) close(); }, true);
     });
+  }
+
+  /**
+   * Full-screen search panel for a data-combo select on touch screens: the search box at the top, big result rows below,
+   * and the panel always ends where the on-screen keyboard starts (follows window.visualViewport), so nothing is hidden.
+   * "Name · details" options show the name in bold and the details below it.
+   */
+  function openComboSheet(sel, input, choose) {
+    // title: the field label, else the table column heading (item lines), else the placeholder without "+" / "…"
+    const td = sel.closest('td');
+    const th = td && td.closest('table')?.querySelectorAll('thead th')[td.cellIndex];
+    const label = (sel.closest('label, .field')?.querySelector('.field-label')?.textContent || th?.textContent || sel.dataset.placeholder || 'Search')
+      .replace(/[*+…]/g, '').trim();
+    const d = document.createElement('dialog');
+    d.className = 'combo-sheet';
+    const hasEmpty = Array.from(sel.options).some((o) => o.value === '');
+    d.innerHTML = `<div class="combo-sheet-head">
+        <button type="button" class="icon-btn" data-sheet-close aria-label="Close">←</button>
+        <input class="input" type="search" enterkeyhint="search" autocomplete="off" placeholder="${App.esc(sel.dataset.placeholder || 'Type to search…')}" aria-label="${App.esc(label)}">
+      </div>
+      <div class="combo-sheet-title"><span>${App.esc(label)}</span><span class="muted small" data-count></span>
+        ${hasEmpty && sel.value ? '<button type="button" class="btn btn-sm btn-ghost" data-sheet-clear>Clear</button>' : ''}</div>
+      <div class="combo-sheet-list" role="listbox"></div>`;
+    document.body.appendChild(d);
+    const q = d.querySelector('input');
+    const list = d.querySelector('.combo-sheet-list');
+    const all = Array.from(sel.options).filter((o) => o.value);
+    const fit = () => {
+      const vv = window.visualViewport;
+      d.style.top = (vv ? vv.offsetTop : 0) + 'px';
+      d.style.height = (vv ? vv.height : window.innerHeight) + 'px';
+    };
+    const shut = () => {
+      if (window.visualViewport) { window.visualViewport.removeEventListener('resize', fit); window.visualViewport.removeEventListener('scroll', fit); }
+      d.close(); d.remove();
+    };
+    const render = () => {
+      const hit = matcher(q.value);
+      const found = all.filter((o) => hit(o.text));
+      const shown = found.slice(0, 200);
+      d.querySelector('[data-count]').textContent = q.value ? `${found.length} found` : `${all.length} items`;
+      list.innerHTML = shown.length ? '' : '<div class="combo-sheet-empty">No match. Try fewer letters.</div>';
+      shown.forEach((o) => {
+        const [name, ...rest] = o.text.split(' · ');
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'combo-sheet-item' + (o.value === sel.value ? ' on' : '');
+        b.innerHTML = `<b>${App.esc(name)}</b>${rest.length ? `<small>${App.esc(rest.join(' · '))}</small>` : ''}`;
+        b.addEventListener('click', () => { shut(); choose(o); });
+        list.appendChild(b);
+      });
+      if (found.length > shown.length) list.insertAdjacentHTML('beforeend', `<div class="combo-sheet-empty">${found.length - shown.length} more — type more letters to narrow down</div>`);
+    };
+    q.addEventListener('input', render);
+    q.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); list.querySelector('.combo-sheet-item')?.click(); } });
+    d.querySelector('[data-sheet-close]').addEventListener('click', shut);
+    d.querySelector('[data-sheet-clear]')?.addEventListener('click', () => { shut(); sel.value = ''; sel.dispatchEvent(new Event('change', { bubbles: true })); });
+    d.addEventListener('cancel', (e) => { e.preventDefault(); shut(); });
+    if (window.visualViewport) { window.visualViewport.addEventListener('resize', fit); window.visualViewport.addEventListener('scroll', fit); }
+    fit();
+    render();
+    d.showModal();
+    q.focus();
   }
   App.initCombos = initCombos;
 
@@ -437,6 +527,34 @@
     form.querySelector('[name=to]').value = r[1];
     form.submit();
   });
+
+  // ------------------------------------------------------------------ on-screen keyboard (tablets, phones)
+  /**
+   * The visible height while the keyboard is up, as CSS variables --app-h / --app-top (dialogs stay above the keyboard,
+   * see app.css), and html.kb-open. A search box tapped on a touch screen scrolls to the top so its results show below it.
+   */
+  (() => {
+    const vv = window.visualViewport;
+    const html = document.documentElement;
+    let fullH = 0;
+    let lastW = 0;
+    const update = () => {
+      const h = vv ? vv.height : window.innerHeight;
+      const w = vv ? vv.width : window.innerWidth;
+      if (w !== lastW) { fullH = 0; lastW = w; }
+      fullH = Math.max(fullH, h);
+      html.style.setProperty('--app-h', h + 'px');
+      html.style.setProperty('--app-top', (vv ? vv.offsetTop : 0) + 'px');
+      html.classList.toggle('kb-open', h < fullH * 0.8);
+    };
+    if (vv) { vv.addEventListener('resize', update); vv.addEventListener('scroll', update); }
+    window.addEventListener('resize', update);
+    update();
+    document.addEventListener('focusin', (e) => {
+      if (!touchUI() || !e.target.matches('input[type=search], [data-table-search], [data-count-search]') || e.target.closest('dialog')) return;
+      setTimeout(() => e.target.scrollIntoView({ block: 'start', behavior: 'smooth' }), 350);   // after the keyboard opened
+    });
+  })();
 
   // ------------------------------------------------------------------ misc
   document.addEventListener('DOMContentLoaded', () => {
