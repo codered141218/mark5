@@ -1639,6 +1639,11 @@
   // ------------------------------------------------------------------ drawer payout (petty cash from the cash drawer)
   function payoutDialog() {
     const accts = B.expense_accounts;
+    // the expense type chosen last time on this device (per user) is the default
+    const lastKey = `mark5_pos_payout_account:${B.user.id}`;
+    let last = '';
+    try { last = localStorage.getItem(lastKey) || ''; } catch (e) { /* private mode */ }
+    if (!accts.some((a) => String(a.id) === last)) last = '';
     const m = modal({
       title: 'Cash payout from the drawer',
       cls: 'wide dlg-payout',
@@ -1646,8 +1651,8 @@
         ${S.session && S.session.opening_source === 'petty_cash' ? `<div class="alert alert-info small">Today's beginning cash is the <b>petty cash fund</b>, so payouts are paid from petty cash.
           Stock-ins, payments and cash advances paid from petty cash in the back office also show here and reduce the expected cash.</div>` : ''}
         <div class="form-grid">
-          <label class="field"><span class="field-label">Expense type *</span><select class="input" name="account_id"><option value="">Select…</option>
-            ${accts.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></label>
+          <label class="field"><span class="field-label">Expense type *</span><select class="input" name="account_id" data-combo data-placeholder="Search expense…"><option value=""></option>
+            ${accts.map((a) => `<option value="${a.id}"${String(a.id) === last ? ' selected' : ''}>${esc(a.name)}${a.code ? ' · ' + esc(a.code) : ''}</option>`).join('')}</select></label>
           <label class="field"><span class="field-label">Amount (₱) *</span>${numField('amount', '', 'money', 'data-act="amount" placeholder="Tap to enter"')}</label>
           <label class="field"><span class="field-label">Paid to</span><input class="input" name="payee" placeholder="e.g. Petron, palengke" autocomplete="off"></label>
           <label class="field"><span class="field-label">Description</span><input class="input" name="description" placeholder="e.g. LPG refill, ice, tricycle fare" autocomplete="off"></label>
@@ -1674,6 +1679,7 @@
         const data = { source: 'drawer', account_id: Number(v('account_id')), amount: Number(v('amount')), payee: v('payee'), description: v('description'), or_no: v('or_no') };
         if (await run(() => Api.addPayout(data), btn)) {
           App.toast(`Payout of ${peso(data.amount)} recorded`);
+          try { localStorage.setItem(lastKey, String(data.account_id)); } catch (e) { /* private mode */ }
           ['amount', 'payee', 'description', 'or_no'].forEach((n) => { m.$(`[name=${n}]`).value = ''; });
           load();
         }
@@ -1693,6 +1699,7 @@
           </div>`).join('') + `<div class="row between mt bold"><span>Total</span><span>${peso(total)}</span></div>` : '<div class="muted small">None yet.</div>';
       } catch (e) { showError(e); }
     }
+    if (window.App && App.initCombos) App.initCombos(m.el);
     load();
   }
 

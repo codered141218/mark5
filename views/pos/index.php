@@ -8,7 +8,7 @@ use App\Core\DB;
 
 // Extra start-up data the POS needs that /api/pos/state does not carry.
 $boot['expense_accounts'] = can('pos.petty_cash')
-    ? array_map(fn ($a) => ['id' => (int) $a['id'], 'name' => $a['name']], DB::all("SELECT id, name FROM accounts WHERE type = 'expense' AND active = 1 ORDER BY code"))
+    ? array_map(fn ($a) => ['id' => (int) $a['id'], 'name' => $a['name'], 'code' => $a['code']], DB::all("SELECT id, code, name FROM accounts WHERE type = 'expense' AND active = 1 ORDER BY code"))
     : [];
 $boot['today'] = today();
 $boot['server_now'] = now();
