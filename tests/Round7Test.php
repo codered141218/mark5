@@ -192,3 +192,47 @@ test('an upgrade that runs while schema.sql is still the old file is not marked 
     as_user('admin');
     ok(is_array(StaffNotes::list('2026-01-01', '2026-12-31')));
 });
+
+/** Render a back-office page through its controller (views and layout included); PHP warnings fail the test. */
+function page7(string $class, string $method, string $path, array $query = [], array $args = []): string
+{
+    $_GET = $query;
+    $_SERVER['REQUEST_METHOD'] = 'GET';
+    $_SERVER['REQUEST_URI'] = $path . ($query ? '?' . http_build_query($query) : '');
+    $GLOBALS['__request'] = $req = new App\Core\Request();
+    set_error_handler(function ($no, $msg, $file, $line) { throw new ErrorException($msg, 0, $no, $file, $line); });
+    try {
+        $out = (new $class())->$method($req, ...$args);
+        return $out instanceof App\Core\Response ? (string) $out->body : (string) $out;
+    } finally {
+        restore_error_handler();
+    }
+}
+
+test('pages of payroll, staff notes, employees and production render (admin and a production clerk)', function () {
+    as_user('admin');
+    $pages = [
+        [App\Controllers\People\AttendanceController::class, 'index', '/payroll/attendance', []],
+        [App\Controllers\People\AttendanceController::class, 'index', '/payroll/attendance', ['from' => add_days(today(), -14), 'to' => today()]],
+        [App\Controllers\People\StaffNoteController::class, 'index', '/payroll/notes', []],
+        [App\Controllers\People\PayrollController::class, 'index', '/payroll', []],
+        [App\Controllers\People\PayrollController::class, 'create', '/payroll/new', []],
+        [App\Controllers\People\PayrollController::class, 'settings', '/payroll/settings', []],
+        [App\Controllers\Finance\EmployeeController::class, 'index', '/employees', []],
+        [App\Controllers\Inventory\ProductionController::class, 'index', '/inventory/production', []],
+        [App\Controllers\Inventory\ProductionController::class, 'create', '/inventory/production/new', []],
+        [App\Controllers\Inventory\ProductionController::class, 'templates', '/inventory/bom', []],
+        [App\Controllers\Inventory\ProductionController::class, 'newTemplate', '/inventory/bom/new', []],
+    ];
+    foreach ($pages as [$c, $m, $p, $q]) ok(str_contains(page7($c, $m, $p, $q), '</html>'), "$p renders");
+    $uom = (int) DB::value("SELECT id FROM uoms WHERE abbr = 'pc'");
+    $tpl = (string) Production::saveTemplate(null, ['name' => 'Page test', 'output_item_id' => item_id('Chicken BBQ (marinated)'), 'yield_qty' => 10, 'yield_uom_id' => $uom,
+        'lines' => [['item_id' => item_id('Soy Sauce'), 'qty' => 0.1]]]);
+    $prod = (string) Production::save(null, ['template_id' => $tpl, 'planned_qty' => 10]);
+    ok(str_contains(page7(App\Controllers\Inventory\ProductionController::class, 'showTemplate', "/inventory/bom/$tpl", [], [$tpl]), 'Ingredients per batch'));
+    ok(str_contains(page7(App\Controllers\Inventory\ProductionController::class, 'show', "/inventory/production/$prod", [], [$prod]), '</html>'));
+    App\Core\Auth::actAs((int) DB::value("SELECT id FROM users WHERE username = 'clerk7'"));
+    $html = page7(App\Controllers\Inventory\ProductionController::class, 'showTemplate', "/inventory/bom/$tpl", [], [$tpl]);
+    ok(str_contains($html, 'Hidden') && !str_contains($html, 'Ingredients per batch'), 'clerk: ingredients hidden');
+    as_user('admin');
+});

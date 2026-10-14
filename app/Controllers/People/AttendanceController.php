@@ -7,6 +7,7 @@ use App\Core\Request;
 use App\Core\Response;
 use App\Services\Payroll\Attendance;
 use App\Services\Payroll\Payroll;
+use App\Services\Payroll\StaffNotes;
 
 /** Biometric attendance: upload the device file, match device users to employees, view / fix days. */
 class AttendanceController
@@ -30,7 +31,7 @@ class AttendanceController
         }
         return view('payroll/attendance', ['title' => 'Attendance', 'from' => $from, 'to' => $to, 'grid' => $grid, 'cfg' => $cfg,
             'imports' => DB::all('SELECT i.*, u.full_name AS by_name FROM attendance_imports i LEFT JOIN users u ON u.id = i.created_by ORDER BY i.id DESC LIMIT 5'),
-            'notes' => App\Services\Payroll\StaffNotes::byDay($from, $to),
+            'notes' => StaffNotes::byDay($from, $to),
             'unmapped' => (int) DB::value("SELECT COUNT(*) FROM employees WHERE active = 1 AND (biometric_id IS NULL OR biometric_id = '')")]);
     }
 

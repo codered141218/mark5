@@ -63,7 +63,20 @@ class Router
             if (($e->errorInfo[1] ?? 0) === 1062) $msg = 'That record already exists (duplicate value).';
             if (($e->errorInfo[1] ?? 0) === 1451) $msg = 'This record is still used by other records and cannot be deleted.';
             return $this->handleError($req, 500, $msg);
+        } catch (\Throwable $e) {
+            // any other failure: a readable page instead of the browser's blank "HTTP ERROR 500"
+            error_log((string) $e);
+            return $this->handleError($req, 500, self::errorMessage($e));
         }
+    }
+
+    /** What went wrong: the reason for administrators (or in debug mode), a plain message for everyone else. */
+    public static function errorMessage(\Throwable $e): string
+    {
+        try { $admin = Auth::can('admin.settings'); } catch (\Throwable $x) { $admin = false; }
+        return config('app.debug') || $admin
+            ? 'Something went wrong: ' . $e->getMessage() . ' (' . basename($e->getFile()) . ':' . $e->getLine() . '). Please send this message to support.'
+            : 'Something went wrong on this page. Please try again; if it keeps happening, ask an administrator to open it and report the message shown.';
     }
 
     private function handleError(Request $req, int $status, string $message): Response
