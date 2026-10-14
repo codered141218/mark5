@@ -10,10 +10,14 @@ use App\Services\Pos\CashSessions;
  *
  * Every module asks Ledger::account('<role>') for its account. By default a role uses the chart-of-accounts row with
  * the same system_key (e.g. 'inventory' -> 1200 Inventory); choosing another account here stores settings
- * "gl.<role>" = account id. Sales / COGS / Inventory can also be overridden per category (Inventory → Categories).
+ * "gl.<role>" = account id. Saving a role blank stores "gl.<role>" = 'none': no account, postings that need it stop
+ * with "No GL account is set for …" until one is chosen. Sales / COGS / Inventory can also be overridden per category.
  */
 class GlSetup
 {
+    /** Stored for a role saved without an account (no fallback to the default account). */
+    public const NONE = 'none';
+
     /** role => [group, label, where it is used, allowed account types] */
     public const ROLES = [
         'cash_on_hand' => ['Cash & payments', 'Cash on hand (cash drawer)', 'POS cash sales, end-of-day over/short, cash payments', ['asset']],
@@ -67,10 +71,12 @@ class GlSetup
     {
         $rows = [];
         foreach (self::ROLES as $role => [$group, $label, $usedFor, $types]) {
-            $mapped = (int) Settings::get('gl.' . $role, 0);
+            $raw = Settings::get('gl.' . $role);
+            $none = $raw === self::NONE;
+            $mapped = $none ? 0 : (int) $raw;
             $default = self::defaultAccount($role);
             $rows[] = ['role' => $role, 'group' => $group, 'label' => $label, 'used_for' => $usedFor, 'types' => $types,
-                'account_id' => $mapped ?: $default, 'default_id' => $default, 'changed' => $mapped && $mapped !== $default];
+                'account_id' => $none ? null : ($mapped ?: $default), 'default_id' => $default, 'changed' => $mapped && $mapped !== $default];
         }
         return $rows;
     }
@@ -81,14 +87,14 @@ class GlSetup
         return $id ? (int) $id : null;
     }
 
-    /** Save [role => account id]; choosing the default account clears the override. */
+    /** Save [role => account id]; choosing the default account clears the override, blank means no account at all. */
     public static function save(array $map): void
     {
         DB::transaction(function () use ($map) {
             foreach (self::ROLES as $role => [$group, $label, $usedFor, $types]) {
                 if (!array_key_exists($role, $map)) continue;
                 $id = (int) $map[$role];
-                if (!$id) { Settings::set('gl.' . $role, null); continue; }   // not chosen yet (e.g. a fresh chart of accounts)
+                if (!$id) { Settings::set('gl.' . $role, self::NONE); continue; }   // no account: postings needing it ask for it
                 $acct = DB::one('SELECT id, code, name, type FROM accounts WHERE id = ?', [$id]);
                 if (!$acct) throw HttpException::bad("Unknown account for “{$label}”");
                 if (!in_array($acct['type'], $types, true)) {

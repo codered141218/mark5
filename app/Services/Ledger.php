@@ -89,20 +89,25 @@ class Ledger
     public static function account(string $key): int
     {
         if (!isset(self::$keyCache[$key])) {
-            $mapped = (int) Settings::get('gl.' . $key, 0);
+            $raw = Settings::get('gl.' . $key);
+            if ($raw === GlSetup::NONE) self::notSet($key);   // cleared on purpose: no fallback to the default account
+            $mapped = (int) $raw;
             $id = $mapped ? DB::value('SELECT id FROM accounts WHERE id = ?', [$mapped]) : null;
             if (!$id) {
                 $fallback = GlSetup::fallback($key);
                 if ($fallback !== $key) return self::$keyCache[$key] = self::account($fallback);
                 $id = DB::value('SELECT id FROM accounts WHERE system_key = ?', [$key]);
             }
-            if (!$id) {
-                $label = GlSetup::ROLES[$key][1] ?? GlSetup::ROLES['pay.' . $key][1] ?? $key;
-                throw HttpException::bad("No GL account is set for “{$label}”. Add the account under Finance → Chart of Accounts, then choose it in Finance → GL Account Setup.");
-            }
+            if (!$id) self::notSet($key);
             self::$keyCache[$key] = (int) $id;
         }
         return self::$keyCache[$key];
+    }
+
+    private static function notSet(string $key): never
+    {
+        $label = GlSetup::ROLES[$key][1] ?? GlSetup::ROLES['pay.' . $key][1] ?? $key;
+        throw HttpException::bad("No GL account is set for “{$label}”. Choose it in Finance → GL Account Setup (add the account under Finance → Chart of Accounts first if needed).");
     }
 
     /** Like account(), but null when no account is set for the role (for screens that only show balances). */

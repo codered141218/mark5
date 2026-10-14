@@ -3,7 +3,8 @@
   <div>
     <h1>GL Account Setup</h1>
     <p class="muted">Choose the account each automatic posting uses — POS sales, deliveries, wastage, petty cash, payables and so on.
-      Changes apply to new transactions; posted entries are not changed.
+      Changes apply to new transactions; posted entries are not changed. A posting left blank has no account: transactions that need it
+      stop with an error until you choose one.
       Need another account? Add it first under <a href="<?= url('/finance/accounts') ?>">Chart of Accounts</a>.</p>
   </div>
   <div class="page-actions">
@@ -77,7 +78,7 @@
     const hint = (sel) => {
       const h = sel.closest('td').querySelector('[data-gl-hint]');
       const def = h.dataset.defaultLabel;
-      h.textContent = sel.value ? '' : def ? 'Blank — saving uses the default: ' + def : 'Blank — postings that need this account will ask for it';
+      h.textContent = sel.value ? '' : 'Not set — anything that posts here stops with an error until you choose an account' + (def ? ' (default: ' + def + ')' : '');
     };
     const set = (sel, value) => { sel.value = value; sel.dispatchEvent(new Event('change', { bubbles: true })); };
     const apply = (root, act) => selects(root).forEach((sel) => set(sel, act === 'clear' ? '' : (sel.dataset.default || '')));

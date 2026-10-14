@@ -66,6 +66,23 @@ test('GL setup: default roles, validation, and a changed cash / GCash account', 
     Tickets::pay($t['id'], [['method' => 'gcash', 'amount' => 65, 'reference' => 'G1']]);
     eq(65, sale_lines($t['id'])['1046'] ?? null, 'GCash sale debits the chosen account');
     assert_books_balance();
+
+    // saved blank: no account at all (no fallback to the default); a GCash sale stops with the "not set" error
+    GlSetup::save(['pay.gcash' => '']);
+    eq('none', DB::value("SELECT `value` FROM settings WHERE `key` = 'gl.pay.gcash'"));
+    eq(null, array_values(array_filter(GlSetup::rows(), fn ($r) => $r['role'] === 'pay.gcash'))[0]['account_id']);
+    throws(fn () => Ledger::account('pay.gcash'), 'No GL account is set for “GCash payments”');
+    eq(null, Ledger::accountOrNull('pay.gcash'));
+    $t2 = Tickets::addItem(Tickets::create(['order_type' => 'takeout'])['id'], item_id('Coke'), 1);
+    throws(fn () => Tickets::pay($t2['id'], [['method' => 'gcash', 'amount' => 65]]), 'GL Account Setup');
+    eq('open', DB::value('SELECT status FROM tickets WHERE id = ?', [$t2['id']]), 'nothing half-saved');
+    // choosing it again works; choosing the default clears the setting
+    GlSetup::save(['pay.gcash' => $wallet]);
+    eq('paid', Tickets::pay($t2['id'], [['method' => 'gcash', 'amount' => 65]])['status']);
+    GlSetup::save(['pay.gcash' => (int) DB::value("SELECT id FROM accounts WHERE system_key = 'ewallet_clearing'")]);
+    eq(null, DB::value("SELECT `value` FROM settings WHERE `key` = 'gl.pay.gcash'"));
+    GlSetup::save(['pay.gcash' => $wallet]);
+    assert_books_balance();
 });
 
 test('GL setup: per-category sales, COGS and inventory accounts', function () use ($newAccount) {
