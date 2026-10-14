@@ -53,7 +53,7 @@ $h = fn ($v) => $v ? rtrim(rtrim(number_format((float) $v, 2), '0'), '.') : '';
     <?= csrf_field() ?>
     <div class="modal-head"><h3>Add a staff note</h3><button class="icon-btn" type="button" data-close>✕</button></div>
     <div class="modal-body form-grid">
-      <label class="field"><span class="field-label">Employee *</span><select class="input" name="employee_id" required><?= options(array_column($employees, 'full_name', 'id'), '', 'Select…') ?></select></label>
+      <label class="field"><span class="field-label">Employee *</span><select class="input" name="employee_id" required data-combo data-placeholder="Search employee…"><?= options(array_column($employees, 'full_name', 'id'), '', 'Select…') ?></select></label>
       <label class="field"><span class="field-label">Date *</span><input class="input" type="date" name="note_date" value="<?= e(min(today(), $to)) ?>" required></label>
       <label class="field"><span class="field-label">What happened *</span><select class="input" name="kind" required><?= options(StaffNotes::KINDS, 'absent') ?></select></label>
       <label class="field"><span class="field-label">Hours</span><input class="input num" type="number" step="0.25" min="0" max="24" name="hours"><span class="field-hint">For undertime / late</span></label>

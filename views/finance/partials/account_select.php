@@ -1,8 +1,8 @@
-<?php
+<?php $combo = $combo ?? true;
 /**
  * Account picker grouped by type.
  * Variables: $name, $groups (Accounts::grouped()), $selected, $required, $placeholder (all optional except the first two)
- * $combo = true makes it type-to-search (full pages only: the search list cannot appear above an open <dialog>).
+ * Type-to-search by default (also inside dialogs); $combo = false keeps a plain dropdown.
  */
 ?>
 <select class="input" name="<?= e($name) ?>"<?= !empty($combo) ? ' data-combo data-placeholder="' . e($placeholder ?? 'Type code or name…') . '"' : '' ?><?= !empty($required) ? ' required' : '' ?>>

@@ -112,7 +112,7 @@ case 'welcome': ?>
           <div class="wizard-gl-group"><?= e($group) ?></div>
           <?php foreach ($rows as $r): ?>
             <label class="wizard-gl-row"><span><b><?= e($r['label']) ?></b><span class="muted small"><?= e($r['used_for']) ?></span></span>
-              <select class="input" name="gl[<?= e($r['role']) ?>]"><?= options(GlSetup::accountOptions($r['types']), $r['account_id'], '— Not set —') ?></select></label>
+              <select class="input" name="gl[<?= e($r['role']) ?>]" data-combo data-placeholder="— Not set — (search)"><?= options(GlSetup::accountOptions($r['types']), $r['account_id'], '— Not set —') ?></select></label>
           <?php endforeach; ?>
         <?php endforeach; ?>
         </div>

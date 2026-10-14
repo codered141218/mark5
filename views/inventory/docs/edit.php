@@ -95,7 +95,7 @@ $confirmPost = [
         <label class="field"><span class="field-label">Reason / purpose</span>
           <input class="input" name="reason" value="<?= e($h('reason')) ?>" placeholder="e.g. Daily kitchen requisition" maxlength="120"></label>
         <label class="field" style="grid-column:span 2"><span class="field-label">Charge to expense account</span>
-          <select class="input" name="expense_account_id" data-expense-account <?= $isNew ? '' : 'data-touched' ?>><?= options($expenseAccounts, $h('expense_account_id')) ?></select></label>
+          <select class="input" name="expense_account_id" data-combo data-placeholder="Search account…" data-expense-account <?= $isNew ? '' : 'data-touched' ?>><?= options($expenseAccounts, $h('expense_account_id')) ?></select></label>
       <?php else: ?>
         <label class="field"><span class="field-label">Reason</span>
           <select class="input" name="reason"><?= options(array_combine(InventoryDocs::WASTE_REASONS, array_map('ucfirst', InventoryDocs::WASTE_REASONS)), $h('reason') ?: 'spoilage') ?></select></label>

@@ -39,7 +39,7 @@ use App\Core\Table; use App\Services\Finance\Disbursements; ?>
         <?= view('finance/partials/account_select', ['name' => 'account_id', 'groups' => $accounts, 'required' => true], null) ?>
         <span class="field-hint">Usually an expense (Rent, Electricity, Salaries …). Also: Equipment, Loans Payable, Owner's Drawings …</span></label>
       <label class="field"><span class="field-label">Paid to</span><input class="input" name="payee" placeholder="e.g. Meralco, landlord, Juan"></label>
-      <label class="field"><span class="field-label">Supplier (optional)</span><select class="input" name="supplier_id"><?= options($suppliers, null, '— None —') ?></select></label>
+      <label class="field"><span class="field-label">Supplier (optional)</span><select class="input" name="supplier_id" data-combo data-placeholder="Search supplier…"><?= options($suppliers, null, '') ?></select></label>
       <label class="field"><span class="field-label">OR / invoice / check no.</span><input class="input" name="reference"></label>
       <label class="field" style="grid-column: 1 / -1"><span class="field-label">Description</span><input class="input" name="description" placeholder="e.g. October rent, Meralco bill Sept"></label>
       <label class="checkbox" style="grid-column: 1 / -1"><input type="checkbox" name="with_vat" value="1"> The receipt shows VAT (claim the 12% input VAT)</label>

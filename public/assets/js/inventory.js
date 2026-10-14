@@ -271,7 +271,7 @@
       issued.addEventListener('input', () => {
         if (acct.dataset.touched !== undefined) return;
         const id = /staff/i.test(issued.value) ? form.dataset.accountStaff : form.dataset.accountSupplies;
-        if (id) acct.value = id;
+        if (id) { acct.value = id; acct.dispatchEvent(new Event('combo:sync')); }
       });
     }
 

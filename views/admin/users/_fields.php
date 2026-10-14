@@ -12,7 +12,7 @@
   <label class="field"><span class="field-label">Role *</span>
     <select class="input" name="role_id" required><?= options($roles, null, '— Choose role —') ?></select></label>
   <label class="field"><span class="field-label">Linked employee</span>
-    <select class="input" name="employee_id"><?= options($employees, null, '— None —') ?></select></label>
+    <select class="input" name="employee_id" data-combo data-placeholder="— None — (search employee)"><?= options($employees, null, '') ?></select></label>
 </div>
 <div class="alert alert-info mt small">
   <b>Manager PIN</b> is a short number code for quick override approvals on the POS, e.g. authorizing a void or a discount

@@ -373,18 +373,21 @@
   const ranked = (options, q) => {
     const hit = matcher(q);
     const query = q.trim().toLowerCase();
-    if (!query) return options.filter((o) => hit(o.text));
+    if (!query) return options;
     const score = (text) => {
       const name = text.split(' · ')[0].toLowerCase();
       if (name === query) return 0;
       if (name.startsWith(query)) return 1;
-      if ((' ' + name).includes(' ' + query) || name.split(/[\s(/-]+/).some((w) => w.startsWith(query))) return 2;
-      if (text.toLowerCase().startsWith(query)) return 3;
+      if (name.split(/[\s(/-]+/).some((w) => w.startsWith(query))) return 2;
+      if (text.toLowerCase().split(/[\s·(/-]+/).some((w) => w.startsWith(query))) return 3;   // e.g. "rent" in "6100 · Rent Expense"
       return 4;
     };
-    return options.map((o, i) => ({ o, i, s: hit(o.text) ? score(o.text) : -1 })).filter((x) => x.s >= 0)
+    return options.map((o, i) => ({ o, i, s: hit(optSearch(o)) ? score(o.text) : -1 })).filter((x) => x.s >= 0)
       .sort((a, b) => a.s - b.s || a.i - b.i).map((x) => x.o);
   };
+  /** The <optgroup> label of an option ("Expenses"), searched too: typing "expense" lists the expense accounts. */
+  const optGroup = (o) => (o.parentElement && o.parentElement.tagName === 'OPTGROUP' ? o.parentElement.label : '');
+  const optSearch = (o) => o.text + ' ' + optGroup(o);
   /** Touch screens (tablets, phones) pick from a full-screen search panel; mouse and keyboard keep the dropdown. */
   const touchUI = () => window.matchMedia('(pointer: coarse)').matches;
 
@@ -401,6 +404,10 @@
       sync();
       sel.style.display = 'none';
       sel.after(input);
+      // a required select is hidden, so the visible field carries "required" (the browser asks to fill it in)
+      if (sel.required) { input.required = true; sel.required = false; }
+      sel.form?.addEventListener('reset', () => setTimeout(sync));   // dialogs reset their form when opened
+      sel.addEventListener('combo:sync', () => sync());              // value set by script without a change event
       let list = null; let hl = 0; let matches = [];
       const close = () => { list?.remove(); list = null; };
       const choose = (opt) => { sel.value = opt.value; sync(); close(); sel.dispatchEvent(new Event('change', { bubbles: true })); };
@@ -432,6 +439,8 @@
         matches.forEach((o, i) => {
           const d = document.createElement('div');
           d.textContent = o.text;
+          const g = optGroup(o);
+          if (g) d.insertAdjacentHTML('beforeend', ` <small class="combo-grp">${App.esc(g)}</small>`);
           if (i === hl) d.className = 'hl';
           d.addEventListener('mousedown', (ev) => { ev.preventDefault(); choose(o); });
           list.appendChild(d);
@@ -440,7 +449,16 @@
       };
       input.addEventListener('focus', () => { input.select(); hl = 0; typed = false; render(); });
       input.addEventListener('input', () => { hl = 0; typed = true; render(); });
-      input.addEventListener('blur', () => { setTimeout(() => { close(); sync(); }, 120); });
+      input.addEventListener('blur', () => {
+        setTimeout(() => {
+          close();
+          // text emptied on an optional field (it has a blank choice): clear the selection
+          if (!input.value.trim() && sel.value && Array.from(sel.options).some((o) => o.value === '')) {
+            sel.value = ''; sel.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+          sync();
+        }, 120);
+      });
       input.addEventListener('keydown', (ev) => {
         // Tab after typing picks the highlighted (nearest) match, then moves on to the next field as usual
         if (ev.key === 'Tab' && !ev.shiftKey && typed && input.value.trim() && matches[hl]) { typed = false; choose(matches[hl]); return; }
@@ -448,7 +466,7 @@
         if (ev.key === 'ArrowDown') { hl = Math.min(hl + 1, matches.length - 1); render(); ev.preventDefault(); }
         if (ev.key === 'ArrowUp') { hl = Math.max(hl - 1, 0); render(); ev.preventDefault(); }
         if (ev.key === 'Enter') { if (matches[hl]) choose(matches[hl]); ev.preventDefault(); }
-        if (ev.key === 'Escape') close();
+        if (ev.key === 'Escape') { close(); ev.preventDefault(); ev.stopPropagation(); }   // only the list, not the dialog around it
       });
       sel.addEventListener('change', sync);
       window.addEventListener('scroll', (e) => { if (list && !list.contains(e.target)) close(); }, true);
@@ -499,7 +517,9 @@
         const b = document.createElement('button');
         b.type = 'button';
         b.className = 'combo-sheet-item' + (o.value === sel.value ? ' on' : '');
-        b.innerHTML = `<b>${App.esc(name)}</b>${rest.length ? `<small>${App.esc(rest.join(' · '))}</small>` : ''}`;
+        const g = optGroup(o);
+        const sub = [rest.join(' · '), g].filter(Boolean).join(' — ');
+        b.innerHTML = `<b>${App.esc(name)}</b>${sub ? `<small>${App.esc(sub)}</small>` : ''}`;
         b.addEventListener('click', () => { shut(); choose(o); });
         list.appendChild(b);
       });

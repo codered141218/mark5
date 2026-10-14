@@ -29,9 +29,9 @@
       <details class="field" style="grid-column:1/-1">
         <summary class="field-label" style="cursor:pointer">GL accounts for this category (optional)</summary>
         <div class="form-grid mt">
-          <label class="field"><span class="field-label">Sales account</span><select class="input" name="sales_account_id"><?= options($accounts['sales'], null, 'Default (GL Account Setup)') ?></select></label>
-          <label class="field"><span class="field-label">Cost of goods sold account</span><select class="input" name="cogs_account_id"><?= options($accounts['cogs'], null, 'Default (GL Account Setup)') ?></select></label>
-          <label class="field"><span class="field-label">Inventory account</span><select class="input" name="inventory_account_id"><?= options($accounts['inventory'], null, 'Default (GL Account Setup)') ?></select></label>
+          <label class="field"><span class="field-label">Sales account</span><select class="input" name="sales_account_id" data-combo data-placeholder="Default (GL Account Setup)"><?= options($accounts['sales'], null, 'Default (GL Account Setup)') ?></select></label>
+          <label class="field"><span class="field-label">Cost of goods sold account</span><select class="input" name="cogs_account_id" data-combo data-placeholder="Default (GL Account Setup)"><?= options($accounts['cogs'], null, 'Default (GL Account Setup)') ?></select></label>
+          <label class="field"><span class="field-label">Inventory account</span><select class="input" name="inventory_account_id" data-combo data-placeholder="Default (GL Account Setup)"><?= options($accounts['inventory'], null, 'Default (GL Account Setup)') ?></select></label>
         </div>
         <span class="field-hint">Sales and COGS follow the menu item sold; Inventory follows the category of each ingredient.</span>
       </details>

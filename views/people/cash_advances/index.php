@@ -47,7 +47,7 @@ use App\Services\Finance\CashAdvances;
       <?php else: ?>
         <div class="form-grid">
           <label class="field" style="grid-column: 1 / -1"><span class="field-label">Employee *</span>
-            <select class="input" name="employee_id" required data-employee>
+            <select class="input" name="employee_id" required data-employee<?= count($requestFor) > 1 ? ' data-combo data-placeholder="Search employee…"' : '' ?>>
               <?php if (count($requestFor) > 1): ?><option value="">Select employee…</option><?php endif; ?>
               <?php foreach ($requestFor as $emp): ?>
                 <option value="<?= e($emp['id']) ?>" data-balance="<?= e($emp['ca_balance']) ?>" data-name="<?= e($emp['full_name']) ?>"><?= e($emp['full_name'] . ($emp['position'] ? ' – ' . $emp['position'] : '')) ?></option>
