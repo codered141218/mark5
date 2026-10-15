@@ -146,9 +146,11 @@ select.input { padding-right: 6px; }
 .card-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--border); gap: 8px; min-height: 50px; }
 .card-body { padding: 16px; }
 
-.stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow); }
+.stat { min-width: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow); }
 .stat-label { font-size: 12px; color: var(--muted); font-weight: 500; }
-.stat-value { font-size: 22px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.stat-value { font-size: 22px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; white-space: nowrap; line-height: 1.25; }
+/* long values shrink to fit (app.js fitText); at the smallest size they wrap instead of being cut off */
+.stat-value.fit-wrap, [data-fit].fit-wrap { white-space: normal; overflow-wrap: anywhere; }
 .stat-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
 .stat-green .stat-value { color: var(--green); } .stat-red .stat-value { color: var(--red); } .stat-amber .stat-value { color: var(--amber); }
 .stat-brand { background: var(--brand); border-color: var(--brand); color: #fff; }

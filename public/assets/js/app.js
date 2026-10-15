@@ -596,10 +596,53 @@
     });
   })();
 
+  // ------------------------------------------------------------------ stat cards: fit long values
+  /**
+   * A stat card's value (₱2,212,999.25, long names...) shrinks to fit its card instead of being cut off; at the smallest
+   * size it wraps. Re-fits when a card changes width (window, menu, tablet rotation) or its value changes (POS, dialogs).
+   */
+  const FIT = '.stat-value, [data-fit]';
+  const MIN_FONT = 13;
+  const fitWidth = new WeakMap();
+  function fitText(el) {
+    el.style.fontSize = '';
+    el.classList.remove('fit-wrap');
+    const w = el.clientWidth;
+    fitWidth.set(el, w);
+    if (!w || el.scrollWidth <= w) return;
+    const size = parseFloat(getComputedStyle(el).fontSize);
+    let next = Math.max(MIN_FONT, Math.floor((size * w) / el.scrollWidth * 10) / 10);
+    el.style.fontSize = next + 'px';
+    while (el.scrollWidth > w && next > MIN_FONT) { next = Math.max(MIN_FONT, next - 1); el.style.fontSize = next + 'px'; }
+    if (el.scrollWidth > w) el.classList.add('fit-wrap');
+  }
+  const fitObserver = window.ResizeObserver ? new ResizeObserver((entries) => entries.forEach((en) => {
+    if (fitWidth.get(en.target) !== en.target.clientWidth) fitText(en.target);
+  })) : null;
+  function fitAll(root = document) {
+    const els = root.matches && root.matches(FIT) ? [root] : $$(FIT, root);
+    els.forEach((el) => { fitText(el); if (fitObserver) fitObserver.observe(el); });
+  }
+  App.fitAll = fitAll;
+  let fitQueue = new Set();
+  const flushFit = () => { const q = fitQueue; fitQueue = new Set(); q.forEach((el) => { if (el.isConnected) fitAll(el); }); };
+  new MutationObserver((muts) => {
+    const before = fitQueue.size;
+    muts.forEach((m) => {
+      const t = m.target.nodeType === 1 ? m.target : m.target.parentElement;
+      const own = t && t.closest(FIT);
+      if (own) fitQueue.add(own);
+      m.addedNodes.forEach((n) => { if (n.nodeType === 1 && !own && (n.matches(FIT) || n.querySelector(FIT))) fitQueue.add(n); });
+    });
+    if (!before && fitQueue.size) requestAnimationFrame(flushFit);
+  }).observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => fitAll());
+
   // ------------------------------------------------------------------ misc
   document.addEventListener('DOMContentLoaded', () => {
     initTables();
     initCombos();
+    fitAll();
     $$('[data-autohide]').forEach((el) => setTimeout(() => { el.style.display = 'none'; }, 4000));
     // Select the content of numeric inputs on focus (faster data entry)
     document.addEventListener('focusin', (e) => { if (e.target.matches('input[type=number]')) e.target.select(); });
