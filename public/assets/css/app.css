@@ -245,11 +245,11 @@ select.input { padding-right: 6px; }
 .cat-bar { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; flex-shrink: 0; }
 .cat-btn { flex-shrink: 0; height: 44px; padding: 0 16px; border-radius: 8px; border: none; background: var(--surface); font: inherit; font-weight: 600; cursor: pointer; border-bottom: 4px solid var(--c, #9ca3af); color: var(--text); }
 .cat-btn.active { background: var(--c, var(--brand)); color: #fff; }
-.tiles { flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); grid-auto-rows: 96px; gap: 8px; align-content: start; }
+.tiles { flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); grid-auto-rows: minmax(96px, auto); gap: 8px; align-content: start; }
 .tile { border: none; border-radius: 10px; background: var(--surface); cursor: pointer; padding: 10px; text-align: left; display: flex; flex-direction: column; justify-content: space-between;
   border-left: 6px solid var(--c, var(--brand)); box-shadow: var(--shadow); font: inherit; color: var(--text); transition: transform .06s; }
 .tile:active { transform: scale(.97); background: var(--brand-soft); }
-.tile-name { font-weight: 600; font-size: 14px; line-height: 1.25; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+.tile-name { font-weight: 600; font-size: 14px; line-height: 1.25; overflow-wrap: anywhere; }   /* full name: the row grows to fit it */
 .tile-price { font-weight: 700; color: var(--brand); font-variant-numeric: tabular-nums; }
 .tile-stock { font-size: 11px; color: var(--muted); }
 .tile.out { opacity: .55; }
