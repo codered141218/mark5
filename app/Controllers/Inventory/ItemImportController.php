@@ -20,7 +20,7 @@ class ItemImportController
         if ($req->query('template')) {
             $cols = array_map(fn ($h) => ['key' => $h, 'label' => $h], ItemImport::TEMPLATE[0]);
             $rows = array_map(fn ($r) => ['cells' => $r, 'bold' => false], array_slice(ItemImport::TEMPLATE, 1));
-            return Excel::download('item-import-template', 'Item import template', 'Fill one item per row; only Name is required. Delete the sample rows.', $cols, $rows);
+            return Excel::download('item-import-template', 'Item import template', 'Fill one item per row; only Name is required. Base unit = the unit stock is counted in; Purchase unit (optional) = how you buy it, e.g. 1 case = 24 can. Delete the sample rows.', $cols, $rows);
         }
         return view('inventory/import/form', ['title' => 'Import items from Excel']);
     }

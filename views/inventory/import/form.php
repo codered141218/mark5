@@ -20,10 +20,13 @@
           <tr><td class="bold">Type</td><td><b>Ingredient</b> (raw, stocked), <b>Menu</b> (dish with a recipe), <b>Retail</b> (bought &amp; sold as-is, stocked) or <b>Service</b> (not stocked).
             If blank: Menu when it has a price, else Ingredient.</td></tr>
           <tr><td class="bold">Category</td><td>Created when it does not exist yet.</td></tr>
-          <tr><td class="bold">Unit</td><td>kg, g, L, ml, pc, pack, can, btl, srv … (new units are created).</td></tr>
+          <tr><td class="bold">Base unit</td><td>The unit stock is counted, costed and used in recipes: kg, g, L, ml, pc, pack, can, btl, srv … (new units are created).
+            If blank: srv for menu items, else pc. Cannot be changed once the item has stock history.</td></tr>
+          <tr><td class="bold">Purchase unit</td><td>Optional — another unit you buy or count it in, e.g. <b>sack</b> for rice in kg, <b>case</b> for cans.</td></tr>
+          <tr><td class="bold">Base units per purchase unit</td><td>How many base units are in 1 purchase unit: 1 sack = <b>50</b> kg, 1 case = <b>24</b> can.</td></tr>
           <tr><td class="bold">Selling price</td><td>Menu price (as set under Settings → Tax: VAT-inclusive or not).</td></tr>
-          <tr><td class="bold">Cost</td><td>Cost per unit of ingredients and retail items.</td></tr>
-          <tr><td class="bold">Stock on hand</td><td>Beginning stock, posted as opening inventory (only for new items or items with no stock history).</td></tr>
+          <tr><td class="bold">Cost</td><td>Cost per <b>base unit</b> of ingredients and retail items.</td></tr>
+          <tr><td class="bold">Stock on hand</td><td>Beginning stock in the <b>base unit</b>, posted as opening inventory (only for new items or items with no stock history).</td></tr>
           <tr><td class="bold">Reorder point / qty</td><td>Low-stock warning level and the usual order quantity.</td></tr>
           <tr><td class="bold">SKU, Barcode</td><td>Optional. A blank SKU is numbered automatically.</td></tr>
           <tr><td class="bold">Sellable</td><td>Yes / No — shown on the POS.</td></tr>

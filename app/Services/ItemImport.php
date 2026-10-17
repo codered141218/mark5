@@ -11,7 +11,8 @@ use App\Core\SheetReader;
  * The first row holds the column names (any order, upper / lower case, see COLUMNS for the accepted names).
  * Only "Name" is required. Rows are matched to existing items by SKU, else by name: existing items are updated
  * (only the columns present in the file), new ones are created. Missing categories, units and prep stations are
- * created. "Stock on hand" becomes an opening-balance delivery so the books show the stock value.
+ * created. "Base unit" is the unit stock is counted in; an optional "Purchase unit" with "Base units per purchase unit"
+ * adds an item unit (1 case = 24 can). "Stock on hand" becomes an opening-balance delivery so the books show the stock value.
  * Recipes are not imported (add them on the item page).
  */
 class ItemImport
@@ -21,7 +22,9 @@ class ItemImport
         'name' => ['name', 'item', 'item name', 'product', 'product name'],
         'type' => ['type', 'item type'],
         'category' => ['category', 'group'],
-        'unit' => ['unit', 'uom', 'unit of measure', 'base unit'],
+        'unit' => ['base unit', 'base uom', 'base unit of measure', 'unit', 'uom', 'unit of measure'],
+        'purchase_unit' => ['purchase unit', 'purchase uom', 'other unit', 'alternate unit', 'pack unit'],
+        'purchase_factor' => ['base units per purchase unit', 'qty per purchase unit', 'purchase unit qty', 'units per purchase unit', 'conversion', 'pack size'],
         'price' => ['price', 'selling price', 'srp', 'retail price', 'menu price'],
         'cost' => ['cost', 'unit cost', 'purchase cost', 'cost price'],
         'stock' => ['stock', 'stock on hand', 'on hand', 'quantity', 'qty', 'beginning stock', 'opening stock'],
@@ -44,11 +47,12 @@ class ItemImport
 
     /** Example rows for the template download. */
     public const TEMPLATE = [
-        ['Name', 'Type', 'Category', 'Unit', 'Selling price', 'Cost', 'Stock on hand', 'Reorder point', 'Reorder qty', 'SKU', 'Barcode', 'Sellable', 'Station'],
-        ['Pork Liempo', 'Ingredient', 'Meat & Poultry', 'kg', '', '320', '10', '5', '10', '', '', 'No', ''],
-        ['Chicken Inasal', 'Menu', 'Grilled', 'srv', '165', '', '', '', '', '', '', 'Yes', 'Grill'],
-        ['Coke in Can', 'Retail', 'Beverages', 'can', '65', '38', '48', '24', '48', '', '4801981116102', 'Yes', ''],
-        ['Corkage Fee', 'Service', 'Others', 'pc', '150', '', '', '', '', '', '', 'Yes', ''],
+        ['Name', 'Type', 'Category', 'Base unit', 'Purchase unit', 'Base units per purchase unit', 'Selling price', 'Cost', 'Stock on hand', 'Reorder point', 'Reorder qty', 'SKU', 'Barcode', 'Sellable', 'Station'],
+        ['Pork Liempo', 'Ingredient', 'Meat & Poultry', 'kg', '', '', '', '320', '10', '5', '10', '', '', 'No', ''],
+        ['Rice', 'Ingredient', 'Dry Goods', 'kg', 'sack', '50', '', '52', '100', '50', '100', '', '', 'No', ''],
+        ['Chicken Inasal', 'Menu', 'Grilled', 'srv', '', '', '165', '', '', '', '', '', '', 'Yes', 'Grill'],
+        ['Coke in Can', 'Retail', 'Beverages', 'can', 'case', '24', '65', '38', '48', '24', '48', '', '4801981116102', 'Yes', ''],
+        ['Corkage Fee', 'Service', 'Others', 'pc', '', '', '150', '', '', '', '', '', '', 'Yes', ''],
     ];
 
     /** Read a file into header-mapped rows: [['_line' => 2, 'name' => .., 'price' => .., ...], ...]. */
@@ -91,11 +95,12 @@ class ItemImport
         foreach ($rows as &$r) {
             $errors = [];
             $notes = [];
-            foreach (['price', 'cost', 'stock', 'reorder_point', 'reorder_qty'] as $f) {
+            foreach (['price', 'cost', 'stock', 'reorder_point', 'reorder_qty', 'purchase_factor'] as $f) {
                 if (!array_key_exists($f, $r)) continue;
                 $v = $num($r[$f]);
-                if ($v === false) $errors[] = ucfirst(str_replace('_', ' ', $f)) . ' "' . $r[$f] . '" is not a number';
-                elseif ($v !== null && $v < 0) $errors[] = ucfirst(str_replace('_', ' ', $f)) . ' cannot be negative';
+                $label = $f === 'purchase_factor' ? 'Base units per purchase unit' : ucfirst(str_replace('_', ' ', $f));
+                if ($v === false) $errors[] = $label . ' "' . $r[$f] . '" is not a number';
+                elseif ($v !== null && $v < 0) $errors[] = $label . ' cannot be negative';
                 $r['_' . $f] = $v === false ? null : $v;
             }
             $existing = null;
@@ -119,6 +124,19 @@ class ItemImport
             if ($existing && $existing['item_type'] !== $type && abs((float) $existing['stock_qty']) > 0.0001) $errors[] = 'Cannot change the type of an item that has stock';
             if (($r['category'] ?? '') !== '' && !DB::value('SELECT id FROM categories WHERE LOWER(name) = LOWER(?)', [$r['category']])) $notes[] = 'new category "' . $r['category'] . '"';
             if (($r['unit'] ?? '') !== '' && !self::uomId($r['unit'], false)) $notes[] = 'new unit "' . $r['unit'] . '"';
+            if ($existing && ($r['unit'] ?? '') !== '' && (int) self::uomId($r['unit'], false) !== (int) $existing['base_uom_id']
+                && DB::value('SELECT id FROM stock_movements WHERE item_id = ? LIMIT 1', [$existing['id']])) $notes[] = 'base unit kept: the item already has stock history';
+            $pu = $r['purchase_unit'] ?? '';
+            $pf = $r['_purchase_factor'] ?? null;
+            if ($pu !== '') {
+                $baseUnit = ($r['unit'] ?? '') !== '' ? $r['unit'] : ($existing ? (string) DB::value('SELECT abbr FROM uoms WHERE id = ?', [$existing['base_uom_id']]) : ($type === 'composite' ? 'srv' : 'pc'));
+                if (!$pf) $errors[] = "How many {$baseUnit} are in 1 {$pu}? Fill \"Base units per purchase unit\"";
+                elseif (strcasecmp($pu, $baseUnit) === 0 || (($puId = self::uomId($pu, false)) && $puId === self::uomId($baseUnit, false))) $errors[] = 'Purchase unit is the same as the base unit';
+                else {
+                    $r['_purchase_note'] = '1 ' . $pu . ' = ' . qty($pf) . ' ' . $baseUnit;
+                    if (!self::uomId($pu, false) && strcasecmp($pu, $r['unit'] ?? '') !== 0) $notes[] = 'new unit "' . $pu . '"';
+                }
+            } elseif ($pf) $errors[] = 'Base units per purchase unit is filled but the Purchase unit is blank';
             if (($r['station'] ?? '') !== '' && !DB::value('SELECT id FROM prep_stations WHERE LOWER(name) = LOWER(?)', [$r['station']])) $notes[] = 'new station "' . $r['station'] . '"';
 
             $r['_existing_id'] = $existing ? (int) $existing['id'] : null;
@@ -170,6 +188,10 @@ class ItemImport
                     $f['sort_order'] = Positions::next('items', 'category_id <=> ?', [$f['category_id'] ?? null]);
                     $id = DB::insert('items', $f + ['avg_cost' => r4($cost), 'last_cost' => r4($cost), 'created_at' => now(), 'updated_at' => now()]);
                     $counts['created']++;
+                }
+                if (($r['purchase_unit'] ?? '') !== '' && ($r['_purchase_factor'] ?? 0) > 0) {
+                    DB::run('INSERT INTO item_uoms (item_id, uom_id, factor) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE factor = VALUES(factor)',
+                        [$id, self::uomId($r['purchase_unit'], true), round((float) $r['_purchase_factor'], 6)]);
                 }
                 $qty = (float) ($r['_stock'] ?? 0);
                 if ($qty > 0 && $stocked && !DB::value('SELECT id FROM stock_movements WHERE item_id = ? LIMIT 1', [$id])) {

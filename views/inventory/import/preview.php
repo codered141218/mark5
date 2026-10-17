@@ -20,7 +20,7 @@ $ok = ($count['create'] ?? 0) + ($count['update'] ?? 0);
 
 <div class="card">
   <div class="table-wrap"><table class="table">
-    <thead><tr><th>Line</th><th></th><th>Name</th><th>Type</th><th>Category</th><th>Unit</th><th class="right">Price</th><th class="right">Cost</th><th class="right">Stock</th><th>Notes</th></tr></thead>
+    <thead><tr><th>Line</th><th></th><th>Name</th><th>Type</th><th>Category</th><th>Base unit</th><th class="right">Price</th><th class="right">Cost</th><th class="right">Stock</th><th>Notes</th></tr></thead>
     <tbody>
     <?php foreach ($rows as $r): [$label, $tone] = $badge[$r['_action']]; ?>
       <tr class="<?= $r['_action'] === 'error' ? 'import-error' : '' ?>">
@@ -29,7 +29,7 @@ $ok = ($count['create'] ?? 0) + ($count['update'] ?? 0);
         <td class="bold"><?= e($r['name']) ?><?= ($r['sku'] ?? '') !== '' ? ' <span class="muted small">' . e($r['sku']) . '</span>' : '' ?></td>
         <td><?= e(Items::TYPE_SHORT[$r['_type']] ?? '') ?></td>
         <td><?= e($r['category'] ?? '') ?></td>
-        <td><?= e($r['unit'] ?? '') ?></td>
+        <td><?= e($r['unit'] ?? '') ?><?= !empty($r['_purchase_note']) ? '<div class="muted small">' . e($r['_purchase_note']) . '</div>' : '' ?></td>
         <td class="right"><?= ($r['_price'] ?? null) !== null ? money($r['_price']) : '' ?></td>
         <td class="right"><?= ($r['_cost'] ?? null) !== null ? money($r['_cost']) : '' ?></td>
         <td class="right"><?= ($r['_stock'] ?? null) !== null ? qty($r['_stock']) : '' ?></td>

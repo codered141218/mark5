@@ -10,6 +10,7 @@ use App\Services\Finance\Accounts;
 use App\Services\Finance\Banks;
 use App\Services\Finance\Disbursements;
 use App\Services\Finance\PettyCash;
+use App\Services\Inventory;
 use App\Services\ItemImport;
 use App\Services\Ledger;
 use App\Services\Pos\CashSessions;
@@ -141,6 +142,35 @@ test('item import from .xlsx: title rows above the header are skipped; existing 
     // "skip existing" mode
     eq(['skip', 'skip', 'skip'], array_column(ItemImport::analyze(ItemImport::parse("$tmp/prices.xlsx", 'prices.xlsx'), false), '_action'));
     throws(fn () => ItemImport::parse("$tmp/prices.xlsx", 'prices.xls'), '.xls');
+});
+
+test('item import: base unit and purchase unit columns (template headers), errors for a missing / same unit', function () use ($tmp) {
+    $tpl = ItemImport::TEMPLATE[0];
+    ok(in_array('Base unit', $tpl, true) && in_array('Purchase unit', $tpl, true) && in_array('Base units per purchase unit', $tpl, true), 'template headers');
+    $csv = "Name,Type,Base unit,Purchase unit,Base units per purchase unit,Cost,Stock on hand\n"
+        . "Whole Chicken,Ingredient,pc,box,10,85,500\n"
+        . "Jasmine Rice,Ingredient,kg,sack,50,52,\n"
+        . "No Factor,Ingredient,kg,sack,,,\n"
+        . "Same Unit,Ingredient,kg,kg,1,,\n"
+        . "Factor Only,Ingredient,kg,,12,,\n";
+    file_put_contents("$tmp/units.csv", $csv);
+    $rows = ItemImport::analyze(ItemImport::parse("$tmp/units.csv", 'units.csv'));
+    eq(['create', 'create', 'error', 'error', 'error'], array_column($rows, '_action'));
+    eq('1 box = 10 pc', $rows[0]['_purchase_note']);
+    $c = ItemImport::import(ItemImport::parse("$tmp/units.csv", 'units.csv'));
+    eq(2, $c['created']);
+    $ch = DB::one('SELECT i.*, u.abbr unit FROM items i JOIN uoms u ON u.id = i.base_uom_id WHERE i.name = ?', ['Whole Chicken']);
+    eq('pc', $ch['unit'], 'base unit');
+    eq(500, stock('Whole Chicken'), 'stock in the base unit');
+    $units = array_column(Inventory::units((int) $ch['id']), 'factor', 'abbr');
+    eq(10, $units['box'], '1 box = 10 pc');
+    eq(50, array_column(Inventory::units(item_id('Jasmine Rice')), 'factor', 'abbr')['sack']);
+    // re-import changes the factor, no duplicate unit
+    file_put_contents("$tmp/units2.csv", "Name,Purchase unit,Base units per purchase unit\nWhole Chicken,box,12\n");
+    ItemImport::import(ItemImport::parse("$tmp/units2.csv", 'units2.csv'));
+    eq(12, array_column(Inventory::units((int) $ch['id']), 'factor', 'abbr')['box']);
+    eq(1, (int) DB::value('SELECT COUNT(*) FROM item_uoms WHERE item_id = ?', [$ch['id']]));
+    assert_books_balance();
 });
 
 test('setup wizard: pending on a new install, steps save, finish hides it', function () {
