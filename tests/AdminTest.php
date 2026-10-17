@@ -169,7 +169,7 @@ test('uploaded backups: bad header, truncated file and wrong extension are rejec
     $count = count(Backup::list());
     $tmp = tempnam(sys_get_temp_dir(), 'up');
     file_put_contents($tmp, "-- MySQL dump\nDROP TABLE IF EXISTS `settings`;\n");
-    throws(fn () => Backup::restoreUpload(['name' => 'evil.sql', 'tmp_name' => $tmp]), 'not a Mark5 backup');
+    throws(fn () => Backup::restoreUpload(['name' => 'evil.sql', 'tmp_name' => $tmp]), 'not an M5 backup');
 
     $good = file_get_contents(Backup::path(Backup::create('manual')['name']));
     file_put_contents($tmp, substr($good, 0, (int) (strlen($good) / 2)));

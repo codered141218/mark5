@@ -1,5 +1,5 @@
 /**
- * Mark5 back-office helpers (plain JavaScript, no framework).
+ * M5 back-office helpers (plain JavaScript, no framework).
  * Everything is driven by data-* attributes in the PHP views:
  *
  *  <input data-table-search>                 filters the rows of the table below it

@@ -3,7 +3,7 @@
   <form class="login-card wide" method="post" action="<?= url('/install') ?>">
     <?= csrf_field() ?>
     <div class="brand-logo">M5</div>
-    <h1>Install Mark5 Restaurant Suite</h1>
+    <h1>Install M5 Restaurant Suite</h1>
     <p class="muted">Enter your MySQL / MariaDB details. The database is created automatically if it does not exist.</p>
     <?php if ($m = flash('error')): ?><div class="alert alert-error"><?= e($m) ?></div><?php endif; ?>
     <?php if (!$zip): ?><div class="alert alert-warn">PHP <b>zip</b> extension is off: Excel exports will use the older .xls format. Enable <code>extension=zip</code> in php.ini for .xlsx.</div><?php endif; ?>

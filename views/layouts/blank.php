@@ -9,7 +9,7 @@
   <meta name="csrf-token" content="<?= e(csrf_token()) ?>">
   <meta name="base-url" content="<?= e(url('/')) ?>">
   <meta name="theme-color" content="#111827">
-  <title><?= e($title ?? 'Mark5 Restaurant Suite') ?></title>
+  <title><?= e($title ?? 'M5 Restaurant Suite') ?></title>
   <link rel="icon" href="<?= asset('img/icon.svg') ?>">
   <link rel="stylesheet" href="<?= asset('css/app.css') ?>">
   <?php foreach ($styles ?? [] as $css): ?><link rel="stylesheet" href="<?= asset($css) ?>"><?php endforeach; ?>

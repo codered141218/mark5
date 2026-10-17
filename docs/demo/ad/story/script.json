@@ -1,0 +1,203 @@
+{
+ "title": "M5 Restaurant Suite",
+ "tagline": "From the first order to the last payslip.",
+ "music_mood": "warm, upbeat, Friday-night energy that settles into confident calm",
+ "scenes": [
+  {
+   "id": "s01_intro",
+   "pov": "intro",
+   "seconds": 9,
+   "caption": "Table 7: 41 minutes. Nobody knew.",
+   "problem": "All forty seats are full and a table has waited forty-one minutes without anyone at the counter noticing.",
+   "narrator": "Forty seats. One Friday in Makati. Table seven has waited forty-one minutes, and nobody knew.",
+   "character_lines": [
+    {
+     "who": "Nena Villanueva (owner)",
+     "line": "Ramon, table seven, forty-one minutes na. Hurry!"
+    }
+   ]
+  },
+  {
+   "id": "s02_waiter_order",
+   "pov": "waiter",
+   "seconds": 12,
+   "caption": "Typed once. The kitchen can read it.",
+   "problem": "The cook cannot read the waiter's handwriting, so orders come back wrong mid-rush.",
+   "narrator": "Ramon takes table twelve on his phone: sisig, extra spicy, typed once, sent. The kitchen slip prints.",
+   "character_lines": [
+    {
+     "who": "Juan Dela Cruz (cook)",
+     "line": "Uy, nababasa! Extra spicy. Sige."
+    }
+   ]
+  },
+  {
+   "id": "s03_waiter_split",
+   "pov": "waiter",
+   "seconds": 10,
+   "caption": "Separate bills, two taps.",
+   "problem": "A group wants separate bills, which on paper means re-adding everything on the back of a receipt.",
+   "narrator": "Separate bills? Ramon moves the sinigang to its own tab. Both totals follow.",
+   "character_lines": [
+    {
+     "who": "Ramon Bautista (waiter)",
+     "line": "Sino kay Kuya, sino kay Ate? Halo-halo, hati-hati."
+    }
+   ]
+  },
+  {
+   "id": "s05_cashier_senior",
+   "pov": "cashier",
+   "seconds": 12,
+   "caption": "Senior 20%, logged for the BIR.",
+   "problem": "A senior citizen discount done wrong is either an unhappy lola or a BIR finding; done by hand it is both a notebook and a prayer.",
+   "narrator": "Lola at table twelve: twenty percent off, VAT exempt, name and ID in the senior book. A manager's PIN approves it.",
+   "character_lines": [
+    {
+     "who": "Maria Santos (cashier)",
+     "line": "Lola, twenty percent po, walang VAT. Pangalan at OSCA ID lang."
+    }
+   ]
+  },
+  {
+   "id": "s04_cashier_pay",
+   "pov": "cashier",
+   "seconds": 12,
+   "caption": "GCash, card, cash. No calculator.",
+   "problem": "One bill, three ways to pay, six people in line, and a calculator on the counter.",
+   "narrator": "One bill, three ways: GCash, card, cash. The change is on screen before the drawer opens.",
+   "character_lines": [
+    {
+     "who": "Maria Santos (cashier)",
+     "line": "GCash, card, rest cash. Change, eight seventy-five. Next!"
+    }
+   ]
+  },
+  {
+   "id": "s06_cashier_closing",
+   "pov": "cashier",
+   "seconds": 12,
+   "caption": "Count first. Then compare.",
+   "problem": "At closing the drawer looks short and the cashier gets blamed for money she never touched.",
+   "narrator": "Eleven PM. The drawer looks two-fifty short. Maria counts first, blind. Then the system shows what it expected.",
+   "character_lines": [
+    {
+     "who": "Maria Santos (cashier)",
+     "line": "Hindi ako. The ice, eight-fourteen."
+    }
+   ]
+  },
+  {
+   "id": "s07_owner_dashboard",
+   "pov": "owner",
+   "seconds": 11,
+   "caption": "Sales up. Profit flat. Why?",
+   "problem": "Sales are up but the bank balance is not, and the owner cannot see where the money leaks.",
+   "narrator": "Monday. The dashboard: sales by day, by hour, by payment. And food cost, in one number.",
+   "character_lines": [
+    {
+     "who": "Nena Villanueva (owner)",
+     "line": "Thirty-two. Dati twenty-nine. Three percent of the month. Nasaan?"
+    }
+   ]
+  },
+  {
+   "id": "s08_owner_food_cost",
+   "pov": "owner",
+   "seconds": 11,
+   "caption": "Pork up ₱40 a kilo. Sisig price flat.",
+   "problem": "The pork supplier raised prices and the best-selling sisig still sells at last year's price.",
+   "narrator": "Pork up forty a kilo, sisig price flat. Every dish is a recipe, so the margin moves with the delivery.",
+   "character_lines": [
+    {
+     "who": "Nena Villanueva (owner)",
+     "line": "Green pa, twenty-eight. Limang piso ngayon, hindi fifty mamaya."
+    }
+   ]
+  },
+  {
+   "id": "s09_owner_inventory",
+   "pov": "owner",
+   "seconds": 11,
+   "caption": "Stock in, spoilage out, reorder in time.",
+   "problem": "The garlic ran out mid-service on Friday and two kilos of kangkong wilted over the weekend, and nobody wrote any of it down.",
+   "narrator": "Deliveries on credit go to what we owe. Spoiled kangkong is logged. Stock on hand flags the reorder.",
+   "character_lines": [
+    {
+     "who": "Nena Villanueva (owner)",
+     "line": "Bawang, before Friday, not during."
+    }
+   ]
+  },
+  {
+   "id": "s10_owner_finance",
+   "pov": "owner",
+   "seconds": 11,
+   "caption": "Books that close themselves.",
+   "problem": "Month-end is a shoebox of receipts on the dining table and an accountant asking for the books.",
+   "narrator": "Month-end used to be a shoebox. Now every sale and payout posts itself: income statement, balance sheet, who we owe.",
+   "character_lines": [
+    {
+     "who": "Nena Villanueva (owner)",
+     "line": "Bigas, fifteen days pa. Hindi ko na kailangang tandaan."
+    }
+   ]
+  },
+  {
+   "id": "s11a_payroll_import",
+   "pov": "payroll",
+   "seconds": 10,
+   "caption": "Punches in. Hours out.",
+   "problem": "The attendance lives on the fingerprint machine and payroll night means a calculator, a notebook and midnight.",
+   "narrator": "The fifteenth. Punches come off the fingerprint machine: time in, time out, overtime, per person, per day.",
+   "character_lines": [
+    {
+     "who": "Mara Villanueva (manager)",
+     "line": "Juan's Saturday overtime. Counted."
+    }
+   ]
+  },
+  {
+   "id": "s11b_payroll_run",
+   "pov": "payroll",
+   "seconds": 12,
+   "caption": "Payday before lunch, not midnight.",
+   "problem": "Computing four salaries with overtime, cash advances and SSS by hand takes the whole evening and still gets argued over.",
+   "narrator": "One payroll run: days times rate, overtime, advances deducted, SSS typed in. Post it. Payslips before lunch.",
+   "character_lines": [
+    {
+     "who": "Mara Villanueva (manager)",
+     "line": "Dati, hanggang midnight. Ngayon, bago mag-lunch."
+    }
+   ]
+  },
+  {
+   "id": "s12_employee_mypay",
+   "pov": "employee",
+   "seconds": 13,
+   "caption": "His payslip. His advance. His phone.",
+   "problem": "Staff have to ask twice for a payslip and three times for their advance balance, and asking for an advance means a knock on the office door.",
+   "narrator": "After shift, Ramon opens My Pay: net pay, every punch, his advance balance. He asks for fifteen hundred, right there.",
+   "character_lines": [
+    {
+     "who": "Ramon Bautista (waiter)",
+     "line": "Dati, tatambay ako sa labas ng office. Ngayon, phone lang."
+    }
+   ]
+  },
+  {
+   "id": "s13_outro",
+   "pov": "outro",
+   "seconds": 11,
+   "caption": "M5 Restaurant Suite",
+   "problem": "The counter PC is six years old, there is no IT guy and no appetite for another monthly bill.",
+   "narrator": "M5 Restaurant Suite. POS, inventory, books and payroll in one app, on the PC you already have.",
+   "character_lines": [
+    {
+     "who": "Nena Villanueva (owner)",
+     "line": "Anim na taon 'tong PC, walang IT guy. Forty seats, one Friday. M5."
+    }
+   ]
+  }
+ ]
+}

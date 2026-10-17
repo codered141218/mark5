@@ -88,11 +88,62 @@ def clip(scene):
     return out
 
 
+# ---------------------------------------------------------------- narration (from the captions) + music
+VOICE = os.path.join(os.environ.get('PIPER_VOICES', os.path.expanduser('~/piper-voices')), 'en-us-ryan-high.onnx')   # Piper voice (rhasspy/piper releases)
+MUSIC = os.path.join(HERE, 'ad', 'story', 'music2.py')   # synthesized music bed (numpy)
+
+
+def speakable(text):
+    t = text.replace('—', ',').replace('→', ' to ').replace('₱', ' pesos ').replace('%', ' percent').replace(' / ', ' or ').replace('&', 'and')
+    t = t.replace('SC/PWD', 'senior citizen and PWD').replace('X-reading', 'X reading').replace('Z-reading', 'Z reading').replace('A/R', 'receivables').replace('AP / AR', 'payables and receivables')
+    t = t.replace('mm', ' millimeter').replace('(BLE)', '').replace('…', '.')
+    return ' '.join(t.split())
+
+
+def add_audio(video, parts, scenes, out):
+    import wave
+    import numpy as np
+    SR = 22050
+    total = duration(video)
+    # global start of every part, then every caption's start inside its clip (scene time x stretch / speed)
+    starts, t = [], 0.0
+    for p in parts:
+        starts.append(t); t += duration(p)
+    caps = [('M5 Restaurant Suite. Point of sale, recipe based inventory and double entry accounting, in one plain PHP and MySQL app for Philippine restaurants.', 0.6)]
+    for i, sc in enumerate(scenes):
+        speed = SPEED.get(sc['name'], 1.0)
+        stretch = duration(sc['file']) / sc['dur']
+        for c in sc['caps']:
+            caps.append((speakable(c['text']), starts[i + 1] + c['t'] * stretch / speed))
+    caps.append(('Plain PHP and MySQL, no framework, no build step. Copy the folder, open it in the browser, run the installer. M5 Restaurant Suite.', starts[-1] + 0.6))
+    mix = np.zeros(int(SR * (total + 2)), dtype=np.float32)
+    prev_end = 0.0
+    for k, (text, at) in enumerate(caps):
+        wav = os.path.join(BUILD, f'vo{k:02d}.wav')
+        subprocess.run(['python3', '-m', 'piper', '-m', VOICE, '-f', wav, '--length-scale', '0.9', '--sentence-silence', '0.2'], input=text.encode(), check=True, capture_output=True)
+        with wave.open(wav) as w:
+            a = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float32) / 32767
+        at = max(at, prev_end + 0.25)   # never talk over the previous line
+        s0 = int(at * SR)
+        if s0 >= len(mix): break
+        mix[s0:s0 + len(a)] += a[:len(mix) - s0]
+        prev_end = at + len(a) / SR
+    vo = os.path.join(BUILD, 'vo.wav')
+    with wave.open(vo, 'wb') as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(SR); w.writeframes((np.clip(mix, -1, 1) * 32767).astype(np.int16).tobytes())
+    music = os.path.join(BUILD, 'music.wav')
+    run(['python3', MUSIC, f'{total:.1f}', music, '4'])
+    af = ('[2:a]volume=0.45,aformat=sample_rates=44100[m];[1:a]aformat=sample_rates=44100,asplit[v1][v2];'
+          '[m][v1]sidechaincompress=threshold=0.02:ratio=9:attack=25:release=600:makeup=1[md];'
+          '[md][v2]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000[a]')
+    run(['ffmpeg', '-loglevel', 'error', '-y', '-i', video, '-i', vo, '-i', music, '-filter_complex', af, '-map', '0:v', '-map', '[a]', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '160k', '-shortest', '-movflags', '+faststart', out])
+
+
 def main():
     scenes = json.load(open(os.path.join(REC, 'scenes.json')))
     parts = []
     parts.append(card('00-title', [
-        ('Mark5 Restaurant Suite', 72, 'white', FONT_B),
+        ('M5 Restaurant Suite', 72, 'white', FONT_B),
         ('POS · recipe-based inventory · double-entry accounting', 34, '0xfdba74', FONT),
         ('One plain PHP + MySQL app for Philippine restaurants', 28, '0xd1d5db', FONT_R),
     ], 4.5))
@@ -113,7 +164,9 @@ def main():
     with open(lst, 'w') as f:
         for p in parts:
             f.write(f"file '{p}'\n")
-    run(['ffmpeg', '-loglevel', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', lst, '-c', 'copy', '-movflags', '+faststart', OUT])
+    silent = os.path.join(BUILD, 'silent.mp4')
+    run(['ffmpeg', '-loglevel', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', lst, '-c', 'copy', '-movflags', '+faststart', silent])
+    add_audio(silent, parts, scenes, OUT)
     print('wrote', OUT, f"{duration(OUT):.1f}s", f"{os.path.getsize(OUT) / 1e6:.1f} MB")
 
 

@@ -146,7 +146,7 @@ class Backup
         fseek($fh, max(0, filesize($file) - 256));
         $tail = (string) stream_get_contents($fh);
         fclose($fh);
-        if ($first !== self::HEADER) throw HttpException::bad('This file is not a Mark5 backup. Choose a .sql file made on the Backup & Restore page.');
+        if ($first !== self::HEADER) throw HttpException::bad('This file is not an M5 backup. Choose a .sql file made on the Backup & Restore page.');
         if (!str_contains($tail, self::FOOTER)) throw HttpException::bad('This backup file is incomplete (it may have been cut off while copying). Nothing was restored.');
     }
 

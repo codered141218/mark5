@@ -3,7 +3,7 @@
 $nav = require BASE_PATH . '/app/nav.php';
 $path = $GLOBALS['__request']->path ?? '/';
 $u = user();
-$business = App\Services\Settings::get('business_name', 'Mark5');
+$business = App\Services\Settings::get('business_name', 'M5');
 ?>
 <!doctype html>
 <html lang="en">

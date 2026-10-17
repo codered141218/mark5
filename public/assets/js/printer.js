@@ -1,5 +1,5 @@
 /**
- * Mark5 receipt printing — built for portable 58 mm Bluetooth thermal printers on Android tablets,
+ * M5 receipt printing — built for portable 58 mm Bluetooth thermal printers on Android tablets,
  * and also 80 mm desk printers.
  *
  * One receipt layout ("doc") is rendered two ways:
@@ -676,7 +676,7 @@
 
   function testDoc(ctx) {
     const doc = new Doc(colsFor());
-    header(doc, (ctx && ctx.business) || { name: 'Mark5 Restaurant Suite' });
+    header(doc, (ctx && ctx.business) || { name: 'M5 Restaurant Suite' });
     doc.center('PRINTER TEST', { bold: true, big: true });
     doc.lr('Paper', `${config().paper} mm / ${colsFor()} chars`);
     doc.lr('Method', config().method);
@@ -691,7 +691,7 @@
     const cols = colsFor();
     const cfg = config();
     const doc = new Doc(cols);
-    header(doc, (ctx && ctx.business) || { name: 'Mark5 Restaurant Suite' });
+    header(doc, (ctx && ctx.business) || { name: 'M5 Restaurant Suite' });
     doc.center('PRINTER SELF-TEST', { bold: true, big: true });
     doc.lr('Printer', cfg.deviceName || cfg.method);
     doc.lr('Paper / columns', `${cfg.paper} mm / ${cols}`);

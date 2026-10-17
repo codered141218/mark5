@@ -3,7 +3,7 @@
   <form class="login-card" method="post" action="<?= url('/login') ?>">
     <?= csrf_field() ?>
     <div class="brand-logo">M5</div>
-    <h1><?= e(App\Services\Settings::get('business_name', 'Mark5 Restaurant Suite')) ?></h1>
+    <h1><?= e(App\Services\Settings::get('business_name', 'M5 Restaurant Suite')) ?></h1>
     <p class="muted">Sign in to continue</p>
     <?php if ($m = flash('error')): ?><div class="alert alert-error"><?= e($m) ?></div><?php endif; ?>
     <?php if ($m = flash('success')): ?><div class="alert alert-success"><?= e($m) ?></div><?php endif; ?>

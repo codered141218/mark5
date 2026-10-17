@@ -107,10 +107,10 @@ def main():
     parts, starts, t = [], {}, 0.0
     for name, headline, vo, card_len in PLAN:
         if name == 'A-title':
-            p, d = card(name, [('Mark5 Restaurant Suite', 76, 'white', FONT_B), ('POS · kitchen · inventory · accounting', 36, '0xfdba74', FONT),
+            p, d = card(name, [('M5 Restaurant Suite', 76, 'white', FONT_B), ('POS · kitchen · inventory · accounting', 36, '0xfdba74', FONT),
                                ('One app. One database. Plain PHP + MySQL.', 30, '0xd1d5db', FONT_R)], card_len)
         elif name == 'G-end':
-            p, d = card(name, [('Mark5', 84, 'white', FONT_B), ('Plain PHP 8.1 + MySQL · no framework · installs in minutes', 32, '0xd1d5db', FONT_R),
+            p, d = card(name, [('M5 Restaurant Suite', 76, 'white', FONT_B), ('Plain PHP 8.1 + MySQL · no framework · installs in minutes', 32, '0xd1d5db', FONT_R),
                                ('github.com/codered141218/mark5', 34, '0xfdba74', FONT)], card_len)
         else:
             s = scenes[name]

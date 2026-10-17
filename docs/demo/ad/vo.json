@@ -1,9 +1,30 @@
 [
- ["A", "Running a restaurant? Meet Mark five. Point of sale, kitchen, inventory and accounting, in one app."],
- ["B", "Your staff take orders on any phone or tablet. Tap the items, pick the table, send."],
- ["C", "The kitchen slip prints the moment you hit send, with copies for every station. Receipts and Z readings print too, even on a small Bluetooth printer."],
- ["D", "Owners see it all live: net sales, gross profit, food cost, and cash on hand."],
- ["E", "Every sale, delivery and payout posts to double-entry books automatically. Income statement, balance sheet, payables, receivables. Ready any day."],
- ["F", "Employee cash advances and salary deductions? Tracked, and posted."],
- ["G", "Mark five. Plain PHP and MySQL. Install it in minutes."]
+ [
+  "A",
+  "Running a restaurant? Meet M five. Point of sale, kitchen, inventory and accounting, in one app."
+ ],
+ [
+  "B",
+  "Your staff take orders on any phone or tablet. Tap the items, pick the table, send."
+ ],
+ [
+  "C",
+  "The kitchen slip prints the moment you hit send, with copies for every station. Receipts and Z readings print too, even on a small Bluetooth printer."
+ ],
+ [
+  "D",
+  "Owners see it all live: net sales, gross profit, food cost, and cash on hand."
+ ],
+ [
+  "E",
+  "Every sale, delivery and payout posts to double-entry books automatically. Income statement, balance sheet, payables, receivables. Ready any day."
+ ],
+ [
+  "F",
+  "Employee cash advances and salary deductions? Tracked, and posted."
+ ],
+ [
+  "G",
+  "M five. Plain PHP and MySQL. Install it in minutes."
+ ]
 ]

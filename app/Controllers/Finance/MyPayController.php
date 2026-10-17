@@ -38,6 +38,6 @@ class MyPayController
         if (!$emp || !$l || (int) $l['employee_id'] !== (int) $emp['id']) throw HttpException::notFound('Payslip');
         $days = Payroll::attendance($l['period_from'], $l['period_to'], (int) $emp['id'])[(int) $emp['id']] ?? [];
         return view('people/my_pay/payslip', ['title' => 'Payslip ' . $l['doc_no'], 'l' => $l, 'run' => $l, 'days' => $days,
-            'business' => Settings::get('business_name', 'Mark5')], 'blank');
+            'business' => Settings::get('business_name', 'M5')], 'blank');
     }
 }

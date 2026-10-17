@@ -1,0 +1,167 @@
+[
+ {
+  "id": "title",
+  "scene": null,
+  "use": "card:intro",
+  "seconds": 3.0,
+  "caption": ""
+ },
+ {
+  "scene": "s01_intro",
+  "use": "clip:x0-board",
+  "char_at": 6.6,
+  "speed": 1.0
+ },
+ {
+  "id": "pov-waiter",
+  "scene": null,
+  "use": "card:pov",
+  "seconds": 4.0,
+  "kicker": "Friday · 7:12 PM",
+  "name": "Ramon",
+  "role": "Waiter · on his phone",
+  "when": "Kusina ni Aling Nena, Makati",
+  "problem": "Table 12 is ordering, the kitchen can't read anyone's handwriting, and the pen just died.",
+  "line": {
+   "who": "Ramon Bautista (waiter)",
+   "text": "Table twelve, extra spicy, and my pen just died."
+  }
+ },
+ {
+  "scene": "s02_waiter_order",
+  "use": "clip:w1-order",
+  "char_at": "mark:sent",
+  "speed": 1.25
+ },
+ {
+  "scene": "s03_waiter_split",
+  "use": "clip:w2-split",
+  "char_at": "mark:split",
+  "speed": 1.15
+ },
+ {
+  "id": "pov-cashier",
+  "scene": null,
+  "use": "card:pov",
+  "seconds": 4.0,
+  "kicker": "Friday · 8:05 PM",
+  "name": "Maria",
+  "role": "Cashier · at the counter",
+  "when": "Six people in line, one senior ID, two GCash screens",
+  "problem": "Every discount used to be a notebook entry and a prayer that the BIR never asks.",
+  "line": {
+   "who": "Maria Santos (cashier)",
+   "text": "Six in line, one senior ID, and the calculator is dead."
+  }
+ },
+ {
+  "scene": "s05_cashier_senior",
+  "use": "clip:c1-discount",
+  "char_at": "mark:pin",
+  "speed": 1.3
+ },
+ {
+  "scene": "s04_cashier_pay",
+  "use": "clip:c2-pay",
+  "char_at": "mark:paid",
+  "speed": 1.45
+ },
+ {
+  "scene": "s06_cashier_closing",
+  "use": "clip:c3-eod",
+  "char_at": 9.5,
+  "speed": 1.25
+ },
+ {
+  "id": "pov-owner",
+  "scene": null,
+  "use": "card:pov",
+  "seconds": 4.0,
+  "kicker": "Monday · 9:30 AM",
+  "name": "Nena",
+  "role": "Owner · at the office PC",
+  "when": "Best month on paper. Bank account says otherwise.",
+  "problem": "Sales are up, profit is flat, and somewhere between the pork and the payroll the money leaks.",
+  "line": {
+   "who": "Nena Villanueva (owner)",
+   "text": "Best month ever, daw. So why is the bank the same?"
+  }
+ },
+ {
+  "scene": "s07_owner_dashboard",
+  "use": "clip:o1-dashboard",
+  "char_at": 9.0,
+  "speed": 1.3
+ },
+ {
+  "scene": "s08_owner_food_cost",
+  "use": "clip:o3a-foodcost",
+  "char_at": 9.0,
+  "speed": 1.18
+ },
+ {
+  "scene": "s09_owner_inventory",
+  "use": "clip:o3b-inventory",
+  "char_at": 9.5,
+  "speed": 1.18
+ },
+ {
+  "scene": "s10_owner_finance",
+  "use": "clip:o4-finance",
+  "char_at": 9.5,
+  "speed": 1.12
+ },
+ {
+  "id": "pov-payroll",
+  "scene": null,
+  "use": "card:pov",
+  "seconds": 4.0,
+  "kicker": "The 15th · 6:00 PM",
+  "name": "Payday",
+  "role": "Mara · Manager · Payroll",
+  "when": "Four staff, one fingerprint machine, two cash advances",
+  "problem": "Payroll used to be a calculator, the notebook, and a night that ended at midnight.",
+  "line": {
+   "who": "Juan Dela Cruz (cook)",
+   "text": "Ma'am, sahod po? Mamaya daw ulit."
+  }
+ },
+ {
+  "scene": "s11a_payroll_import",
+  "use": "clip:p1-import",
+  "char_at": "mark:imported",
+  "speed": 1.08
+ },
+ {
+  "scene": "s11b_payroll_run",
+  "use": "clip:p2-run",
+  "char_at": "mark:posted",
+  "speed": 1.12
+ },
+ {
+  "id": "pov-employee",
+  "scene": null,
+  "use": "card:pov",
+  "seconds": 4.0,
+  "kicker": "The 15th · 4:40 PM",
+  "name": "Ramon",
+  "role": "Waiter · after shift, on his phone",
+  "when": "Staff table, one hand on the phone, one on the halo-halo",
+  "problem": "He used to ask twice for his payslip and three times for his advance balance.",
+  "line": {
+   "who": "Ramon Bautista (waiter)",
+   "text": "Dati, twice for my payslip, three times for my balance."
+  }
+ },
+ {
+  "scene": "s12_employee_mypay",
+  "use": "clip:e1-mypay",
+  "char_at": "mark:requested",
+  "speed": 1.18
+ },
+ {
+  "scene": "s13_outro",
+  "use": "card:outro",
+  "sub": "POS · inventory · books · payroll — on the PC you already own"
+ }
+]

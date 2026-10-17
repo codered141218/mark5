@@ -1,4 +1,4 @@
--- Mark5 Restaurant Suite — MySQL / MariaDB schema
+-- M5 Restaurant Suite — MySQL / MariaDB schema
 -- Money uses DECIMAL(14,2); quantities use DECIMAL(14,4) (e.g. 0.125 kg).
 -- Run through the installer (/install or `php database/install.php`), which also loads seed data.
 

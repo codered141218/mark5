@@ -97,7 +97,7 @@ class PayrollController
         $run = Payroll::find((int) $id);
         $att = Payroll::attendance($run['period_from'], $run['period_to']);
         return view('people/payroll/payslips', ['title' => 'Payslips ' . $run['doc_no'], 'run' => $run, 'att' => $att,
-            'business' => \App\Services\Settings::get('business_name', 'Mark5')], 'blank');
+            'business' => \App\Services\Settings::get('business_name', 'M5')], 'blank');
     }
 
     // ------------------------------------------------------------------ attendance

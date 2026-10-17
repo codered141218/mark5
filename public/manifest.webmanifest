@@ -1,7 +1,7 @@
 {
-  "name": "Mark5 POS",
-  "short_name": "Mark5 POS",
-  "description": "Mark5 Restaurant Suite cashier (POS)",
+  "name": "M5 POS",
+  "short_name": "M5 POS",
+  "description": "M5 Restaurant Suite cashier (POS)",
   "start_url": "pos",
   "scope": "./",
   "display": "standalone",

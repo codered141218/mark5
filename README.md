@@ -1,4 +1,4 @@
-# Mark5 Restaurant Suite (PHP + MySQL)
+# M5 Restaurant Suite (PHP + MySQL)
 
 All-in-one, browser-based restaurant system for Philippine restaurants:
 **POS / cashiering, recipe-based inventory and double-entry accounting in one place.**
@@ -9,8 +9,9 @@ Every sale, delivery, spoilage, petty cash payout and cash advance is posted to 
 - Server-rendered pages + a little plain JavaScript (no build step).
 - Works on PCs, tablets and phones (Chrome / Edge / Safari).
 
-**Videos:** [30-second spot](docs/demo/m5-30s.mp4) (payroll from ZKTeco, recipes & menu costing) · [1-minute ad](docs/demo/mark5-ad.mp4) ·
-[3-minute walkthrough](docs/demo/mark5-demo.mp4) of POS, inventory, reports, finance and administration. See [docs/demo/README.md](docs/demo/README.md) to re-record them.
+**Videos:** [story ad](docs/demo/m5-story.mp4) (waiter, cashier, owner, payroll and employee points of view, about 3 min) ·
+[30-second spot](docs/demo/m5-30s.mp4) · [1-minute ad](docs/demo/m5-ad.mp4) · [3-minute narrated walkthrough](docs/demo/m5-demo.mp4).
+See [docs/demo/README.md](docs/demo/README.md) to re-record them.
 
 ---
 
