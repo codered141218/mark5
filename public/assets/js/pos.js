@@ -389,6 +389,7 @@
       `<button class="btn btn-ghost printer-chip ${p.cls}" type="button" data-act="printer" title="Printer">⎙ ${esc(p.text)}${p.queue ? ` <span class="count">${p.queue}</span>` : ''}</button>`,
       S.installPrompt ? '<button class="btn btn-ghost install-btn" type="button" data-act="install">⬇ Install app</button>' : '',
       B.links.backOffice ? `<a class="btn btn-ghost" href="${esc(B.links.backOffice)}">Back office</a>` : '',
+      B.links.myPay ? `<a class="btn btn-ghost" href="${esc(B.links.myPay)}">My pay</a>` : '',
       `<span class="chip user-chip">${esc(B.user.name)}</span>`,
       '<button class="btn btn-ghost" type="button" data-act="logout">Log out</button>',
     ];

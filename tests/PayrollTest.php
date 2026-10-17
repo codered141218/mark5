@@ -97,3 +97,18 @@ test('payroll run: days x rate + overtime, cash advance deducted per the terms, 
     throws(fn () => Payroll::createRun(['period_from' => '2026-10-10', 'period_to' => '2026-10-20']), 'already covers');
     assert_books_balance();
 });
+
+test('employee self-service: own payslips and cash advance balance', function () use ($pr) {
+    $slips = Payroll::payslipsFor($pr->juan);
+    eq(1, count($slips));
+    eq('posted', DB::value('SELECT status FROM payroll_runs WHERE id = ?', [$slips[0]['run_id']]));
+    eq(500, $slips[0]['ca_deduction']);
+    $one = Payroll::payslip((int) $slips[0]['id']);
+    eq('Juan Dela Cruz', $one['employee_name']);
+    eq($slips[0]['net_pay'], $one['net_pay']);
+    ok(Payroll::payslip(999999) === null, 'unknown payslip');
+    // a draft run's lines are not payslips yet
+    $draft = Payroll::createRun(['period_from' => '2026-10-16', 'period_to' => '2026-10-31']);
+    eq(1, count(Payroll::payslipsFor($pr->juan)));
+    Payroll::delete($draft);
+});

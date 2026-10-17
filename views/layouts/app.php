@@ -33,6 +33,9 @@ $business = App\Services\Settings::get('business_name', 'Mark5');
     <?php if (can('pos.access')): ?>
       <div class="pos-link"><a href="<?= url('/pos') ?>">▶ Open POS / Cashier</a></div>
     <?php endif; ?>
+    <?php if (!empty($u['employee_id'])): ?>
+      <div class="pos-link"><a href="<?= url('/my-pay') ?>" class="<?= $path === '/my-pay' || str_starts_with($path, '/my-pay/') ? 'active' : '' ?>" style="background:var(--side-2);color:var(--side-text);font-weight:600">₱ My Pay &amp; Advances</a></div>
+    <?php endif; ?>
     <nav class="nav">
       <?php foreach ($nav as $group => $items):
           $visible = array_filter($items, fn ($i) => can(...$i[3]));

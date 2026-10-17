@@ -291,4 +291,22 @@ class Payroll
         });
         Audit::log('delete', 'payroll_run', $id);
     }
+
+    // ------------------------------------------------------------------ employee self-service ("My Pay")
+    /** Posted payslips of one employee, newest first (payroll line + run header). */
+    public static function payslipsFor(int $employeeId): array
+    {
+        return DB::all('SELECT l.*, r.doc_no, r.period_from, r.period_to, r.pay_date, r.method, r.posted_at
+             FROM payroll_lines l JOIN payroll_runs r ON r.id = l.run_id
+             WHERE l.employee_id = ? AND r.status = \'posted\' ORDER BY r.period_to DESC, r.id DESC', [$employeeId]);
+    }
+
+    /** One posted payslip with its employee and run, or null. */
+    public static function payslip(int $lineId): ?array
+    {
+        return DB::one('SELECT l.*, r.doc_no, r.period_from, r.period_to, r.pay_date, r.method, r.posted_at,
+                    e.full_name AS employee_name, e.emp_no, e.position, e.department
+             FROM payroll_lines l JOIN payroll_runs r ON r.id = l.run_id JOIN employees e ON e.id = l.employee_id
+             WHERE l.id = ? AND r.status = \'posted\'', [$lineId]);
+    }
 }

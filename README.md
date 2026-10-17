@@ -97,6 +97,8 @@ order slip on *Send* (with copies), reprint order slip, open the cash drawer, pr
 - **Payroll**: import the attendance log of **ZKTeco biometric devices** (USB `attlog.dat` or ZKTime / BioTime CSV) → days, hours and
   overtime per employee → payroll run (daily rate × days + OT at 125%, less cash advances and SSS / PhilHealth / Pag-IBIG) →
   posted to the books (salaries, CA repayments, net pay from cash or bank) → printable payslips.
+- **My Pay** (any user linked to an employee record, phone-friendly): own payslips with the day-by-day punches, cash advance
+  balance and history, and a button to request a new advance.
 - **Users, roles & permissions** (40+ permissions), audit trail, **backup & restore** (pure PHP, no mysqldump needed).
 - Every list and report exports to **Excel**.
 

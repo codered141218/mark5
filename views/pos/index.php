@@ -15,6 +15,7 @@ $boot['server_now'] = now();
 $boot['links'] = [
     'backOffice' => can('dashboard.view', 'inventory.view', 'reports.sales', 'finance.view', 'admin.settings') ? url('/') : null,
     'printerSetup' => url('/printer'),
+    'myPay' => !empty(user()['employee_id']) ? url('/my-pay') : null,
 ];
 ?>
 <div class="pos is-board pane-menu" id="pos">

@@ -5,6 +5,7 @@
  * zkteco-1_attlog.dat) ready to be imported on screen.
  */
 require __DIR__ . '/../../app/bootstrap.php';
+require __DIR__ . '/_dates.php';
 
 use App\Core\Auth;
 use App\Core\DB;
@@ -44,14 +45,14 @@ function punches(string $from, string $to, array $staff): string
 }
 
 // Previous cutoff: imported and posted so the payroll list has history
-Payroll::importAttendance(punches('2026-09-16', '2026-09-30', $staff), 'ZKTeco K40 · kitchen door');
-$run = Payroll::createRun(['period_from' => '2026-09-16', 'period_to' => '2026-09-30', 'pay_date' => '2026-09-30', 'method' => 'cash', 'notes' => '2nd cutoff September']);
+Payroll::importAttendance(punches(shift('2026-09-16'), shift('2026-09-30'), $staff), 'ZKTeco K40 · kitchen door');
+$run = Payroll::createRun(['period_from' => shift('2026-09-16'), 'period_to' => shift('2026-09-30'), 'pay_date' => shift('2026-09-30'), 'method' => 'cash', 'notes' => 'Previous cutoff']);
 $lines = [];
 foreach (Payroll::find($run)['lines'] as $l) $lines[$l['id']] = ['other_deductions' => [150, 120, 110, 100][array_search($l['employee_name'], array_column($staff, 0)) ?: 0]];
 Payroll::saveLines($run, $lines);
 Payroll::post($run);
-DB::run("UPDATE payroll_runs SET created_at = '2026-09-30 17:10:00', posted_at = '2026-09-30 17:25:00' WHERE id = ?", [$run]);
+DB::run('UPDATE payroll_runs SET created_at = ?, posted_at = ? WHERE id = ?', [shift('2026-09-30 17:10:00'), shift('2026-09-30 17:25:00'), $run]);
 
 // Current cutoff: the file the video imports
-file_put_contents(__DIR__ . '/zkteco-1_attlog.dat', punches('2026-10-01', '2026-10-15', $staff));
+file_put_contents(__DIR__ . '/zkteco-1_attlog.dat', punches(shift('2026-10-01'), min(shift('2026-10-15'), today()), $staff));
 echo "Payroll demo ready: posted run $run, attlog written to " . __DIR__ . "/zkteco-1_attlog.dat\n";

@@ -35,6 +35,8 @@ class AuthController
     public function home(Request $req)
     {
         if (Auth::can('dashboard.view')) return (new DashboardController())->index($req);
+        // Floor staff (waiters, cashiers) go straight to the POS
+        if (Auth::can('pos.access') && !Auth::can('reports.sales', 'inventory.view', 'finance.view', 'ca.manage', 'payroll.manage')) return redirect('/pos');
         foreach (require BASE_PATH . '/app/nav.php' as $items) {
             foreach ($items as [$href, , , $perms]) if ($href !== '/' && Auth::can(...$perms)) return redirect($href);
         }

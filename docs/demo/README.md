@@ -27,7 +27,9 @@ python3 docs/demo/assemble.py docs/demo/mark5-demo.mp4   # title / end cards, ca
 run → post → payslips), then composite items with live food cost and the menu costing report.
 
 ```bash
-php docs/demo/seed-payroll.php        # after seed.php: daily rates + device IDs, a posted September payroll, zkteco-1_attlog.dat for October
+php docs/demo/seed-payroll.php        # after seed.php: daily rates + device IDs, a posted previous-cutoff payroll, zkteco-1_attlog.dat for the current cutoff
+php docs/demo/seed-staff.php          # owner name on the admin account, waiter user ramon / waiter123 with a cash advance
+# every seeded date is relative to the day you run the scripts (docs/demo/_dates.php), so the business day is always open "today"
 python3 ad/voice.py /path/to/piper-voices en-us-ryan-high vo30.json   # -> vo30-*.wav
 node ad/ad30-record.js                # four scenes (imports zkteco-1_attlog.dat on screen)
 python3 ad/ad30-assemble.py docs/demo/m5-30s.mp4
