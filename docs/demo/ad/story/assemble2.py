@@ -14,7 +14,7 @@ import json, os, subprocess, sys, textwrap, wave
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-W, H, FPS, XF = 1440, 900, 30, 0.5
+W, H, FPS, XF = 1440, 900, 30, 0.8
 BG = '0x0f172a'
 FONT = '/usr/share/fonts/opentype/inter/Inter-SemiBold.otf'
 FONT_B = '/usr/share/fonts/opentype/inter/InterDisplay-Bold.otf'
@@ -97,7 +97,7 @@ def clip_segment(build, i, it):
         vf.append(f"scale=w='trunc(iw*(1+0.045*t/{secs})/2)*2':h='trunc(ih*(1+0.045*t/{secs})/2)*2':eval=frame:flags=bicubic,crop={W}:{H}")
     else:
         # phone / tablet on the dark backdrop with a bezel
-        vh = 820 if w < h else 860
+        vh = 820 if w < h else 760
         vf.append(f"scale=-2:{vh}:flags=lanczos,pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:color={BG}")
         bezel = it.get('bezel')
         if bezel:
@@ -105,7 +105,8 @@ def clip_segment(build, i, it):
     logo = os.path.join(HERE, 'cards', 'logo.png')
     if it.get('caption'):
         f = textfile(build, f'seg{i}-chip', it['caption'])
-        vf.append(dt(f, 30, 'white', '48', '40', ':box=1:boxcolor=0xc2410c@0.95:boxborderw=14', font=FONT_B, enable='gte(t,0.3)'))
+        chip_y = '14' if (w, h) != (W, H) and w > h else '40'   # tablet footage starts lower, keep the chip off its top bar
+        vf.append(dt(f, 30, 'white', '48', chip_y, ':box=1:boxcolor=0xc2410c@0.95:boxborderw=14', font=FONT_B, enable='gte(t,0.3)'))
     vf += subtitle_filters(build, f'seg{i}', it.get('vo', []), secs)
     vf.append(f"fps={FPS},format=yuv420p")
     out = os.path.join(build, f'seg{i:02d}.mp4')
@@ -116,8 +117,9 @@ def clip_segment(build, i, it):
         return out
     if (w, h) != (W, H) and it.get('bezel'):
         # overlay the scaled phone video on the bezel background image
-        vh = 820 if w < h else 860
-        fc = f"[1:v]setpts=PTS/{stretch:.4f},scale=-2:{vh}:flags=lanczos[ph];[0:v][ph]overlay=(W-w)/2:(H-h)/2:shortest=1[base];[base]" + ','.join(vf[2:]) + "[v]"
+        vh = 820 if w < h else 760
+        bug = f";movie={logo}[lg];[v0][lg]overlay=W-w-40:28[v]" if (w > h and os.path.exists(logo)) else ""
+        fc = f"[1:v]setpts=PTS/{stretch:.4f},scale=-2:{vh}:flags=lanczos[ph];[0:v][ph]overlay=(W-w)/2:(H-h)/2:shortest=1[base];[base]" + ','.join(vf[2:]) + ("[v0]" + bug if bug else "[v]")
         run(['ffmpeg', '-loglevel', 'error', '-y', '-loop', '1', '-i', it['bezel'], '-i', src, '-filter_complex', fc, '-map', '[v]', '-t', str(secs), '-an', *ENC, out])
     else:
         run(['ffmpeg', '-loglevel', 'error', '-y', '-i', src, '-vf', ','.join(vf), '-t', str(secs), '-an', *ENC, out])

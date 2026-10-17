@@ -23,7 +23,7 @@
    "seconds": 12,
    "caption": "Typed once. The kitchen can read it.",
    "problem": "The cook cannot read the waiter's handwriting, so orders come back wrong mid-rush.",
-   "narrator": "Ramon takes table twelve on his phone: sisig, extra spicy, typed once, sent. The kitchen slip prints.",
+   "narrator": "Ramon takes table twelve on his phone: sisig, extra spicy, typed once, sent. The kitchen slip prints by the stove.",
    "character_lines": [
     {
      "who": "Juan Dela Cruz (cook)",
@@ -69,7 +69,7 @@
    "character_lines": [
     {
      "who": "Maria Santos (cashier)",
-     "line": "GCash, card, rest cash. Change, eight seventy-five. Next!"
+     "line": "GCash, card, rest cash. Change, eleven twenty-five. Next!"
     }
    ]
   },
@@ -79,7 +79,7 @@
    "seconds": 12,
    "caption": "Count first. Then compare.",
    "problem": "At closing the drawer looks short and the cashier gets blamed for money she never touched.",
-   "narrator": "Eleven PM. The drawer looks two-fifty short. Maria counts first, blind. Then the system shows what it expected.",
+   "narrator": "Eleven PM. The drawer looks two-fifty short. Maria counts first, blind. Then the Z-reading shows what it expected.",
    "character_lines": [
     {
      "who": "Maria Santos (cashier)",
@@ -121,7 +121,7 @@
    "seconds": 11,
    "caption": "Stock in, spoilage out, reorder in time.",
    "problem": "The garlic ran out mid-service on Friday and two kilos of kangkong wilted over the weekend, and nobody wrote any of it down.",
-   "narrator": "Deliveries on credit go to what we owe. Spoiled kangkong is logged. Stock on hand flags the reorder.",
+   "narrator": "Deliveries on credit go to what we owe. Staff meals and spoiled kangkong are logged. Stock on hand, with the reorder point.",
    "character_lines": [
     {
      "who": "Nena Villanueva (owner)",
@@ -177,7 +177,7 @@
    "seconds": 13,
    "caption": "His payslip. His advance. His phone.",
    "problem": "Staff have to ask twice for a payslip and three times for their advance balance, and asking for an advance means a knock on the office door.",
-   "narrator": "After shift, Ramon opens My Pay: net pay, every punch, his advance balance. He asks for fifteen hundred, right there.",
+   "narrator": "After shift, Ramon opens My Pay: net pay, every punch, his advance balance. He asks for fifteen hundred.",
    "character_lines": [
     {
      "who": "Ramon Bautista (waiter)",
@@ -195,7 +195,7 @@
    "character_lines": [
     {
      "who": "Nena Villanueva (owner)",
-     "line": "Anim na taon 'tong PC, walang IT guy. Forty seats, one Friday. M5."
+     "line": "Anim na taon 'tong PC, walang IT guy. Forty seats. M5."
     }
    ]
   }

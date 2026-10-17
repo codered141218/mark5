@@ -23,7 +23,7 @@ python3 docs/demo/assemble.py docs/demo/m5-demo.mp4      # title / end cards, ca
 `node docs/demo/record.js 02-pos` re-records only the named scene(s) and keeps the rest. The recorder logs in as
 `admin / admin123` (back office) and `maria / cashier123` (POS); the manager PIN typed in the discount step is `2468`.
 
-## Story ad (`m5-story.mp4`, about 2:50)
+## Story ad (`m5-story.mp4`, 2:58)
 
 "M5 Restaurant Suite" told from four points of view at Kusina ni Aling Nena: the waiter on his phone (order, kitchen note,
 table, send, split bill), the cashier at the counter (senior discount with manager PIN, split payment with change, receipts,

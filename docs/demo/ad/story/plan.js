@@ -22,11 +22,11 @@ const SCENES = [
     'pos_board', ['wait', { ms: 1500 }], ['hover', { sel: '.order-card:has-text("Table 7")' }], ['wait', { ms: 2500 }], ['hover', { sel: '.order-card:has-text("Patio 2")' }], ['wait', { ms: 2000 }] ] },
 
   // ---- WAITER (Ramon, phone)
-  { name: 'w1-order', who: 'ramon', device: 'phone', target: 14, steps: [
+  { name: 'w1-order', who: 'ramon', device: 'phone', target: 16, steps: [
     'pos_board', ['wait', { ms: 600 }], ['pos_new_order'], ['pos_category', { name: 'Ulam' }], ['pos_items', { items: ['Sinigang', 'Sizzling Pork Sisig'], pause: 320 }],
     ['pos_category', { name: 'Rice Meals' }], ['pos_items', { items: ['Garlic Rice', 'Garlic Rice'], pause: 320 }],
     ['pos_pane', { pane: 'order' }], ['mark', { key: 'order' }], ['pos_line_note', { item: 'Sizzling Pork Sisig', chip: 'Extra spicy' }],
-    ['pos_table', { label: '12' }], ['mark', { key: 'table' }], ['pos_send', { pause: 1600 }], ['mark', { key: 'sent' }] ] },
+    ['pos_table', { label: '12' }], ['mark', { key: 'table' }], ['pos_send', { pause: 900 }], ['mark', { key: 'sent' }], ['pos_kitchen_slip_overlay', { find: '12', tags: ['KITCHEN SLIP'] }], ['wait', { ms: 2600 }] ] },
   { name: 'w2-split', who: 'ramon', device: 'phone', target: 11, steps: [
     ['wait', { ms: 300 }], 'pos_board', ['pos_open', { text: 'Table 12' }], ['pos_pane', { pane: 'order' }], ['pos_split', { item: 'Sinigang', table: '8' }], ['wait', { ms: 600 }], 'pos_done', ['wait', { ms: 1200 }] ] },
 
@@ -36,8 +36,9 @@ const SCENES = [
   { name: 'c2-pay', who: 'maria', device: 'tablet', target: 15, steps: [
     'pos_board', ['pos_open', { text: 'Table 12' }], ['pos_pay', { pays: [{ method: 'gcash', ref: 'GC-77120', amount: '100' }, { method: 'card', ref: 'A8831', amount: '100' }], quick: 1, holdPaid: 1800 }],
     'pos_paid_board', ['wait', { ms: 500 }] ] },
-  { name: 'c3-eod', who: 'maria', device: 'tablet', target: 13, steps: [
-    'pos_board', ['pos_receipts', { pick: 0, scroll: 200, hold: 1000 }], ['pos_xread', { scroll: 320, hold: 700 }], ['pos_eod', { counts: [['1000', '4'], ['500', '9'], ['100', '12']], hold: 1200 }] ] },
+  { name: 'c3-eod', who: 'maria', device: 'tablet', target: 17, steps: [
+    'pos_board', ['pos_receipts', { pick: 0, scroll: 200, hold: 800 }], ['pos_eod', { counts: [['1000', '4'], ['500', '9'], ['100', '12']], hold: 900 }],
+    ['mark', { key: 'counted' }], ['zreading_yesterday'], ['scroll', { dy: 520, sel: 'html', ms: 1400 }], ['wait', { ms: 2200 }] ] },
 
   // ---- OWNER (Nena, desktop)
   { name: 'o1-dashboard', who: 'admin', device: 'desktop', target: 14, steps: [
@@ -46,9 +47,10 @@ const SCENES = [
   { name: 'o3a-foodcost', who: 'admin', device: 'desktop', target: 13, steps: [
     ['go', { url: '/inventory/items/2', settle: 1600 }], ['go', { url: '/inventory/items/28', settle: 800 }], ['scroll', { dy: 560, ms: 1500 }], ['wait', { ms: 1800 }],
     ['go', { url: '/reports/inventory?report=recipe', settle: 1200 }], ['hover', { sel: '.table tbody tr:has-text("Sisig Rice Meal")' }], ['wait', { ms: 1800 }] ] },
-  { name: 'o3b-inventory', who: 'admin', device: 'desktop', target: 13, steps: [
-    ['go', { url: '/inventory/receiving', settle: 1000 }], ['open_row', { text: 'On credit' }], ['wait', { ms: 1500 }],
-    ['go', { url: '/inventory/wastage', settle: 1600 }], ['go', { url: '/reports/inventory?report=onhand', settle: 1000 }], ['scroll', { dy: 240, ms: 1200 }], ['wait', { ms: 1200 }] ] },
+  { name: 'o3b-inventory', who: 'admin', device: 'desktop', target: 15, steps: [
+    ['go', { url: '/inventory/receiving', settle: 900 }], ['open_row', { text: 'On credit' }], ['wait', { ms: 1300 }],
+    ['go', { url: '/inventory/issuance', settle: 1500 }], ['go', { url: '/inventory/wastage', settle: 1400 }],
+    ['go', { url: '/reports/inventory?report=onhand', settle: 900 }], ['scroll', { dy: 240, ms: 1100 }], ['wait', { ms: 1100 }] ] },
   { name: 'o4-finance', who: 'admin', device: 'desktop', target: 13, steps: [
     ['go', { url: `/reports/finance?report=is&from=${daysAgo(46)}&to=${TO}`, settle: 1000 }], ['scroll', { dy: 420, ms: 1500 }], ['wait', { ms: 900 }],
     ['go', { url: `/reports/finance?report=bs&to=${TO}`, settle: 1800 }], ['go', { url: `/reports/finance?report=ap&to=${TO}`, settle: 1600 }],

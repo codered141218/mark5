@@ -27,6 +27,8 @@ def voice_for(who):
 def lines():
     out = []
     for m in mapping:
+        if m.get('narration'):
+            out.append({'id': f"t-{m['id']}", 'voice': 'narrator', 'text': m['narration'].strip()})
         if m.get('line'):
             out.append({'id': f"k-{m['id']}", 'voice': voice_for(m['line']['who']), 'text': m['line']['text'].strip(), 'who': m['line']['who']})
         if not m.get('scene'):
@@ -51,6 +53,10 @@ def timeline():
         vo = []
         n = voiced.get(f"n-{sc['id']}")
         t_end = 0.4
+        if m.get('narration'):
+            v = voiced[f"t-{m['id']}"]
+            vo.append({'file': os.path.join(HERE, 'voices', v['id'] + '.wav'), 'at': 0.6, 'seconds': v['seconds'], 'text': v['text'], 'who': None})
+            t_end = 0.6 + v['seconds']
         if m.get('line'):
             v = voiced[f"k-{m['id']}"]
             vo.append({'file': os.path.join(HERE, 'voices', v['id'] + '.wav'), 'at': 0.5, 'seconds': v['seconds'], 'text': v['text'], 'who': m['line']['who']})
@@ -77,7 +83,7 @@ def timeline():
                     at = max(t_end + 0.25, avail - v['seconds'])
             vo.append({'file': os.path.join(HERE, 'voices', v['id'] + '.wav'), 'at': round(at, 2), 'seconds': v['seconds'], 'text': v['text'], 'who': f"{c['who']}"})
             t_end = max(t_end, at + v['seconds'])
-        need = round(max(min(float(sc.get('seconds', 0)), t_end + 1.5), t_end + 0.6, 3.5), 1)
+        need = round(max(min(float(sc.get('seconds', 0)), t_end + 1.2), t_end + 0.45, 3.2), 1)
         if kind == 'clip' and need > rec[ref]['dur'] / float(m.get('speed', 1.0)) - 0.2:
             print(f"  ! {ref}: voice needs {need:.1f}s, footage {rec[ref]['dur'] / float(m.get('speed', 1.0)):.1f}s")
         if m.get('seconds'):
